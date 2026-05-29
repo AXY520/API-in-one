@@ -14,7 +14,11 @@ type Channel = model.Channel
 
 // NewChannelFromConfig creates a Channel from a config.ChannelConfig.
 func NewChannelFromConfig(cc config.ChannelConfig) *Channel {
-	return model.NewChannel(cc.Name, cc.Type, cc.BaseURL, cc.BaseURLClaude, cc.BaseURLGemini, cc.Keys, cc.Models, cc.ModelMapping, cc.Priority, cc.Weight)
+	ch := model.NewChannel(cc.Name, cc.Type, cc.BaseURL, cc.BaseURLClaude, cc.BaseURLGemini, cc.Keys, cc.Models, cc.ModelMapping, cc.Priority, cc.Weight)
+	if cc.Enabled != nil {
+		ch.Enabled = *cc.Enabled
+	}
+	return ch
 }
 
 // Pool manages channels and provides model-based routing with round-robin.
@@ -70,9 +74,45 @@ func (p *Pool) SelectChannel(requestedModel string) (*model.Channel, string, err
 		return nil, "", ErrNoAvailableChannel
 	}
 
-	// Round-robin selection
-	idx := p.rrIndex.Add(1)
-	selected := candidates[(idx-1)%uint64(len(candidates))]
+	lowestPriority := candidates[0].channel.Priority
+	for _, c := range candidates[1:] {
+		if c.channel.Priority < lowestPriority {
+			lowestPriority = c.channel.Priority
+		}
+	}
+
+	var weighted []candidate
+	for _, c := range candidates {
+		if c.channel.Priority == lowestPriority {
+			weighted = append(weighted, c)
+		}
+	}
+
+	totalWeight := 0
+	for _, c := range weighted {
+		weight := c.channel.Weight
+		if weight <= 0 {
+			weight = 1
+		}
+		totalWeight += weight
+	}
+	if totalWeight <= 0 {
+		totalWeight = len(weighted)
+	}
+
+	idx := int((p.rrIndex.Add(1) - 1) % uint64(totalWeight))
+	selected := weighted[0]
+	for _, c := range weighted {
+		weight := c.channel.Weight
+		if weight <= 0 {
+			weight = 1
+		}
+		if idx < weight {
+			selected = c
+			break
+		}
+		idx -= weight
+	}
 	return selected.channel, selected.model, nil
 }
 

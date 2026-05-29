@@ -31,7 +31,7 @@ type ChannelStatus struct {
 	BaseURLClaude string            `json:"base_url_claude,omitempty"`
 	BaseURLGemini string            `json:"base_url_gemini,omitempty"`
 	KeyCount      int               `json:"key_count"`
-	Keys          []string          `json:"keys"`
+	MaskedKeys    []string          `json:"masked_keys"`
 	Models        []string          `json:"models"`
 	ModelMapping  map[string]string `json:"model_mapping"`
 	Priority      int               `json:"priority"`
@@ -52,7 +52,7 @@ func (h *Admin) ListChannels(c *gin.Context) {
 			BaseURLClaude: ch.BaseURLClaude,
 			BaseURLGemini: ch.BaseURLGemini,
 			KeyCount:      len(ch.Keys),
-			Keys:          ch.Keys,
+			MaskedKeys:    maskKeys(ch.Keys),
 			Models:        ch.Models,
 			ModelMapping:  ch.ModelMapping,
 			Priority:      ch.Priority,
@@ -100,6 +100,30 @@ func (h *Admin) CreateChannel(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "channel created", "name": ch.Name})
 }
 
+func findChannelConfig(name string) *config.ChannelConfig {
+	for _, ch := range config.GetChannels() {
+		if ch.Name == name {
+			return &ch
+		}
+	}
+	return nil
+}
+
+func maskKeys(keys []string) []string {
+	masked := make([]string, 0, len(keys))
+	for _, key := range keys {
+		masked = append(masked, maskKey(key))
+	}
+	return masked
+}
+
+func maskKey(key string) string {
+	if len(key) <= 8 {
+		return "****"
+	}
+	return key[:4] + "****" + key[len(key)-4:]
+}
+
 // UpdateChannel updates an existing channel by name.
 func (h *Admin) UpdateChannel(c *gin.Context) {
 	name := c.Param("name")
@@ -107,6 +131,18 @@ func (h *Admin) UpdateChannel(c *gin.Context) {
 	if err := c.ShouldBindJSON(&ch); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
+	}
+	if ch.BaseURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "base_url is required"})
+		return
+	}
+	if len(ch.Keys) == 0 {
+		existing := findChannelConfig(name)
+		if existing == nil || len(existing.Keys) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "at least one key is required"})
+			return
+		}
+		ch.Keys = existing.Keys
 	}
 
 	if err := config.UpdateChannel(name, ch); err != nil {

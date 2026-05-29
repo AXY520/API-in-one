@@ -2,7 +2,6 @@ package main
 
 import (
 	"api-in-one/config"
-	"api-in-one/model"
 	"api-in-one/relay"
 	"api-in-one/router"
 	"fmt"
@@ -27,12 +26,9 @@ func main() {
 	cfg := config.Get()
 
 	// Build channels
-	var channels []*model.Channel
+	var channels []*relay.Channel
 	for _, cc := range cfg.Channels {
-		ch := model.NewChannel(cc.Name, cc.Type, cc.BaseURL, cc.BaseURLClaude, cc.BaseURLGemini, cc.Keys, cc.Models, cc.ModelMapping, cc.Priority, cc.Weight)
-		if !cc.Enabled {
-			ch.Enabled = false
-		}
+		ch := relay.NewChannelFromConfig(cc)
 		channels = append(channels, ch)
 	}
 

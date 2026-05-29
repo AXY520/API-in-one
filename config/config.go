@@ -16,17 +16,17 @@ type ServerConfig struct {
 }
 
 type ChannelConfig struct {
-	Name         string            `json:"name"          yaml:"name"`
-	Type         string            `json:"type"          yaml:"type"`       // openai | claude | gemini
-	BaseURL      string            `json:"base_url"      yaml:"base_url"`   // default URL (openai)
-	BaseURLClaude string           `json:"base_url_claude" yaml:"base_url_claude"` // optional: Claude protocol URL
-	BaseURLGemini string           `json:"base_url_gemini" yaml:"base_url_gemini"` // optional: Gemini protocol URL
-	Keys         []string          `json:"keys"          yaml:"keys"`
-	Models       []string          `json:"models"        yaml:"models"`
-	ModelMapping map[string]string `json:"model_mapping"  yaml:"model_mapping"`
-	Priority     int               `json:"priority"      yaml:"priority"`
-	Weight       int               `json:"weight"        yaml:"weight"`
-	Enabled      bool              `json:"enabled"       yaml:"enabled"`
+	Name          string            `json:"name"          yaml:"name"`
+	Type          string            `json:"type"          yaml:"type"`              // openai | claude | gemini
+	BaseURL       string            `json:"base_url"      yaml:"base_url"`          // default URL (openai)
+	BaseURLClaude string            `json:"base_url_claude" yaml:"base_url_claude"` // optional: Claude protocol URL
+	BaseURLGemini string            `json:"base_url_gemini" yaml:"base_url_gemini"` // optional: Gemini protocol URL
+	Keys          []string          `json:"keys"          yaml:"keys"`
+	Models        []string          `json:"models"        yaml:"models"`
+	ModelMapping  map[string]string `json:"model_mapping"  yaml:"model_mapping"`
+	Priority      int               `json:"priority"      yaml:"priority"`
+	Weight        int               `json:"weight"        yaml:"weight"`
+	Enabled       *bool             `json:"enabled"       yaml:"enabled"`
 }
 
 type Config struct {
@@ -73,8 +73,9 @@ func applyDefaults(cfg *Config) {
 		if cfg.Channels[i].Weight == 0 {
 			cfg.Channels[i].Weight = 100
 		}
-		if !cfg.Channels[i].Enabled {
-			cfg.Channels[i].Enabled = true
+		if cfg.Channels[i].Enabled == nil {
+			enabled := true
+			cfg.Channels[i].Enabled = &enabled
 		}
 		if cfg.Channels[i].ModelMapping == nil {
 			cfg.Channels[i].ModelMapping = make(map[string]string)
@@ -157,6 +158,10 @@ func applyChannelDefaults(ch *ChannelConfig) {
 	}
 	if ch.ModelMapping == nil {
 		ch.ModelMapping = make(map[string]string)
+	}
+	if ch.Enabled == nil {
+		enabled := true
+		ch.Enabled = &enabled
 	}
 }
 
