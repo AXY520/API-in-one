@@ -1,0 +1,19 @@
+server:
+    port: 3000
+    admin_key: CHANGE_ME_ADMIN_KEY
+    access_keys:
+        - CHANGE_ME_ACCESS_KEY
+channels:
+    - name: example-openai
+      type: openai
+      base_url: https://api.openai.com/v1
+      base_url_claude: ""
+      base_url_gemini: ""
+      keys:
+        - CHANGE_ME_UPSTREAM_KEY
+      models:
+        - gpt-4o-mini
+      model_mapping: {}
+      priority: 10
+      weight: 100
+      enabled: true
