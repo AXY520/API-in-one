@@ -2,6 +2,13 @@
 
 ## Update Channel Keys
 
+Read existing upstream keys for one channel:
+
+```bash
+curl 'http://HOST:3000/admin/channels/CHANNEL_NAME/keys' \
+  -H 'Authorization: Bearer ADMIN_KEY'
+```
+
 Replace upstream keys for one channel without changing other channel settings:
 
 ```bash

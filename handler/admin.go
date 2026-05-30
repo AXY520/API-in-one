@@ -191,6 +191,22 @@ func (h *Admin) UpdateChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "channel updated", "name": name})
 }
 
+// GetChannelKeys returns the raw upstream API keys for a channel.
+func (h *Admin) GetChannelKeys(c *gin.Context) {
+	name := c.Param("name")
+	ch := findChannelConfig(name)
+	if ch == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("channel %q not found", name)})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"name":        name,
+		"keys":        ch.Keys,
+		"key_count":   len(ch.Keys),
+		"masked_keys": maskKeys(ch.Keys),
+	})
+}
+
 // UpdateChannelKeys replaces only the upstream API keys for a channel.
 func (h *Admin) UpdateChannelKeys(c *gin.Context) {
 	name := c.Param("name")
