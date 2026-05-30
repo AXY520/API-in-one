@@ -163,7 +163,7 @@ func (a *ClaudeAdaptor) convertResponse(cr *claudeResponse) *model.ChatCompletio
 	for _, c := range cr.Content {
 		switch c.Type {
 		case "text":
-			textParts = append(textParts, c.Text)
+			textParts = append(textParts, normalizeClaudeText(c.Text))
 		case "thinking":
 			thinkingParts = append(thinkingParts, c.Thinking)
 		case "tool_use":
@@ -392,15 +392,26 @@ func (p *claudeSSEProcessor) Next() ([]byte, error) {
 func extractTextContent(content interface{}) string {
 	switch v := content.(type) {
 	case string:
-		return v
+		return normalizeClaudeText(v)
+	case []model.ContentPart:
+		var parts []string
+		for _, part := range v {
+			if part.Type == "text" {
+				parts = append(parts, part.Text)
+			}
+		}
+		return strings.Join(parts, "")
+	case []map[string]interface{}:
+		return extractTextFromMaps(v)
 	case []interface{}:
 		var parts []string
 		for _, part := range v {
 			if m, ok := part.(map[string]interface{}); ok {
-				if m["type"] == "text" {
-					if text, ok := m["text"].(string); ok {
-						parts = append(parts, text)
-					}
+				switch m["type"] {
+				case "text", "input_text", "output_text":
+					parts = append(parts, getMapString(m, "text"))
+				case "tool_result":
+					parts = append(parts, extractTextContent(m["content"]))
 				}
 			}
 		}
@@ -409,6 +420,48 @@ func extractTextContent(content interface{}) string {
 		b, _ := json.Marshal(content)
 		return string(b)
 	}
+}
+
+func normalizeClaudeText(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, "[") && !strings.HasPrefix(trimmed, "{") {
+		return text
+	}
+	var blocks []map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &blocks); err == nil {
+		extracted := extractTextFromMaps(blocks)
+		if extracted != "" {
+			return extracted
+		}
+	}
+	var block map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &block); err == nil {
+		extracted := extractTextFromMaps([]map[string]interface{}{block})
+		if extracted != "" {
+			return extracted
+		}
+	}
+	return text
+}
+
+func extractTextFromMaps(blocks []map[string]interface{}) string {
+	var parts []string
+	for _, block := range blocks {
+		switch block["type"] {
+		case "text", "input_text", "output_text":
+			parts = append(parts, getMapString(block, "text"))
+		case "tool_result":
+			parts = append(parts, extractTextContent(block["content"]))
+		}
+	}
+	return strings.Join(parts, "")
+}
+
+func getMapString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
 }
 
 func mapStopReason(reason string) string {

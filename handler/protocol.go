@@ -606,10 +606,7 @@ func openAIToClaude(resp *model.ChatCompletionResponse) map[string]interface{} {
 
 	// Text content
 	if msg.Content != nil {
-		text := ""
-		if s, ok := msg.Content.(string); ok {
-			text = s
-		}
+		text := extractClaudeOutputText(msg.Content)
 		if text != "" {
 			contentBlocks = append(contentBlocks, map[string]interface{}{
 				"type": "text", "text": text,
@@ -648,6 +645,55 @@ func openAIToClaude(resp *model.ChatCompletionResponse) map[string]interface{} {
 			"output_tokens": resp.Usage.CompletionTokens,
 		},
 	}
+}
+
+func extractClaudeOutputText(content interface{}) string {
+	switch v := content.(type) {
+	case string:
+		return normalizeJSONTextBlocks(v)
+	case []model.ContentPart:
+		var parts []string
+		for _, part := range v {
+			if part.Type == "text" {
+				parts = append(parts, part.Text)
+			}
+		}
+		return strings.Join(parts, "")
+	case []interface{}:
+		var parts []string
+		for _, part := range v {
+			if m, ok := part.(map[string]interface{}); ok {
+				if text, ok := m["text"].(string); ok {
+					parts = append(parts, text)
+				}
+			}
+		}
+		return strings.Join(parts, "")
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func normalizeJSONTextBlocks(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, "[") && !strings.HasPrefix(trimmed, "{") {
+		return text
+	}
+	var blocks []map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &blocks); err == nil {
+		var parts []string
+		for _, block := range blocks {
+			if block["type"] == "text" || block["type"] == "output_text" {
+				if part, ok := block["text"].(string); ok {
+					parts = append(parts, part)
+				}
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, "")
+		}
+	}
+	return text
 }
 
 func getString(m map[string]interface{}, key string) string {

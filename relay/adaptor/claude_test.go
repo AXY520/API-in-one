@@ -86,3 +86,33 @@ func TestClaudeConvertResponsePreservesToolUse(t *testing.T) {
 		t.Fatalf("expected tool_calls finish reason, got %#v", got.Choices[0].FinishReason)
 	}
 }
+
+func TestClaudeConvertResponseNormalizesJSONTextBlocks(t *testing.T) {
+	ad := &ClaudeAdaptor{}
+	resp := &claudeResponse{
+		ID:         "msg_1",
+		Model:      "mimo-v2.5-pro",
+		StopReason: "end_turn",
+		Content: []claudeContent{{
+			Type: "text",
+			Text: `[{"type":"text","text":"All changes are complete."}]`,
+		}},
+	}
+
+	got := ad.convertResponse(resp)
+
+	if got.Choices[0].Message.Content != "All changes are complete." {
+		t.Fatalf("unexpected content: %#v", got.Choices[0].Message.Content)
+	}
+}
+
+func TestExtractTextContentHandlesContentParts(t *testing.T) {
+	got := extractTextContent([]model.ContentPart{
+		{Type: "text", Text: "hello"},
+		{Type: "text", Text: " world"},
+	})
+
+	if got != "hello world" {
+		t.Fatalf("unexpected text: %q", got)
+	}
+}
