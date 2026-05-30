@@ -2,6 +2,7 @@ package handler
 
 import (
 	"api-in-one/config"
+	"api-in-one/model"
 	"api-in-one/relay"
 	"encoding/json"
 	"fmt"
@@ -32,12 +33,27 @@ type ChannelStatus struct {
 	BaseURLGemini string            `json:"base_url_gemini,omitempty"`
 	KeyCount      int               `json:"key_count"`
 	MaskedKeys    []string          `json:"masked_keys"`
+	KeyStats      []KeyStatus       `json:"key_stats"`
 	Models        []string          `json:"models"`
 	ModelMapping  map[string]string `json:"model_mapping"`
 	Priority      int               `json:"priority"`
 	Weight        int               `json:"weight"`
 	Enabled       bool              `json:"enabled"`
 	Healthy       bool              `json:"healthy"`
+}
+
+type KeyStatus struct {
+	Index              int    `json:"index"`
+	MaskedKey          string `json:"masked_key"`
+	TotalRequests      int64  `json:"total_requests"`
+	SuccessRequests    int64  `json:"success_requests"`
+	FailureRequests    int64  `json:"failure_requests"`
+	ConsecutiveFailure int64  `json:"consecutive_failure"`
+	LastStatus         int    `json:"last_status"`
+	LastError          string `json:"last_error,omitempty"`
+	LastUsedAt         string `json:"last_used_at,omitempty"`
+	LastLatencyMs      int64  `json:"last_latency_ms"`
+	Healthy            bool   `json:"healthy"`
 }
 
 // ListChannels returns all configured channels and their status.
@@ -53,6 +69,7 @@ func (h *Admin) ListChannels(c *gin.Context) {
 			BaseURLGemini: ch.BaseURLGemini,
 			KeyCount:      len(ch.Keys),
 			MaskedKeys:    maskKeys(ch.Keys),
+			KeyStats:      buildKeyStatus(ch.GetKeyStats()),
 			Models:        ch.Models,
 			ModelMapping:  ch.ModelMapping,
 			Priority:      ch.Priority,
@@ -65,6 +82,26 @@ func (h *Admin) ListChannels(c *gin.Context) {
 		"channels": result,
 		"total":    len(result),
 	})
+}
+
+func buildKeyStatus(stats []model.KeyStats) []KeyStatus {
+	result := make([]KeyStatus, 0, len(stats))
+	for _, stat := range stats {
+		result = append(result, KeyStatus{
+			Index:              stat.Index,
+			MaskedKey:          stat.MaskedKey,
+			TotalRequests:      stat.TotalRequests,
+			SuccessRequests:    stat.SuccessRequests,
+			FailureRequests:    stat.FailureRequests,
+			ConsecutiveFailure: stat.ConsecutiveFailure,
+			LastStatus:         stat.LastStatus,
+			LastError:          stat.LastError,
+			LastUsedAt:         stat.LastUsedAt,
+			LastLatencyMs:      stat.LastLatencyMs,
+			Healthy:            stat.ConsecutiveFailure < 3,
+		})
+	}
+	return result
 }
 
 // CreateChannel adds a new channel.

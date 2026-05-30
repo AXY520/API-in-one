@@ -376,7 +376,12 @@ function renderChannels(channels) {
   for (const ch of channels) {
     const sc = ch.healthy ? 'badge-green' : 'badge-red';
     const st = ch.healthy ? '正常' : '异常';
-    const keys = (ch.masked_keys||[]).map(k => `<span class="key-display">${esc(k)}</span>`).join(' ');
+    const keyStats = ch.key_stats || [];
+    const keys = keyStats.length ? keyStats.map(k => {
+      const cls = k.healthy ? 'badge-green' : 'badge-red';
+      const status = k.last_status ? ` · ${k.last_status}` : '';
+      return `<div style="margin-bottom:4px"><span class="key-display">${esc(k.masked_key)}</span> <span class="badge ${cls}">${k.healthy?'健康':'异常'}</span><br><span style="font-size:11px;color:var(--text2)">成功 ${k.success_requests||0} / 失败 ${k.failure_requests||0}${status}${k.last_latency_ms?` · ${k.last_latency_ms}ms`:''}</span></div>`;
+    }).join('') : (ch.masked_keys||[]).map(k => `<span class="key-display">${esc(k)}</span>`).join(' ');
     // Models + mapping
     const models = (ch.models||[]).map(m => `<span class="tag">${esc(m)}</span>`).join(' ');
     let mappingHtml = '';
@@ -648,19 +653,28 @@ function renderLogs(logs) {
     document.getElementById('logs-table').innerHTML = '<div class="empty">暂无请求记录</div>';
     return;
   }
-  let html = '<table><thead><tr><th>时间</th><th>协议</th><th>模型</th><th>状态</th><th>耗时</th><th>错误</th></tr></thead><tbody>';
+  let html = '<table><thead><tr><th>时间</th><th>协议</th><th>模型</th><th>Channel / Key</th><th>状态</th><th>耗时</th><th>尝试</th><th>错误</th></tr></thead><tbody>';
   for (const l of logs) {
     const ok = l.status >= 200 && l.status < 400;
     const statusHtml = ok
       ? `<span class="log-status ok"></span>${l.status}`
       : `<span class="log-status err"></span>${l.status || 'ERR'}`;
     const proto = {'openai':'OpenAI','claude-inbound':'Claude','gemini-inbound':'Gemini'}[l.protocol] || l.protocol;
+    const attempts = l.attempts || [];
+    const lastAttempt = attempts.length ? attempts[attempts.length - 1] : null;
+    const channelKey = `${esc(l.channel || (lastAttempt && lastAttempt.channel) || '-')}${lastAttempt ? `<br><span class="key-display">${esc(lastAttempt.masked_key || '-')}</span>` : ''}`;
+    const attemptHtml = attempts.length ? attempts.map(a => {
+      const aok = a.status >= 200 && a.status < 400;
+      return `<span class="badge ${aok?'badge-green':'badge-red'}">${esc(a.channel)} #${a.key_index} ${a.status||'ERR'}</span>`;
+    }).join(' ') : '-';
     html += `<tr>
       <td style="font-size:12px;color:var(--text2)">${esc(l.timestamp)}</td>
       <td><span class="badge badge-blue">${proto}</span></td>
-      <td><span class="tag">${esc(l.model)}</span></td>
+      <td><span class="tag">${esc(l.model)}</span>${l.resolved_model && l.resolved_model !== l.model ? `<br><span style="font-size:11px;color:var(--text2)">→ ${esc(l.resolved_model)}</span>` : ''}</td>
+      <td>${channelKey}</td>
       <td>${statusHtml}</td>
       <td>${l.duration}ms</td>
+      <td style="max-width:260px">${attemptHtml}</td>
       <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--red);font-size:12px">${esc(l.error||'-')}</td>
     </tr>`;
   }

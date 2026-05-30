@@ -3,6 +3,7 @@ package model
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Channel represents a configured upstream API provider.
@@ -18,10 +19,24 @@ type Channel struct {
 	Priority      int
 	Weight        int
 	Enabled       bool
+	KeyStats      []KeyStats
 
 	keyIndex  atomic.Uint64
 	failCount atomic.Int32
 	mu        sync.Mutex
+}
+
+type KeyStats struct {
+	Index              int
+	MaskedKey          string
+	TotalRequests      int64
+	SuccessRequests    int64
+	FailureRequests    int64
+	ConsecutiveFailure int64
+	LastStatus         int
+	LastError          string
+	LastUsedAt         string
+	LastLatencyMs      int64
 }
 
 // NewChannel creates a Channel from config.
@@ -29,7 +44,7 @@ func NewChannel(name, typ, baseURL, baseURLClaude, baseURLGemini string, keys, m
 	if modelMapping == nil {
 		modelMapping = make(map[string]string)
 	}
-	return &Channel{
+	ch := &Channel{
 		Name:          name,
 		Type:          typ,
 		BaseURL:       baseURL,
@@ -42,6 +57,8 @@ func NewChannel(name, typ, baseURL, baseURLClaude, baseURLGemini string, keys, m
 		Weight:        weight,
 		Enabled:       true,
 	}
+	ch.initKeyStats()
+	return ch
 }
 
 // NextKey returns the next API key using round-robin.
@@ -49,8 +66,34 @@ func (c *Channel) NextKey() string {
 	if len(c.Keys) == 0 {
 		return ""
 	}
+	for i := 0; i < len(c.Keys); i++ {
+		idx := c.keyIndex.Add(1)
+		keyIdx := int((idx - 1) % uint64(len(c.Keys)))
+		if c.IsKeyHealthy(keyIdx) {
+			return c.Keys[keyIdx]
+		}
+	}
 	idx := c.keyIndex.Add(1)
 	return c.Keys[(idx-1)%uint64(len(c.Keys))]
+}
+
+func (c *Channel) KeyIndex(key string) int {
+	for i, k := range c.Keys {
+		if k == key {
+			return i
+		}
+	}
+	return -1
+}
+
+func (c *Channel) IsKeyHealthy(index int) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureKeyStatsLocked()
+	if index < 0 || index >= len(c.KeyStats) {
+		return false
+	}
+	return c.KeyStats[index].ConsecutiveFailure < 3
 }
 
 // RecordSuccess resets the failure count.
@@ -61,6 +104,41 @@ func (c *Channel) RecordSuccess() {
 // RecordFailure increments the failure count.
 func (c *Channel) RecordFailure() {
 	c.failCount.Add(1)
+}
+
+func (c *Channel) RecordKeyResult(key string, status int, latency time.Duration, err error) {
+	idx := c.KeyIndex(key)
+	if idx < 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureKeyStatsLocked()
+	ks := &c.KeyStats[idx]
+	ks.TotalRequests++
+	ks.LastStatus = status
+	ks.LastUsedAt = time.Now().Format("2006-01-02 15:04:05")
+	ks.LastLatencyMs = latency.Milliseconds()
+	if err != nil || status < 200 || status >= 400 {
+		ks.FailureRequests++
+		ks.ConsecutiveFailure++
+		if err != nil {
+			ks.LastError = err.Error()
+		}
+	} else {
+		ks.SuccessRequests++
+		ks.ConsecutiveFailure = 0
+		ks.LastError = ""
+	}
+}
+
+func (c *Channel) GetKeyStats() []KeyStats {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureKeyStatsLocked()
+	result := make([]KeyStats, len(c.KeyStats))
+	copy(result, c.KeyStats)
+	return result
 }
 
 // ResetHealth resets the failure count to zero.
@@ -115,4 +193,39 @@ func (c *Channel) GetBaseURL(protocol string) string {
 		}
 	}
 	return c.BaseURL
+}
+
+func (c *Channel) initKeyStats() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureKeyStatsLocked()
+}
+
+func (c *Channel) ensureKeyStatsLocked() {
+	if len(c.KeyStats) == len(c.Keys) {
+		for i := range c.KeyStats {
+			c.KeyStats[i].Index = i
+			c.KeyStats[i].MaskedKey = maskKey(c.Keys[i])
+		}
+		return
+	}
+	oldByKey := make(map[string]KeyStats)
+	for _, stat := range c.KeyStats {
+		oldByKey[stat.MaskedKey] = stat
+	}
+	c.KeyStats = make([]KeyStats, len(c.Keys))
+	for i, key := range c.Keys {
+		masked := maskKey(key)
+		stat := oldByKey[masked]
+		stat.Index = i
+		stat.MaskedKey = masked
+		c.KeyStats[i] = stat
+	}
+}
+
+func maskKey(key string) string {
+	if len(key) <= 8 {
+		return "****"
+	}
+	return key[:4] + "****" + key[len(key)-4:]
 }

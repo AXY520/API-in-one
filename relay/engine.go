@@ -44,6 +44,40 @@ type RelayResult struct {
 	IsStream bool
 	Channel  string
 	Model    string
+	Attempts []AttemptLog
+}
+
+type AttemptLog struct {
+	Attempt     int    `json:"attempt"`
+	Channel     string `json:"channel"`
+	KeyIndex    int    `json:"key_index"`
+	MaskedKey   string `json:"masked_key"`
+	Model       string `json:"model"`
+	Status      int    `json:"status"`
+	DurationMs  int64  `json:"duration_ms"`
+	Error       string `json:"error,omitempty"`
+	Retryable   bool   `json:"retryable"`
+	Protocol    string `json:"protocol"`
+	AdaptorName string `json:"adaptor"`
+}
+
+type RelayError struct {
+	Err      error
+	Attempts []AttemptLog
+}
+
+func (e *RelayError) Error() string {
+	if e == nil || e.Err == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+func (e *RelayError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 // Do executes a chat completion request with automatic retry and failover.
@@ -51,6 +85,7 @@ type RelayResult struct {
 // and is used to select the appropriate base URL when a channel has multiple endpoints.
 func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, protocol string) (*RelayResult, error) {
 	var lastErr error
+	var attempts []AttemptLog
 
 	for attempt := 0; attempt < e.maxRetries; attempt++ {
 		ch, resolvedModel, err := e.pool.SelectChannel(req.Model)
@@ -64,6 +99,14 @@ func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, proto
 		key := ch.NextKey()
 		if key == "" {
 			lastErr = fmt.Errorf("channel %s: no key available", ch.Name)
+			attempts = append(attempts, AttemptLog{
+				Attempt:  attempt + 1,
+				Channel:  ch.Name,
+				Model:    resolvedModel,
+				Status:   0,
+				Error:    lastErr.Error(),
+				Protocol: protocol,
+			})
 			continue
 		}
 
@@ -92,7 +135,24 @@ func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, proto
 			"stream", req.Stream,
 		)
 
+		attemptStart := time.Now()
 		result, status, err := e.doRequest(ctx, ad, ch, key, &reqCopy, protocol)
+		attemptDuration := time.Since(attemptStart)
+		ch.RecordKeyResult(key, status, attemptDuration, err)
+		attemptLog := AttemptLog{
+			Attempt:     attempt + 1,
+			Channel:     ch.Name,
+			KeyIndex:    ch.KeyIndex(key),
+			MaskedKey:   maskKey(key),
+			Model:       resolvedModel,
+			Status:      status,
+			DurationMs:  attemptDuration.Milliseconds(),
+			Error:       errStr(err),
+			Retryable:   isRetryableStatus(status),
+			Protocol:    protocol,
+			AdaptorName: ad.Name(),
+		}
+		attempts = append(attempts, attemptLog)
 		if err != nil {
 			if status == 0 || status >= 500 {
 				ch.RecordFailure()
@@ -119,10 +179,14 @@ func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, proto
 		ch.RecordSuccess()
 		result.Channel = ch.Name
 		result.Model = resolvedModel
+		result.Attempts = attempts
 		return result, nil
 	}
 
-	return nil, fmt.Errorf("%w: %v", ErrAllRetriesFailed, lastErr)
+	return nil, &RelayError{
+		Err:      fmt.Errorf("%w: %v", ErrAllRetriesFailed, lastErr),
+		Attempts: attempts,
+	}
 }
 
 func (e *Engine) doRequest(ctx context.Context, ad adaptor.Adaptor, ch *model.Channel, key string, req *model.ChatCompletionRequest, protocol string) (*RelayResult, int, error) {
@@ -275,6 +339,20 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+func errStr(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func maskKey(key string) string {
+	if len(key) <= 8 {
+		return "****"
+	}
+	return key[:4] + "****" + key[len(key)-4:]
 }
 
 // isRetryableStatus returns true for rate limits and transient gateway errors.

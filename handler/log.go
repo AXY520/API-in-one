@@ -1,28 +1,33 @@
 package handler
 
 import (
+	"api-in-one/relay"
 	"sync"
 	"time"
 )
 
 // RequestLog represents a single API request log entry.
 type RequestLog struct {
-	ID        int64  `json:"id"`
-	Protocol  string `json:"protocol"`   // openai | claude-inbound | gemini-inbound
-	Model     string `json:"model"`
-	Status    int    `json:"status"`     // HTTP status code
-	Duration  int64  `json:"duration"`   // milliseconds
-	Error     string `json:"error,omitempty"`
-	Timestamp string `json:"timestamp"`
+	ID            int64              `json:"id"`
+	Protocol      string             `json:"protocol"` // openai | claude-inbound | gemini-inbound
+	Model         string             `json:"model"`
+	ResolvedModel string             `json:"resolved_model,omitempty"`
+	Channel       string             `json:"channel,omitempty"`
+	Status        int                `json:"status"`   // HTTP status code
+	Duration      int64              `json:"duration"` // milliseconds
+	Stream        bool               `json:"stream"`
+	Error         string             `json:"error,omitempty"`
+	Attempts      []relay.AttemptLog `json:"attempts,omitempty"`
+	Timestamp     string             `json:"timestamp"`
 }
 
 // LogStore is a ring buffer for request logs.
 type LogStore struct {
-	mu      sync.RWMutex
-	logs    []RequestLog
-	cap     int
-	nextID  int64
-	total   int64
+	mu     sync.RWMutex
+	logs   []RequestLog
+	cap    int
+	nextID int64
+	total  int64
 }
 
 var globalLogStore = &LogStore{
@@ -31,13 +36,30 @@ var globalLogStore = &LogStore{
 }
 
 func logRequest(protocol, model string, status int, duration time.Duration, err error) {
+	logRequestDetail(RequestLog{
+		Protocol: protocol,
+		Model:    model,
+		Status:   status,
+		Duration: duration.Milliseconds(),
+		Error:    errStr(err),
+	})
+}
+
+func logRequestDetail(entry RequestLog) {
+	if entry.Timestamp == "" {
+		entry.Timestamp = time.Now().Format("2006-01-02 15:04:05")
+	}
 	globalLogStore.add(RequestLog{
-		Protocol:  protocol,
-		Model:     model,
-		Status:    status,
-		Duration:  duration.Milliseconds(),
-		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
-		Error:     errStr(err),
+		Protocol:      entry.Protocol,
+		Model:         entry.Model,
+		ResolvedModel: entry.ResolvedModel,
+		Channel:       entry.Channel,
+		Status:        entry.Status,
+		Duration:      entry.Duration,
+		Stream:        entry.Stream,
+		Error:         entry.Error,
+		Attempts:      entry.Attempts,
+		Timestamp:     entry.Timestamp,
 	})
 }
 

@@ -3,6 +3,7 @@ package handler
 import (
 	"api-in-one/model"
 	"api-in-one/relay"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -59,8 +60,17 @@ func (h *Relay) ChatCompletions(c *gin.Context) {
 	start := time.Now()
 	result, err := h.engine.Do(c.Request.Context(), &req, "openai")
 	if err != nil {
+		attempts := attemptsFromError(err)
 		slog.Error("relay failed", "model", req.Model, "error", err, "took", time.Since(start))
-		logRequest("openai", req.Model, 502, time.Since(start), err)
+		logRequestDetail(RequestLog{
+			Protocol: "openai",
+			Model:    req.Model,
+			Status:   502,
+			Duration: time.Since(start).Milliseconds(),
+			Stream:   req.Stream,
+			Error:    err.Error(),
+			Attempts: attempts,
+		})
 		c.JSON(http.StatusBadGateway, model.ErrorResponse{
 			Error: model.Error{
 				Message: fmt.Sprintf("relay error: %v", err),
@@ -77,7 +87,16 @@ func (h *Relay) ChatCompletions(c *gin.Context) {
 		"stream", req.Stream,
 		"took", time.Since(start),
 	)
-	logRequest("openai", req.Model, 200, time.Since(start), nil)
+	logRequestDetail(RequestLog{
+		Protocol:      "openai",
+		Model:         req.Model,
+		ResolvedModel: result.Model,
+		Channel:       result.Channel,
+		Status:        200,
+		Duration:      time.Since(start).Milliseconds(),
+		Stream:        req.Stream,
+		Attempts:      result.Attempts,
+	})
 
 	if result.IsStream {
 		h.handleStream(c, result)
@@ -85,6 +104,14 @@ func (h *Relay) ChatCompletions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result.Response)
+}
+
+func attemptsFromError(err error) []relay.AttemptLog {
+	var relayErr *relay.RelayError
+	if errors.As(err, &relayErr) {
+		return relayErr.Attempts
+	}
+	return nil
 }
 
 func (h *Relay) handleStream(c *gin.Context, result *relay.RelayResult) {
