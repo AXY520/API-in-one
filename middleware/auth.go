@@ -30,6 +30,8 @@ func Auth() gin.HandlerFunc {
 		// Admin key → full access
 		if adminKey := config.GetAdminKey(); adminKey != "" && token == adminKey {
 			c.Set("is_admin", true)
+			c.Set("api_key", token)
+			c.Set("api_key_masked", maskKey(token))
 			c.Next()
 			return
 		}
@@ -38,6 +40,8 @@ func Auth() gin.HandlerFunc {
 		for _, key := range config.GetAccessKeys() {
 			if key != "" && token == key {
 				c.Set("is_admin", false)
+				c.Set("api_key", token)
+				c.Set("api_key_masked", maskKey(token))
 				c.Next()
 				return
 			}
@@ -47,6 +51,13 @@ func Auth() gin.HandlerFunc {
 			"error": gin.H{"message": "invalid API key", "type": "auth_error"},
 		})
 	}
+}
+
+func maskKey(key string) string {
+	if len(key) <= 8 {
+		return "****"
+	}
+	return key[:4] + "****" + key[len(key)-4:]
 }
 
 // AdminRequired requires admin privileges. Use after Auth().

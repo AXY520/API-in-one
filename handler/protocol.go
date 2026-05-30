@@ -4,6 +4,7 @@ import (
 	"api-in-one/model"
 	"api-in-one/relay"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,12 +27,26 @@ func NewProtocol(engine *relay.Engine) *Protocol {
 
 // ClaudeMessages handles POST /v1/messages (Claude format inbound)
 func (h *Protocol) ClaudeMessages(c *gin.Context) {
+	rawBody, readErr := io.ReadAll(c.Request.Body)
+	if readErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": map[string]interface{}{
+			"message": "invalid request: " + readErr.Error(),
+			"type":    "invalid_request_error",
+		}})
+		return
+	}
 	var claudeReq claudeInboundRequest
-	if err := c.ShouldBindJSON(&claudeReq); err != nil {
+	if err := json.Unmarshal(rawBody, &claudeReq); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": map[string]interface{}{
 			"message": "invalid request: " + err.Error(),
 			"type":    "invalid_request_error",
 		}})
+		return
+	}
+
+	if rawResult, ok := h.tryClaudePassthrough(c, &claudeReq, rawBody); ok {
+		relayHandler := Relay{engine: h.engine}
+		relayHandler.writeRawResponse(c, rawResult.Response)
 		return
 	}
 
@@ -46,26 +61,32 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 			"type":    "upstream_error",
 		}})
 		logRequestDetail(RequestLog{
-			Protocol: "claude-inbound",
-			Model:    claudeReq.Model,
-			Status:   502,
-			Duration: time.Since(start).Milliseconds(),
-			Stream:   claudeReq.Stream,
-			Error:    err.Error(),
-			Attempts: attemptsFromError(err),
+			Protocol:        "claude-inbound",
+			Model:           claudeReq.Model,
+			Status:          502,
+			Duration:        time.Since(start).Milliseconds(),
+			Stream:          claudeReq.Stream,
+			Error:           err.Error(),
+			Attempts:        attemptsFromError(err),
+			Request:         claudeReq,
+			UpstreamRequest: oaiReq,
+			AccessKey:       requestAccessKey(c),
 		})
 		return
 	}
 
 	logRequestDetail(RequestLog{
-		Protocol:      "claude-inbound",
-		Model:         claudeReq.Model,
-		ResolvedModel: result.Model,
-		Channel:       result.Channel,
-		Status:        200,
-		Duration:      time.Since(start).Milliseconds(),
-		Stream:        claudeReq.Stream,
-		Attempts:      result.Attempts,
+		Protocol:        "claude-inbound",
+		Model:           claudeReq.Model,
+		ResolvedModel:   result.Model,
+		Channel:         result.Channel,
+		Status:          200,
+		Duration:        time.Since(start).Milliseconds(),
+		Stream:          claudeReq.Stream,
+		Attempts:        result.Attempts,
+		Request:         claudeReq,
+		UpstreamRequest: oaiReq,
+		AccessKey:       requestAccessKey(c),
 	})
 
 	// Clean up fake tool calls from response text (model may generate
@@ -82,6 +103,45 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 	// Convert OpenAI response → Claude response
 	claudeResp := openAIToClaude(result.Response)
 	c.JSON(http.StatusOK, claudeResp)
+}
+
+func (h *Protocol) tryClaudePassthrough(c *gin.Context, claudeReq *claudeInboundRequest, rawBody []byte) (*relay.RawRelayResult, bool) {
+	start := time.Now()
+	result, err := h.engine.DoRaw(c.Request.Context(), "claude", claudeReq.Model, claudeReq.Stream, rawBody, c.Request.Header)
+	if err != nil {
+		if errors.Is(err, relay.ErrNoAvailableChannel) {
+			return nil, false
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": map[string]interface{}{
+			"message": fmt.Sprintf("relay error: %v", err),
+			"type":    "upstream_error",
+		}})
+		logRequestDetail(RequestLog{
+			Protocol:  "claude-inbound",
+			Model:     claudeReq.Model,
+			Status:    502,
+			Duration:  time.Since(start).Milliseconds(),
+			Stream:    claudeReq.Stream,
+			Error:     err.Error(),
+			Attempts:  attemptsFromError(err),
+			Request:   claudeReq,
+			AccessKey: requestAccessKey(c),
+		})
+		return nil, true
+	}
+	logRequestDetail(RequestLog{
+		Protocol:      "claude-inbound",
+		Model:         claudeReq.Model,
+		ResolvedModel: result.Model,
+		Channel:       result.Channel,
+		Status:        result.Response.StatusCode,
+		Duration:      time.Since(start).Milliseconds(),
+		Stream:        claudeReq.Stream,
+		Attempts:      result.Attempts,
+		Request:       claudeReq,
+		AccessKey:     requestAccessKey(c),
+	})
+	return result, true
 }
 
 func (h *Protocol) handleClaudeStream(c *gin.Context, result *relay.RelayResult) {
@@ -302,26 +362,32 @@ func (h *Protocol) GeminiGenerate(c *gin.Context) {
 			"message": fmt.Sprintf("relay error: %v", err),
 		}})
 		logRequestDetail(RequestLog{
-			Protocol: "gemini-inbound",
-			Model:    modelName,
-			Status:   502,
-			Duration: time.Since(start).Milliseconds(),
-			Stream:   strings.Contains(c.Request.URL.Path, "streamGenerateContent"),
-			Error:    err.Error(),
-			Attempts: attemptsFromError(err),
+			Protocol:        "gemini-inbound",
+			Model:           modelName,
+			Status:          502,
+			Duration:        time.Since(start).Milliseconds(),
+			Stream:          strings.Contains(c.Request.URL.Path, "streamGenerateContent"),
+			Error:           err.Error(),
+			Attempts:        attemptsFromError(err),
+			Request:         geminiReq,
+			UpstreamRequest: oaiReq,
+			AccessKey:       requestAccessKey(c),
 		})
 		return
 	}
 
 	logRequestDetail(RequestLog{
-		Protocol:      "gemini-inbound",
-		Model:         modelName,
-		ResolvedModel: result.Model,
-		Channel:       result.Channel,
-		Status:        200,
-		Duration:      time.Since(start).Milliseconds(),
-		Stream:        strings.Contains(c.Request.URL.Path, "streamGenerateContent"),
-		Attempts:      result.Attempts,
+		Protocol:        "gemini-inbound",
+		Model:           modelName,
+		ResolvedModel:   result.Model,
+		Channel:         result.Channel,
+		Status:          200,
+		Duration:        time.Since(start).Milliseconds(),
+		Stream:          strings.Contains(c.Request.URL.Path, "streamGenerateContent"),
+		Attempts:        result.Attempts,
+		Request:         geminiReq,
+		UpstreamRequest: oaiReq,
+		AccessKey:       requestAccessKey(c),
 	})
 
 	isStream := strings.Contains(c.Request.URL.Path, "streamGenerateContent")
@@ -855,13 +921,16 @@ func (h *Protocol) Responses(c *gin.Context) {
 	result, err := h.engine.Do(c.Request.Context(), oaiReq, "responses")
 	if err != nil {
 		logRequestDetail(RequestLog{
-			Protocol: "responses",
-			Model:    req.Model,
-			Status:   502,
-			Duration: time.Since(start).Milliseconds(),
-			Stream:   req.Stream,
-			Error:    err.Error(),
-			Attempts: attemptsFromError(err),
+			Protocol:        "responses",
+			Model:           req.Model,
+			Status:          502,
+			Duration:        time.Since(start).Milliseconds(),
+			Stream:          req.Stream,
+			Error:           err.Error(),
+			Attempts:        attemptsFromError(err),
+			Request:         req,
+			UpstreamRequest: oaiReq,
+			AccessKey:       requestAccessKey(c),
 		})
 		c.JSON(http.StatusBadGateway, gin.H{"error": map[string]interface{}{
 			"message": fmt.Sprintf("relay error: %v", err),
@@ -871,14 +940,17 @@ func (h *Protocol) Responses(c *gin.Context) {
 	}
 
 	logRequestDetail(RequestLog{
-		Protocol:      "responses",
-		Model:         req.Model,
-		ResolvedModel: result.Model,
-		Channel:       result.Channel,
-		Status:        200,
-		Duration:      time.Since(start).Milliseconds(),
-		Stream:        req.Stream,
-		Attempts:      result.Attempts,
+		Protocol:        "responses",
+		Model:           req.Model,
+		ResolvedModel:   result.Model,
+		Channel:         result.Channel,
+		Status:          200,
+		Duration:        time.Since(start).Milliseconds(),
+		Stream:          req.Stream,
+		Attempts:        result.Attempts,
+		Request:         req,
+		UpstreamRequest: oaiReq,
+		AccessKey:       requestAccessKey(c),
 	})
 
 	if req.Stream {

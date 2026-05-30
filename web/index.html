@@ -126,6 +126,15 @@
   .log-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
   .log-status.ok { background: var(--green); }
   .log-status.err { background: var(--red); }
+  .filters { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .filters input, .filters select { padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font-size: 13px; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .json-box { background: #0d1117; color: #e6edf3; border-radius: 6px; padding: 12px; max-height: 360px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+  .key-list { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-top: 10px; }
+  .key-row { display: grid; grid-template-columns: 44px 1fr 110px 120px 190px; gap: 8px; align-items: center; padding: 9px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .key-row:last-child { border-bottom: none; }
+  .key-row.header { background: var(--bg); color: var(--text2); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+  .key-secret { font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 12px; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -159,19 +168,39 @@
     </div>
 
     <div id="tab-stats" style="display:none">
-      <div class="toolbar">
-        <button class="btn" onclick="loadStats()">↻ 刷新</button>
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2)">
-          <input type="checkbox" id="auto-refresh" onchange="toggleAutoRefresh()"> 自动刷新
-        </label>
-      </div>
       <div id="stats-cards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px"></div>
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <h3 style="font-size:15px;margin:0">请求日志</h3>
           <span style="font-size:12px;color:var(--text2)" id="log-count"></span>
         </div>
+        <div class="filters">
+          <select id="log-filter-protocol" onchange="resetLogPageAndLoad()">
+            <option value="">全部协议</option>
+            <option value="openai">OpenAI</option>
+            <option value="claude-inbound">Claude</option>
+            <option value="gemini-inbound">Gemini</option>
+            <option value="responses">Responses</option>
+          </select>
+          <input id="log-filter-model" placeholder="模型" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
+          <input id="log-filter-channel" placeholder="Channel" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
+          <input id="log-filter-access-key" placeholder="请求密钥" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
+          <select id="log-filter-status" onchange="resetLogPageAndLoad()">
+            <option value="">全部状态</option>
+            <option value="success">成功</option>
+            <option value="error">失败</option>
+            <option value="429">429</option>
+            <option value="500">500</option>
+            <option value="502">502</option>
+          </select>
+          <input id="log-filter-q" placeholder="搜索 ID / 错误" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
+        </div>
         <div id="logs-table"></div>
+        <div class="toolbar" style="justify-content:flex-end;margin-top:12px;margin-bottom:0">
+          <button class="btn btn-sm" onclick="changeLogPage(-1)">上一页</button>
+          <span style="font-size:12px;color:var(--text2)" id="log-page-info"></span>
+          <button class="btn btn-sm" onclick="changeLogPage(1)">下一页</button>
+        </div>
       </div>
     </div>
 
@@ -301,23 +330,56 @@
   </div>
 </div>
 
+<!-- Key Manager Modal -->
+<div class="modal-overlay" id="key-modal">
+  <div class="modal" style="width:900px">
+    <h3 id="key-modal-title">Key 管理</h3>
+    <input type="hidden" id="key-channel-name" value="">
+    <div id="key-list"></div>
+    <div class="section" style="margin-top:16px">
+      <div class="section-title">批量替换</div>
+      <textarea id="key-editor" placeholder="每行一个 Key" style="min-height:110px;width:100%;font-family:'SF Mono','Cascadia Code',monospace"></textarea>
+      <div class="hint">保存会全量替换该 Channel 的上游 Key；空内容不会保存。</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('key-modal')">关闭</button>
+      <button class="btn" onclick="probeKeys()">探活</button>
+      <button class="btn btn-primary" onclick="saveChannelKeys()">保存 Key</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log Detail Modal -->
+<div class="modal-overlay" id="log-modal">
+  <div class="modal" style="width:960px">
+    <h3 id="log-modal-title">请求详情</h3>
+    <div id="log-detail"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('log-modal')">关闭</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let API_KEY = '';
 let currentModels = []; // models currently in the models input (upstream ids)
 let fetchedMapping = {}; // alias → upstream id from edit
+let activeKeyChannel = null;
+let activeKeyRows = [];
 
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-channels').style.display = 'none';
   document.getElementById('tab-stats').style.display = 'none';
   document.getElementById('tab-settings').style.display = 'none';
+  stopStatsAutoRefresh();
   if (tab === 'channels') {
     document.getElementById('tab-channels').style.display = 'block';
     document.querySelectorAll('.nav-item')[0].classList.add('active');
   } else if (tab === 'stats') {
     document.getElementById('tab-stats').style.display = 'block';
     document.querySelectorAll('.nav-item')[1].classList.add('active');
-    loadStats();
+    startStatsAutoRefresh();
   } else {
     document.getElementById('tab-settings').style.display = 'block';
     document.querySelectorAll('.nav-item')[2].classList.add('active');
@@ -400,6 +462,7 @@ function renderChannels(channels) {
       <td>${ch.priority}</td>
       <td><span class="badge ${sc}">${st}</span></td>
       <td><div class="action-btns">
+        <button class="btn btn-sm" onclick='openKeyManager(${JSON.stringify(ch)})'>Keys</button>
         <button class="btn btn-sm" onclick='openEditChannel(${JSON.stringify(ch)})'>编辑</button>
         <button class="btn btn-sm btn-danger" onclick="deleteChannel('${esc(ch.name)}')">删除</button>
       </div></td>
@@ -407,6 +470,91 @@ function renderChannels(channels) {
   }
   html += '</tbody></table>';
   document.getElementById('channels-table').innerHTML = html;
+}
+
+async function openKeyManager(ch) {
+  activeKeyChannel = ch;
+  document.getElementById('key-channel-name').value = ch.name;
+  document.getElementById('key-modal-title').textContent = 'Key 管理 — ' + ch.name;
+  document.getElementById('key-list').innerHTML = '<div class="empty">加载中...</div>';
+  document.getElementById('key-editor').value = '';
+  document.getElementById('key-modal').classList.add('active');
+  try {
+    const data = await api('/admin/channels/'+encodeURIComponent(ch.name)+'/keys');
+    activeKeyRows = (data.keys || []).map((key, index) => {
+      const stat = (ch.key_stats || []).find(s => s.index === index) || {};
+      return { index, key, masked_key: (data.masked_keys || [])[index] || maskKeyLocal(key), disabled: !!stat.disabled, stat };
+    });
+    document.getElementById('key-editor').value = (data.keys || []).join('\n');
+    renderKeyRows();
+  } catch(e) {
+    document.getElementById('key-list').innerHTML = '<div class="empty">读取 Key 失败</div>';
+    toast('读取 Key 失败: '+e.message, true);
+  }
+}
+
+function renderKeyRows(probeResults = null) {
+  const probeByIndex = {};
+  (probeResults || []).forEach(r => probeByIndex[r.index] = r);
+  if (!activeKeyRows.length) {
+    document.getElementById('key-list').innerHTML = '<div class="empty">暂无 Key</div>';
+    return;
+  }
+  let html = '<div class="key-list"><div class="key-row header"><div>#</div><div>Key</div><div>状态</div><div>统计</div><div>操作</div></div>';
+  for (const row of activeKeyRows) {
+    const stat = row.stat || {};
+    const probe = probeByIndex[row.index];
+    const health = row.disabled ? '<span class="badge badge-gray">已禁用</span>' : (stat.healthy === false ? '<span class="badge badge-red">异常</span>' : '<span class="badge badge-green">启用</span>');
+    const probeHtml = probe ? `<br><span style="font-size:11px;color:${probe.ok?'var(--green)':'var(--red)'}">探活 ${probe.status || 'ERR'} · ${probe.latency_ms || 0}ms</span>` : '';
+    html += `<div class="key-row">
+      <div>${row.index}</div>
+      <div class="key-secret">${esc(row.key)}</div>
+      <div>${health}${probeHtml}</div>
+      <div><span style="font-size:12px;color:var(--text2)">成功 ${stat.success_requests||0}<br>失败 ${stat.failure_requests||0}</span></div>
+      <div class="action-btns">
+        <button class="btn btn-sm" onclick="setKeyDisabled(${row.index}, ${!row.disabled})">${row.disabled ? '启用' : '禁用'}</button>
+        <button class="btn btn-sm" onclick="probeKeys(${row.index})">探活</button>
+      </div>
+    </div>`;
+  }
+  html += '</div>';
+  document.getElementById('key-list').innerHTML = html;
+}
+
+async function setKeyDisabled(index, disabled) {
+  const name = document.getElementById('key-channel-name').value;
+  try {
+    await api('/admin/channels/'+encodeURIComponent(name)+'/keys/'+index+'/state', { method:'PUT', body:JSON.stringify({disabled}) });
+    const row = activeKeyRows.find(r => r.index === index);
+    if (row) row.disabled = disabled;
+    renderKeyRows();
+    toast(disabled ? 'Key 已禁用' : 'Key 已启用');
+    loadData();
+  } catch(e) { toast('更新 Key 状态失败: '+e.message, true); }
+}
+
+async function probeKeys(index = null) {
+  const name = document.getElementById('key-channel-name').value;
+  let path = '/admin/channels/'+encodeURIComponent(name)+'/probe';
+  if (index !== null) path += '?index=' + index;
+  try {
+    const data = await api(path, { method:'POST' });
+    renderKeyRows(data.results || []);
+    toast('探活完成');
+  } catch(e) { toast('探活失败: '+e.message, true); }
+}
+
+async function saveChannelKeys() {
+  const name = document.getElementById('key-channel-name').value;
+  const raw = document.getElementById('key-editor').value.trim();
+  if (!raw) { toast('Key 内容不能为空', true); return; }
+  if (!confirm('确定全量替换 "'+name+'" 的 Key？')) return;
+  try {
+    await api('/admin/channels/'+encodeURIComponent(name)+'/keys', { method:'PUT', body:JSON.stringify({keys: raw}) });
+    toast('Key 已保存');
+    closeModal('key-modal');
+    loadData();
+  } catch(e) { toast('保存 Key 失败: '+e.message, true); }
 }
 
 // ---- Channel Modal ----
@@ -622,16 +770,36 @@ async function deleteChannel(name) {
 // ---- Stats ----
 
 let autoRefreshTimer = null;
+let logPage = 1;
+let logLimit = 50;
+let logTotalPages = 1;
 
 async function loadStats() {
   try {
+    const params = new URLSearchParams({limit: String(logLimit), page: String(logPage)});
+    const protocol = document.getElementById('log-filter-protocol')?.value || '';
+    const model = document.getElementById('log-filter-model')?.value.trim() || '';
+    const channel = document.getElementById('log-filter-channel')?.value.trim() || '';
+    const accessKey = document.getElementById('log-filter-access-key')?.value.trim() || '';
+    const status = document.getElementById('log-filter-status')?.value || '';
+    const q = document.getElementById('log-filter-q')?.value.trim() || '';
+    if (protocol) params.set('protocol', protocol);
+    if (model) params.set('model', model);
+    if (channel) params.set('channel', channel);
+    if (accessKey) params.set('access_key', accessKey);
+    if (status) params.set('status', status);
+    if (q) params.set('q', q);
     const [stats, logs] = await Promise.all([
       api('/admin/stats'),
-      api('/admin/logs?limit=100')
+      api('/admin/logs?'+params.toString())
     ]);
     renderStats(stats);
     renderLogs(logs.logs || []);
-    document.getElementById('log-count').textContent = `共 ${logs.total || 0} 条记录`;
+    const filtered = logs.filtered_total ?? logs.total ?? 0;
+    logTotalPages = Math.max(1, Math.ceil(filtered / logLimit));
+    if (logPage > logTotalPages) logPage = logTotalPages;
+    document.getElementById('log-count').textContent = `共 ${logs.total || 0} 条记录，筛选 ${filtered} 条`;
+    document.getElementById('log-page-info').textContent = `第 ${logPage} / ${logTotalPages} 页`;
   } catch(e) {
     document.getElementById('stats-cards').innerHTML = '';
     document.getElementById('logs-table').innerHTML = '<div class="empty">需要 Admin Key 权限才能查看统计</div>';
@@ -653,7 +821,7 @@ function renderLogs(logs) {
     document.getElementById('logs-table').innerHTML = '<div class="empty">暂无请求记录</div>';
     return;
   }
-  let html = '<table><thead><tr><th>时间</th><th>协议</th><th>模型</th><th>Channel / Key</th><th>状态</th><th>耗时</th><th>尝试</th><th>错误</th></tr></thead><tbody>';
+  let html = '<table><thead><tr><th>时间</th><th>请求密钥</th><th>协议</th><th>模型</th><th>Channel / Key</th><th>状态</th><th>耗时</th><th>尝试</th><th>错误</th><th>操作</th></tr></thead><tbody>';
   for (const l of logs) {
     const ok = l.status >= 200 && l.status < 400;
     const statusHtml = ok
@@ -669,6 +837,7 @@ function renderLogs(logs) {
     }).join(' ') : '-';
     html += `<tr>
       <td style="font-size:12px;color:var(--text2)">${esc(l.timestamp)}</td>
+      <td><span class="key-display">${esc(l.access_key || '-')}</span></td>
       <td><span class="badge badge-blue">${proto}</span></td>
       <td><span class="tag">${esc(l.model)}</span>${l.resolved_model && l.resolved_model !== l.model ? `<br><span style="font-size:11px;color:var(--text2)">→ ${esc(l.resolved_model)}</span>` : ''}</td>
       <td>${channelKey}</td>
@@ -676,16 +845,78 @@ function renderLogs(logs) {
       <td>${l.duration}ms</td>
       <td style="max-width:260px">${attemptHtml}</td>
       <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--red);font-size:12px">${esc(l.error||'-')}</td>
+      <td><button class="btn btn-sm" onclick="openLogDetail(${l.id})">详情</button></td>
     </tr>`;
   }
   html += '</tbody></table>';
   document.getElementById('logs-table').innerHTML = html;
 }
 
-function toggleAutoRefresh() {
-  if (document.getElementById('auto-refresh').checked) {
+function changeLogPage(delta) {
+  const next = logPage + delta;
+  if (next < 1 || next > logTotalPages) return;
+  logPage = next;
+  loadStats();
+}
+
+function resetLogPageAndLoad() {
+  logPage = 1;
+  loadStats();
+}
+
+async function openLogDetail(id) {
+  document.getElementById('log-modal-title').textContent = '请求详情 #' + id;
+  document.getElementById('log-detail').innerHTML = '<div class="empty">加载中...</div>';
+  document.getElementById('log-modal').classList.add('active');
+  try {
+    const data = await api('/admin/logs/'+id);
+    renderLogDetail(data.log);
+  } catch(e) {
+    document.getElementById('log-detail').innerHTML = '<div class="empty">读取日志失败</div>';
+    toast('读取日志失败: '+e.message, true);
+  }
+}
+
+function renderLogDetail(l) {
+  const attempts = l.attempts || [];
+  const attemptRows = attempts.length ? attempts.map(a => `
+    <tr>
+      <td>${a.attempt}</td><td>${esc(a.channel)}</td><td>${a.key_index}</td>
+      <td><span class="key-display">${esc(a.masked_key || '-')}</span></td>
+      <td>${esc(a.model || '-')}</td><td>${a.status || 'ERR'}</td><td>${a.duration_ms || 0}ms</td>
+      <td style="color:var(--red);max-width:260px;word-break:break-word">${esc(a.error || '-')}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="8">无尝试记录</td></tr>';
+  document.getElementById('log-detail').innerHTML = `
+    <div class="info-box" style="margin-bottom:12px">
+      <strong>${esc(l.protocol)}</strong> · ${esc(l.model || '-')} ${l.resolved_model && l.resolved_model !== l.model ? '→ '+esc(l.resolved_model) : ''} · ${l.status || 'ERR'} · ${l.duration || 0}ms · ${esc(l.timestamp || '')}
+    </div>
+    <div class="section">
+      <div class="section-title">重试过程</div>
+      <table><thead><tr><th>#</th><th>Channel</th><th>Key</th><th>Masked</th><th>模型</th><th>状态</th><th>耗时</th><th>错误</th></tr></thead><tbody>${attemptRows}</tbody></table>
+    </div>
+    <div class="detail-grid">
+      <div>
+        <div class="section-title">入站请求</div>
+        <pre class="json-box">${esc(JSON.stringify(l.request || {}, null, 2))}</pre>
+      </div>
+      <div>
+        <div class="section-title">转换后的上游请求</div>
+        <pre class="json-box">${esc(JSON.stringify(l.upstream_request || l.request || {}, null, 2))}</pre>
+      </div>
+    </div>
+  `;
+}
+
+function startStatsAutoRefresh() {
+  loadStats();
+  if (!autoRefreshTimer) {
     autoRefreshTimer = setInterval(loadStats, 3000);
-  } else {
+  }
+}
+
+function stopStatsAutoRefresh() {
+  if (autoRefreshTimer) {
     clearInterval(autoRefreshTimer);
     autoRefreshTimer = null;
   }
@@ -699,6 +930,7 @@ function toast(msg, isErr) {
   setTimeout(()=>el.remove(), 3000);
 }
 function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function maskKeyLocal(key) { return key && key.length > 8 ? key.slice(0,4) + '****' + key.slice(-4) : '****'; }
 
 document.querySelectorAll('.modal-overlay').forEach(o => {
   o.addEventListener('click', e => { if(e.target===o) o.classList.remove('active'); });

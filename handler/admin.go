@@ -4,6 +4,8 @@ import (
 	"api-in-one/config"
 	"api-in-one/model"
 	"api-in-one/relay"
+	"api-in-one/relay/adaptor"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +20,17 @@ import (
 // Admin handles admin API endpoints.
 type Admin struct {
 	pool *relay.Pool
+}
+
+type KeyProbeResult struct {
+	Index     int    `json:"index"`
+	MaskedKey string `json:"masked_key"`
+	Disabled  bool   `json:"disabled"`
+	OK        bool   `json:"ok"`
+	Status    int    `json:"status"`
+	LatencyMs int64  `json:"latency_ms"`
+	Error     string `json:"error,omitempty"`
+	TestedAt  string `json:"tested_at"`
 }
 
 func NewAdmin(pool *relay.Pool) *Admin {
@@ -45,6 +58,7 @@ type ChannelStatus struct {
 type KeyStatus struct {
 	Index              int    `json:"index"`
 	MaskedKey          string `json:"masked_key"`
+	Disabled           bool   `json:"disabled"`
 	TotalRequests      int64  `json:"total_requests"`
 	SuccessRequests    int64  `json:"success_requests"`
 	FailureRequests    int64  `json:"failure_requests"`
@@ -90,6 +104,7 @@ func buildKeyStatus(stats []model.KeyStats) []KeyStatus {
 		result = append(result, KeyStatus{
 			Index:              stat.Index,
 			MaskedKey:          stat.MaskedKey,
+			Disabled:           stat.Disabled,
 			TotalRequests:      stat.TotalRequests,
 			SuccessRequests:    stat.SuccessRequests,
 			FailureRequests:    stat.FailureRequests,
@@ -98,7 +113,7 @@ func buildKeyStatus(stats []model.KeyStats) []KeyStatus {
 			LastError:          stat.LastError,
 			LastUsedAt:         stat.LastUsedAt,
 			LastLatencyMs:      stat.LastLatencyMs,
-			Healthy:            stat.ConsecutiveFailure < 3,
+			Healthy:            !stat.Disabled && stat.ConsecutiveFailure < 3,
 		})
 	}
 	return result
@@ -200,10 +215,11 @@ func (h *Admin) GetChannelKeys(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"name":        name,
-		"keys":        ch.Keys,
-		"key_count":   len(ch.Keys),
-		"masked_keys": maskKeys(ch.Keys),
+		"name":          name,
+		"keys":          ch.Keys,
+		"key_count":     len(ch.Keys),
+		"masked_keys":   maskKeys(ch.Keys),
+		"disabled_keys": maskKeys(ch.DisabledKeys),
 	})
 }
 
@@ -233,6 +249,182 @@ func (h *Admin) UpdateChannelKeys(c *gin.Context) {
 		"key_count":   len(keys),
 		"masked_keys": maskKeys(keys),
 	})
+}
+
+// UpdateChannelKeyState enables or disables one upstream key by index.
+func (h *Admin) UpdateChannelKeyState(c *gin.Context) {
+	name := c.Param("name")
+	index, err := strconv.Atoi(c.Param("index"))
+	if err != nil || index < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key index"})
+		return
+	}
+	var req struct {
+		Disabled bool `json:"disabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		return
+	}
+	ch := findChannelConfig(name)
+	if ch == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("channel %q not found", name)})
+		return
+	}
+	if index >= len(ch.Keys) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "key index out of range"})
+		return
+	}
+	disabled := make(map[string]bool, len(ch.DisabledKeys)+1)
+	for _, key := range ch.DisabledKeys {
+		disabled[key] = true
+	}
+	key := ch.Keys[index]
+	if req.Disabled {
+		disabled[key] = true
+	} else {
+		delete(disabled, key)
+	}
+	disabledKeys := make([]string, 0, len(ch.Keys))
+	for _, key := range ch.Keys {
+		if disabled[key] {
+			disabledKeys = append(disabledKeys, key)
+		}
+	}
+	if err := config.UpdateChannelDisabledKeys(name, disabledKeys); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	h.rebuildPool()
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "channel key state updated",
+		"name":          name,
+		"key_index":     index,
+		"disabled":      req.Disabled,
+		"disabled_keys": maskKeys(disabledKeys),
+	})
+}
+
+// ProbeChannelKeys sends a tiny non-stream request with every key in a channel.
+func (h *Admin) ProbeChannelKeys(c *gin.Context) {
+	name := c.Param("name")
+	ch := findChannelConfig(name)
+	if ch == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("channel %q not found", name)})
+		return
+	}
+	if len(ch.Models) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "channel has no models"})
+		return
+	}
+	protocol := strings.TrimSpace(c.Query("protocol"))
+	if protocol == "" {
+		protocol = ch.Type
+	}
+	modelName := strings.TrimSpace(c.Query("model"))
+	if modelName == "" {
+		modelName = ch.Models[0]
+	}
+	indexFilter := -1
+	if v := c.Query("index"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed < 0 || parsed >= len(ch.Keys) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key index"})
+			return
+		}
+		indexFilter = parsed
+	}
+
+	disabled := make(map[string]bool, len(ch.DisabledKeys))
+	for _, key := range ch.DisabledKeys {
+		disabled[key] = true
+	}
+
+	ad := h.pool.GetAdaptor(protocol)
+	if ad == nil && protocol == "responses" {
+		ad = h.pool.GetAdaptor("openai")
+	}
+	if ad == nil {
+		ad = h.pool.GetAdaptor(ch.Type)
+	}
+	if ad == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no adaptor for protocol"})
+		return
+	}
+
+	results := make([]KeyProbeResult, 0, len(ch.Keys))
+	for i, key := range ch.Keys {
+		if indexFilter >= 0 && i != indexFilter {
+			continue
+		}
+		results = append(results, probeOneKey(*ch, ad, protocol, modelName, i, key, disabled[key]))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"name":      name,
+		"model":     modelName,
+		"protocol":  protocol,
+		"key_count": len(results),
+		"results":   results,
+	})
+}
+
+func probeOneKey(ch config.ChannelConfig, ad adaptor.Adaptor, protocol, modelName string, index int, key string, disabled bool) KeyProbeResult {
+	result := KeyProbeResult{
+		Index:     index,
+		MaskedKey: maskKey(key),
+		Disabled:  disabled,
+		TestedAt:  time.Now().Format("2006-01-02 15:04:05"),
+	}
+	req := &model.ChatCompletionRequest{
+		Model: modelName,
+		Messages: []model.Message{{
+			Role:    "user",
+			Content: "ping",
+		}},
+		MaxTokens: intPtr(1),
+	}
+	baseURL := channelBaseURL(ch, protocol)
+	httpReq, err := ad.BuildHTTPRequest(baseURL, key, req)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	httpReq = httpReq.WithContext(ctx)
+	start := time.Now()
+	httpResp, err := http.DefaultClient.Do(httpReq)
+	result.LatencyMs = time.Since(start).Milliseconds()
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	defer httpResp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(httpResp.Body, 4096))
+	result.Status = httpResp.StatusCode
+	result.OK = httpResp.StatusCode >= 200 && httpResp.StatusCode < 400
+	if !result.OK {
+		result.Error = strings.TrimSpace(string(body))
+	}
+	return result
+}
+
+func intPtr(v int) *int {
+	return &v
+}
+
+func channelBaseURL(ch config.ChannelConfig, protocol string) string {
+	switch protocol {
+	case "claude":
+		if ch.BaseURLClaude != "" {
+			return ch.BaseURLClaude
+		}
+	case "gemini":
+		if ch.BaseURLGemini != "" {
+			return ch.BaseURLGemini
+		}
+	}
+	return ch.BaseURL
 }
 
 func parseKeys(raw interface{}) []string {
@@ -420,8 +612,43 @@ func (h *Admin) GetLogs(c *gin.Context) {
 			n = parsed
 		}
 	}
+	page := 1
+	if v := c.Query("page"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	filter := LogFilter{
+		Limit:     n,
+		Offset:    (page - 1) * n,
+		Protocol:  strings.TrimSpace(c.Query("protocol")),
+		Model:     strings.TrimSpace(c.Query("model")),
+		Channel:   strings.TrimSpace(c.Query("channel")),
+		AccessKey: strings.TrimSpace(c.Query("access_key")),
+		Status:    strings.TrimSpace(c.Query("status")),
+		Query:     strings.TrimSpace(c.Query("q")),
+	}
+	filteredTotal := globalLogStore.count(filter)
 	c.JSON(http.StatusOK, gin.H{
-		"logs":  globalLogStore.recent(n),
-		"total": globalLogStore.total,
+		"logs":           globalLogStore.search(filter),
+		"total":          globalLogStore.total,
+		"filtered_total": filteredTotal,
+		"page":           page,
+		"limit":          n,
 	})
+}
+
+// GetLog returns one request log by id.
+func (h *Admin) GetLog(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid log id"})
+		return
+	}
+	log, ok := globalLogStore.get(id)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "log not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"log": log})
 }

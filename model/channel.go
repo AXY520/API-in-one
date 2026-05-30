@@ -14,6 +14,7 @@ type Channel struct {
 	BaseURLClaude string // optional: Claude protocol URL
 	BaseURLGemini string // optional: Gemini protocol URL
 	Keys          []string
+	DisabledKeys  map[string]bool
 	Models        []string
 	ModelMapping  map[string]string // alias → upstream model id
 	Priority      int
@@ -29,6 +30,7 @@ type Channel struct {
 type KeyStats struct {
 	Index              int
 	MaskedKey          string
+	Disabled           bool
 	TotalRequests      int64
 	SuccessRequests    int64
 	FailureRequests    int64
@@ -59,6 +61,28 @@ func NewChannel(name, typ, baseURL, baseURLClaude, baseURLGemini string, keys, m
 	}
 	ch.initKeyStats()
 	return ch
+}
+
+func (c *Channel) SetDisabledKeys(keys []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.DisabledKeys = make(map[string]bool, len(keys))
+	for _, key := range keys {
+		c.DisabledKeys[key] = true
+	}
+	c.ensureKeyStatsLocked()
+}
+
+func (c *Channel) DisabledKeyList() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	result := make([]string, 0, len(c.DisabledKeys))
+	for _, key := range c.Keys {
+		if c.DisabledKeys[key] {
+			result = append(result, key)
+		}
+	}
+	return result
 }
 
 // NextKey returns the next API key using round-robin.
@@ -93,7 +117,8 @@ func (c *Channel) IsKeyHealthy(index int) bool {
 	if index < 0 || index >= len(c.KeyStats) {
 		return false
 	}
-	return c.KeyStats[index].ConsecutiveFailure < 3
+	key := c.Keys[index]
+	return !c.DisabledKeys[key] && c.KeyStats[index].ConsecutiveFailure < 3
 }
 
 // RecordSuccess resets the failure count.
@@ -202,10 +227,14 @@ func (c *Channel) initKeyStats() {
 }
 
 func (c *Channel) ensureKeyStatsLocked() {
+	if c.DisabledKeys == nil {
+		c.DisabledKeys = make(map[string]bool)
+	}
 	if len(c.KeyStats) == len(c.Keys) {
 		for i := range c.KeyStats {
 			c.KeyStats[i].Index = i
 			c.KeyStats[i].MaskedKey = maskKey(c.Keys[i])
+			c.KeyStats[i].Disabled = c.DisabledKeys[c.Keys[i]]
 		}
 		return
 	}
@@ -219,6 +248,7 @@ func (c *Channel) ensureKeyStatsLocked() {
 		stat := oldByKey[masked]
 		stat.Index = i
 		stat.MaskedKey = masked
+		stat.Disabled = c.DisabledKeys[key]
 		c.KeyStats[i] = stat
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"api-in-one/config"
+	"api-in-one/handler"
 	"api-in-one/relay"
 	"api-in-one/router"
 	"fmt"
@@ -22,6 +23,7 @@ func main() {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
+	handler.InitLogStore(os.Getenv("REQUEST_LOG_PATH"))
 
 	cfg := config.Get()
 

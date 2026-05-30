@@ -18,6 +18,7 @@ func NewChannelFromConfig(cc config.ChannelConfig) *Channel {
 	if cc.Enabled != nil {
 		ch.Enabled = *cc.Enabled
 	}
+	ch.SetDisabledKeys(cc.DisabledKeys)
 	return ch
 }
 
@@ -51,6 +52,14 @@ func (p *Pool) GetAdaptor(typ string) adaptor.Adaptor {
 // SelectChannel finds the best channel for the given model.
 // Returns the channel, resolved upstream model name, and an error if none available.
 func (p *Pool) SelectChannel(requestedModel string) (*model.Channel, string, error) {
+	return p.selectChannel(requestedModel, "")
+}
+
+func (p *Pool) SelectChannelForProtocol(requestedModel string, protocol string) (*model.Channel, string, error) {
+	return p.selectChannel(requestedModel, protocol)
+}
+
+func (p *Pool) selectChannel(requestedModel string, protocol string) (*model.Channel, string, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -62,6 +71,9 @@ func (p *Pool) SelectChannel(requestedModel string) (*model.Channel, string, err
 
 	for _, ch := range p.channels {
 		if !ch.IsHealthy() {
+			continue
+		}
+		if protocol != "" && ch.Type != protocol {
 			continue
 		}
 		if ch.HasModel(requestedModel) {
@@ -135,7 +147,7 @@ func (p *Pool) GetChannels() []*model.Channel {
 	return p.channels
 }
 
-// GetAvailableModels returns all model names available across channels (including aliases).
+// GetAvailableModels returns client-visible model names across healthy channels.
 func (p *Pool) GetAvailableModels() []model.ModelObject {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -146,8 +158,14 @@ func (p *Pool) GetAvailableModels() []model.ModelObject {
 		if !ch.IsHealthy() {
 			continue
 		}
-		// Upstream model ids
+		mappedUpstream := make(map[string]bool)
+		for _, upstream := range ch.ModelMapping {
+			mappedUpstream[upstream] = true
+		}
 		for _, m := range ch.Models {
+			if mappedUpstream[m] {
+				continue
+			}
 			if !seen[m] {
 				seen[m] = true
 				models = append(models, model.ModelObject{
@@ -158,7 +176,6 @@ func (p *Pool) GetAvailableModels() []model.ModelObject {
 				})
 			}
 		}
-		// Aliases from channel mapping
 		for alias := range ch.ModelMapping {
 			if !seen[alias] {
 				seen[alias] = true

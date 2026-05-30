@@ -3,6 +3,7 @@ package relay
 import (
 	"api-in-one/model"
 	"api-in-one/relay/adaptor"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -41,6 +42,16 @@ func NewEngine(pool *Pool) *Engine {
 type RelayResult struct {
 	Response *model.ChatCompletionResponse
 	SSE      adaptor.SSEProcessor
+	Raw      *http.Response
+	IsStream bool
+	Channel  string
+	Model    string
+	Attempts []AttemptLog
+}
+
+// RawRelayResult holds a same-protocol passthrough response.
+type RawRelayResult struct {
+	Response *http.Response
 	IsStream bool
 	Channel  string
 	Model    string
@@ -187,6 +198,148 @@ func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, proto
 		Err:      fmt.Errorf("%w: %v", ErrAllRetriesFailed, lastErr),
 		Attempts: attempts,
 	}
+}
+
+func (e *Engine) DoRaw(ctx context.Context, protocol, requestedModel string, stream bool, rawBody []byte, inboundHeader http.Header) (*RawRelayResult, error) {
+	var lastErr error
+	var attempts []AttemptLog
+
+	for attempt := 0; attempt < e.maxRetries; attempt++ {
+		ch, resolvedModel, err := e.pool.SelectChannelForProtocol(requestedModel, protocol)
+		if err != nil {
+			return nil, err
+		}
+		key := ch.NextKey()
+		if key == "" {
+			lastErr = fmt.Errorf("channel %s: no key available", ch.Name)
+			attempts = append(attempts, AttemptLog{
+				Attempt:  attempt + 1,
+				Channel:  ch.Name,
+				Model:    resolvedModel,
+				Status:   0,
+				Error:    lastErr.Error(),
+				Protocol: protocol,
+			})
+			continue
+		}
+
+		body, err := replaceRawModel(rawBody, resolvedModel)
+		if err != nil {
+			return nil, err
+		}
+		req, err := buildRawHTTPRequest(ctx, ch, protocol, key, body, inboundHeader)
+		if err != nil {
+			return nil, err
+		}
+
+		attemptStart := time.Now()
+		resp, err := e.httpClient.Do(req)
+		attemptDuration := time.Since(attemptStart)
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		ch.RecordKeyResult(key, status, attemptDuration, err)
+		attemptLog := AttemptLog{
+			Attempt:     attempt + 1,
+			Channel:     ch.Name,
+			KeyIndex:    ch.KeyIndex(key),
+			MaskedKey:   maskKey(key),
+			Model:       resolvedModel,
+			Status:      status,
+			DurationMs:  attemptDuration.Milliseconds(),
+			Error:       errStr(err),
+			Retryable:   isRetryableStatus(status),
+			Protocol:    protocol,
+			AdaptorName: protocol,
+		}
+		attempts = append(attempts, attemptLog)
+		if err != nil || status < 200 || status >= 400 {
+			if resp != nil {
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+				resp.Body.Close()
+				if err == nil {
+					err = fmt.Errorf("upstream error (status %d): %s", status, string(body))
+				}
+			}
+			if status == 0 || status >= 500 {
+				ch.RecordFailure()
+			}
+			lastErr = err
+			if isRetryableStatus(status) && attempt < e.maxRetries-1 {
+				delay := backoffDelay(attempt)
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(delay):
+				}
+			}
+			continue
+		}
+
+		ch.RecordSuccess()
+		return &RawRelayResult{
+			Response: resp,
+			IsStream: stream,
+			Channel:  ch.Name,
+			Model:    resolvedModel,
+			Attempts: attempts,
+		}, nil
+	}
+
+	return nil, &RelayError{
+		Err:      fmt.Errorf("%w: %v", ErrAllRetriesFailed, lastErr),
+		Attempts: attempts,
+	}
+}
+
+func replaceRawModel(rawBody []byte, modelName string) ([]byte, error) {
+	var body map[string]interface{}
+	if err := json.Unmarshal(rawBody, &body); err != nil {
+		return nil, fmt.Errorf("parse raw request: %w", err)
+	}
+	body["model"] = modelName
+	return json.Marshal(body)
+}
+
+func buildRawHTTPRequest(ctx context.Context, ch *model.Channel, protocol, key string, body []byte, inboundHeader http.Header) (*http.Request, error) {
+	baseURL := ch.GetBaseURL(protocol)
+	var url string
+	switch protocol {
+	case "claude":
+		url = buildRawClaudeURL(baseURL)
+	default:
+		url = strings.TrimRight(baseURL, "/") + "/chat/completions"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", inboundHeader.Get("Accept"))
+	switch protocol {
+	case "claude":
+		req.Header.Set("x-api-key", key)
+		version := inboundHeader.Get("anthropic-version")
+		if version == "" {
+			version = "2023-06-01"
+		}
+		req.Header.Set("anthropic-version", version)
+		if beta := inboundHeader.Get("anthropic-beta"); beta != "" {
+			req.Header.Set("anthropic-beta", beta)
+		}
+	default:
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	return req, nil
+}
+
+func buildRawClaudeURL(baseURL string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(baseURL, "/v1/messages") {
+		return baseURL
+	}
+	return baseURL + "/v1/messages"
 }
 
 func (e *Engine) doRequest(ctx context.Context, ad adaptor.Adaptor, ch *model.Channel, key string, req *model.ChatCompletionRequest, protocol string) (*RelayResult, int, error) {

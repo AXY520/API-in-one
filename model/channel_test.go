@@ -19,6 +19,17 @@ func TestNextKeySkipsUnhealthyKeys(t *testing.T) {
 	}
 }
 
+func TestNextKeySkipsDisabledKeys(t *testing.T) {
+	ch := NewChannel("test", "openai", "https://example.com", "", "", []string{"key-a", "key-b"}, []string{"m"}, nil, 10, 100)
+	ch.SetDisabledKeys([]string{"key-a"})
+
+	for i := 0; i < 4; i++ {
+		if got := ch.NextKey(); got != "key-b" {
+			t.Fatalf("expected enabled key-b, got %q", got)
+		}
+	}
+}
+
 func TestRecordKeyResultResetsConsecutiveFailures(t *testing.T) {
 	ch := NewChannel("test", "openai", "https://example.com", "", "", []string{"key-a"}, []string{"m"}, nil, 10, 100)
 	ch.RecordKeyResult("key-a", 429, time.Millisecond, errors.New("rate limited"))

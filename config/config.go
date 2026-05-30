@@ -22,6 +22,7 @@ type ChannelConfig struct {
 	BaseURLClaude string            `json:"base_url_claude" yaml:"base_url_claude"` // optional: Claude protocol URL
 	BaseURLGemini string            `json:"base_url_gemini" yaml:"base_url_gemini"` // optional: Gemini protocol URL
 	Keys          []string          `json:"keys"          yaml:"keys"`
+	DisabledKeys  []string          `json:"disabled_keys,omitempty" yaml:"disabled_keys,omitempty"`
 	Models        []string          `json:"models"        yaml:"models"`
 	ModelMapping  map[string]string `json:"model_mapping"  yaml:"model_mapping"`
 	Priority      int               `json:"priority"      yaml:"priority"`
@@ -129,6 +130,9 @@ func UpdateChannel(name string, ch ChannelConfig) error {
 	for i, existing := range globalConfig.Channels {
 		if existing.Name == name {
 			ch.Name = name
+			if ch.DisabledKeys == nil {
+				ch.DisabledKeys = existing.DisabledKeys
+			}
 			applyChannelDefaults(&ch)
 			globalConfig.Channels[i] = ch
 			return saveToDiskLocked()
@@ -146,6 +150,35 @@ func UpdateChannelKeys(name string, keys []string) error {
 				return fmt.Errorf("at least one key is required")
 			}
 			existing.Keys = keys
+			existing.DisabledKeys = filterExistingKeys(existing.DisabledKeys, keys)
+			applyChannelDefaults(&existing)
+			globalConfig.Channels[i] = existing
+			return saveToDiskLocked()
+		}
+	}
+	return fmt.Errorf("channel %q not found", name)
+}
+
+func filterExistingKeys(values []string, allowed []string) []string {
+	allowedSet := make(map[string]bool, len(allowed))
+	for _, key := range allowed {
+		allowedSet[key] = true
+	}
+	result := make([]string, 0, len(values))
+	for _, key := range values {
+		if allowedSet[key] {
+			result = append(result, key)
+		}
+	}
+	return result
+}
+
+func UpdateChannelDisabledKeys(name string, disabledKeys []string) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	for i, existing := range globalConfig.Channels {
+		if existing.Name == name {
+			existing.DisabledKeys = disabledKeys
 			applyChannelDefaults(&existing)
 			globalConfig.Channels[i] = existing
 			return saveToDiskLocked()
