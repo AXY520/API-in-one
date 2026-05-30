@@ -82,7 +82,7 @@ func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, proto
 			continue
 		}
 
-		preserveTools := ad.Name() == "openai"
+		preserveTools := ad.Name() == "openai" || ad.Name() == "claude"
 		sanitizeRequest(&reqCopy, preserveTools)
 
 		slog.Debug("relay attempt",

@@ -453,7 +453,21 @@ func claudeToOpenAI(req *claudeInboundRequest) *model.ChatCompletionRequest {
 			}
 
 			if hasToolResult {
-				// User message with tool_result → convert to tool role messages
+				// User message with tool_result → preserve surrounding text and tool role messages.
+				var textParts []string
+				for _, b := range blocks {
+					if m, ok := b.(map[string]interface{}); ok {
+						if m["type"] == "text" {
+							textParts = append(textParts, getString(m, "text"))
+						}
+					}
+				}
+				if text := strings.TrimSpace(strings.Join(textParts, "\n")); text != "" {
+					oaiReq.Messages = append(oaiReq.Messages, model.Message{
+						Role:    msg.Role,
+						Content: text,
+					})
+				}
 				for _, b := range blocks {
 					if m, ok := b.(map[string]interface{}); ok && m["type"] == "tool_result" {
 						toolMsg := model.Message{

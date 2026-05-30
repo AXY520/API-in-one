@@ -18,12 +18,12 @@ type ClaudeAdaptor struct{}
 // ---- Claude native request/response structures ----
 
 type claudeRequest struct {
-	Model     string        `json:"model"`
-	MaxTokens int           `json:"max_tokens"`
-	System    string        `json:"system,omitempty"`
+	Model     string          `json:"model"`
+	MaxTokens int             `json:"max_tokens"`
+	System    string          `json:"system,omitempty"`
 	Messages  []claudeMessage `json:"messages"`
-	Stream    bool          `json:"stream,omitempty"`
-	Tools     []claudeTool  `json:"tools,omitempty"`
+	Stream    bool            `json:"stream,omitempty"`
+	Tools     []claudeTool    `json:"tools,omitempty"`
 }
 
 type claudeMessage struct {
@@ -32,9 +32,14 @@ type claudeMessage struct {
 }
 
 type claudeContent struct {
-	Type     string `json:"type"`
-	Text     string `json:"text,omitempty"`
-	Thinking string `json:"thinking,omitempty"`
+	Type      string      `json:"type"`
+	Text      string      `json:"text,omitempty"`
+	Thinking  string      `json:"thinking,omitempty"`
+	ID        string      `json:"id,omitempty"`
+	Name      string      `json:"name,omitempty"`
+	Input     interface{} `json:"input,omitempty"`
+	ToolUseID string      `json:"tool_use_id,omitempty"`
+	Content   interface{} `json:"content,omitempty"`
 }
 
 type claudeTool struct {
@@ -44,13 +49,13 @@ type claudeTool struct {
 }
 
 type claudeResponse struct {
-	ID         string           `json:"id"`
-	Type       string           `json:"type"`
-	Role       string           `json:"role"`
-	Content    []claudeContent  `json:"content"`
-	Model      string           `json:"model"`
-	StopReason string           `json:"stop_reason"`
-	Usage      claudeUsage      `json:"usage"`
+	ID         string          `json:"id"`
+	Type       string          `json:"type"`
+	Role       string          `json:"role"`
+	Content    []claudeContent `json:"content"`
+	Model      string          `json:"model"`
+	StopReason string          `json:"stop_reason"`
+	Usage      claudeUsage     `json:"usage"`
 }
 
 type claudeUsage struct {
@@ -94,6 +99,22 @@ func (a *ClaudeAdaptor) convertRequest(req *model.ChatCompletionRequest) *claude
 		case "system":
 			content := extractTextContent(msg.Content)
 			systemParts = append(systemParts, content)
+		case "tool":
+			toolResult := claudeContent{
+				Type:      "tool_result",
+				ToolUseID: msg.ToolCallID,
+				Content:   extractTextContent(msg.Content),
+			}
+			cr.Messages = append(cr.Messages, claudeMessage{
+				Role:    "user",
+				Content: []claudeContent{toolResult},
+			})
+		case "assistant":
+			content := openAIMessageToClaudeContent(msg)
+			cr.Messages = append(cr.Messages, claudeMessage{
+				Role:    "assistant",
+				Content: content,
+			})
 		default:
 			claudeMsg := claudeMessage{
 				Role:    msg.Role,
@@ -138,12 +159,23 @@ func (a *ClaudeAdaptor) ParseResponse(resp *http.Response) (*model.ChatCompletio
 func (a *ClaudeAdaptor) convertResponse(cr *claudeResponse) *model.ChatCompletionResponse {
 	var textParts []string
 	var thinkingParts []string
+	var toolCalls []model.ToolCall
 	for _, c := range cr.Content {
 		switch c.Type {
 		case "text":
 			textParts = append(textParts, c.Text)
 		case "thinking":
 			thinkingParts = append(thinkingParts, c.Thinking)
+		case "tool_use":
+			args, _ := json.Marshal(c.Input)
+			toolCalls = append(toolCalls, model.ToolCall{
+				ID:   c.ID,
+				Type: "function",
+				Function: model.FunctionCall{
+					Name:      c.Name,
+					Arguments: string(args),
+				},
+			})
 		}
 	}
 	finishReason := mapStopReason(cr.StopReason)
@@ -153,6 +185,9 @@ func (a *ClaudeAdaptor) convertResponse(cr *claudeResponse) *model.ChatCompletio
 	}
 	if len(thinkingParts) > 0 {
 		msg.ReasoningContent = strings.Join(thinkingParts, "")
+	}
+	if len(toolCalls) > 0 {
+		msg.ToolCalls = toolCalls
 	}
 	return &model.ChatCompletionResponse{
 		ID:      cr.ID,
@@ -170,6 +205,30 @@ func (a *ClaudeAdaptor) convertResponse(cr *claudeResponse) *model.ChatCompletio
 			TotalTokens:      cr.Usage.InputTokens + cr.Usage.OutputTokens,
 		},
 	}
+}
+
+func openAIMessageToClaudeContent(msg model.Message) interface{} {
+	var content []claudeContent
+	text := extractTextContent(msg.Content)
+	if text != "" {
+		content = append(content, claudeContent{Type: "text", Text: text})
+	}
+	for _, tc := range msg.ToolCalls {
+		input := map[string]interface{}{}
+		if tc.Function.Arguments != "" {
+			json.Unmarshal([]byte(tc.Function.Arguments), &input)
+		}
+		content = append(content, claudeContent{
+			Type:  "tool_use",
+			ID:    tc.ID,
+			Name:  tc.Function.Name,
+			Input: input,
+		})
+	}
+	if len(content) == 0 {
+		return ""
+	}
+	return content
 }
 
 func (a *ClaudeAdaptor) StreamHandler(resp *http.Response) SSEProcessor {
@@ -276,7 +335,7 @@ func (p *claudeSSEProcessor) Next() ([]byte, error) {
 							Index: 0,
 							Delta: &model.Message{
 								ToolCalls: []model.ToolCall{{
-									Index: int(idx),
+									Index:    int(idx),
 									Function: model.FunctionCall{Arguments: partialJSON},
 								}},
 							},
