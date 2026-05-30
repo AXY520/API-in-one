@@ -137,6 +137,23 @@ func UpdateChannel(name string, ch ChannelConfig) error {
 	return fmt.Errorf("channel %q not found", name)
 }
 
+func UpdateChannelKeys(name string, keys []string) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	for i, existing := range globalConfig.Channels {
+		if existing.Name == name {
+			if len(keys) == 0 {
+				return fmt.Errorf("at least one key is required")
+			}
+			existing.Keys = keys
+			applyChannelDefaults(&existing)
+			globalConfig.Channels[i] = existing
+			return saveToDiskLocked()
+		}
+	}
+	return fmt.Errorf("channel %q not found", name)
+}
+
 func DeleteChannel(name string) error {
 	configMu.Lock()
 	defer configMu.Unlock()

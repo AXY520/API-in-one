@@ -191,6 +191,66 @@ func (h *Admin) UpdateChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "channel updated", "name": name})
 }
 
+// UpdateChannelKeys replaces only the upstream API keys for a channel.
+func (h *Admin) UpdateChannelKeys(c *gin.Context) {
+	name := c.Param("name")
+	var req struct {
+		Keys interface{} `json:"keys"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		return
+	}
+	keys := parseKeys(req.Keys)
+	if len(keys) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one key is required"})
+		return
+	}
+	if err := config.UpdateChannelKeys(name, keys); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	h.rebuildPool()
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "channel keys updated",
+		"name":        name,
+		"key_count":   len(keys),
+		"masked_keys": maskKeys(keys),
+	})
+}
+
+func parseKeys(raw interface{}) []string {
+	seen := map[string]bool{}
+	var keys []string
+	add := func(key string) {
+		key = strings.TrimSpace(key)
+		if key == "" || seen[key] {
+			return
+		}
+		seen[key] = true
+		keys = append(keys, key)
+	}
+	switch v := raw.(type) {
+	case string:
+		for _, part := range strings.FieldsFunc(v, func(r rune) bool {
+			return r == '\n' || r == '\r' || r == ',' || r == ';'
+		}) {
+			add(part)
+		}
+	case []interface{}:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				add(s)
+			}
+		}
+	case []string:
+		for _, item := range v {
+			add(item)
+		}
+	}
+	return keys
+}
+
 // DeleteChannel removes a channel by name.
 func (h *Admin) DeleteChannel(c *gin.Context) {
 	name := c.Param("name")
