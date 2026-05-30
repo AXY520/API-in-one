@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -98,9 +99,9 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 		AccessKey:       requestAccessKey(c),
 	})
 
-	// Clean up fake tool calls from response text (model may generate
-	// tool call syntax like <function=Bash>... when it doesn't support tools)
-	if result.Response != nil {
+	// MiMo sometimes emits tool calls as XML-like text. Keep this compatibility
+	// scoped to MiMo/Xiaomi routes so normal model conversions stay standard.
+	if result.Response != nil && isMiMoCompatResult(result.Channel, claudeReq.Model, result.Model) {
 		cleanResponseToolCalls(result.Response)
 	}
 
@@ -942,7 +943,7 @@ func (h *Protocol) Responses(c *gin.Context) {
 		return
 	}
 
-	oaiReq := responsesToChatCompletion(&req)
+	oaiReq := responsesToChatCompletion(&req, isMiMoCompatModel(req.Model))
 
 	start := time.Now()
 	result, err := h.engine.Do(c.Request.Context(), oaiReq, "responses")
@@ -980,16 +981,17 @@ func (h *Protocol) Responses(c *gin.Context) {
 		AccessKey:       requestAccessKey(c),
 	})
 
+	enableMiMoCompat := isMiMoCompatResult(result.Channel, req.Model, result.Model)
 	if req.Stream {
-		h.handleResponsesStream(c, result, req.Model)
+		h.handleResponsesStream(c, result, req.Model, enableMiMoCompat)
 		return
 	}
 
-	resp := chatCompletionToResponses(result.Response, req.Model)
+	resp := chatCompletionToResponses(result.Response, req.Model, enableMiMoCompat)
 	c.JSON(http.StatusOK, resp)
 }
 
-func (h *Protocol) handleResponsesStream(c *gin.Context, result *relay.RelayResult, modelName string) {
+func (h *Protocol) handleResponsesStream(c *gin.Context, result *relay.RelayResult, modelName string, enableMiMoCompat bool) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -1119,11 +1121,7 @@ func (h *Protocol) handleResponsesStream(c *gin.Context, result *relay.RelayResu
 			text, _ = delta.Content.(string)
 		}
 		if text != "" {
-			startMessage()
 			textAccum += text
-			writeEvent("response.output_text.delta", map[string]interface{}{
-				"output_index": outputIndex, "content_index": 0, "delta": text,
-			})
 		}
 
 		// Tool calls
@@ -1193,8 +1191,41 @@ func (h *Protocol) handleResponsesStream(c *gin.Context, result *relay.RelayResu
 		})
 	}
 
+	var fakeCalls []fakeToolCall
+	if enableMiMoCompat {
+		textAccum, fakeCalls = extractFakeToolCalls(textAccum)
+	}
+	for i, call := range fakeCalls {
+		itemID := fmt.Sprintf("fc_fake_%d_%d", time.Now().UnixMilli(), i)
+		callID := fmt.Sprintf("call_%s", itemID[3:])
+		outIndex := outputIndex
+		outputIndex++
+		writeEvent("response.output_item.added", map[string]interface{}{
+			"output_index": outIndex,
+			"item": map[string]interface{}{
+				"id": itemID, "type": "function_call", "call_id": callID,
+				"name": call.Name, "arguments": "", "status": "in_progress",
+			},
+		})
+		writeEvent("response.function_call_arguments.delta", map[string]interface{}{
+			"item_id": itemID, "output_index": outIndex, "delta": call.Arguments,
+		})
+		writeEvent("response.function_call_arguments.done", map[string]interface{}{
+			"item_id": itemID, "output_index": outIndex, "arguments": call.Arguments,
+		})
+		item := map[string]interface{}{
+			"id": itemID, "type": "function_call", "call_id": callID,
+			"name": call.Name, "arguments": call.Arguments, "status": "completed",
+		}
+		output = append(output, item)
+		writeEvent("response.output_item.done", map[string]interface{}{
+			"output_index": outIndex, "item": item,
+		})
+	}
+
 	// Finalize text message (only if there was text)
-	if textAccum != "" || len(toolCalls) == 0 {
+	textAccum = strings.TrimSpace(textAccum)
+	if textAccum != "" || len(toolCalls) == 0 && len(fakeCalls) == 0 {
 		if !messageStarted {
 			startMessage()
 		}
@@ -1243,7 +1274,7 @@ type responsesInputItem struct {
 	Content interface{} `json:"content"`
 }
 
-func responsesToChatCompletion(req *responsesInboundRequest) *model.ChatCompletionRequest {
+func responsesToChatCompletion(req *responsesInboundRequest, enableMiMoCompat bool) *model.ChatCompletionRequest {
 	oaiReq := &model.ChatCompletionRequest{
 		Model:  req.Model,
 		Stream: req.Stream,
@@ -1353,6 +1384,9 @@ func responsesToChatCompletion(req *responsesInboundRequest) *model.ChatCompleti
 
 			switch itemType {
 			case "reasoning":
+				if !enableMiMoCompat {
+					continue
+				}
 				// Buffer reasoning content (MiMo requires it back)
 				encrypted, _ := m["encrypted_content"].(string)
 				if encrypted == "" {
@@ -1428,8 +1462,9 @@ func responsesToChatCompletion(req *responsesInboundRequest) *model.ChatCompleti
 		flushPending()
 	}
 
-	// Post-process: merge consecutive same-role messages
-	oaiReq.Messages = mergeConsecutiveRoles(oaiReq.Messages)
+	if enableMiMoCompat {
+		oaiReq.Messages = mergeConsecutiveRoles(oaiReq.Messages)
+	}
 
 	return oaiReq
 }
@@ -1492,7 +1527,20 @@ func extractContentText(content interface{}) interface{} {
 	}
 }
 
-func chatCompletionToResponses(resp *model.ChatCompletionResponse, modelName string) map[string]interface{} {
+func isMiMoCompatResult(channelName, requestedModel, resolvedModel string) bool {
+	return isMiMoCompatModel(requestedModel) || isMiMoCompatModel(resolvedModel) || isXiaomiChannel(channelName)
+}
+
+func isMiMoCompatModel(modelName string) bool {
+	return strings.Contains(strings.ToLower(modelName), "mimo")
+}
+
+func isXiaomiChannel(channelName string) bool {
+	name := strings.ToLower(channelName)
+	return strings.Contains(name, "xiaomi") || strings.Contains(channelName, "小米")
+}
+
+func chatCompletionToResponses(resp *model.ChatCompletionResponse, modelName string, enableMiMoCompat bool) map[string]interface{} {
 	var output []map[string]interface{}
 
 	if len(resp.Choices) > 0 && resp.Choices[0].Message != nil {
@@ -1501,7 +1549,7 @@ func chatCompletionToResponses(resp *model.ChatCompletionResponse, modelName str
 		// Reasoning → reasoning output item with encrypted_content
 		// MiMo requires reasoning_content to be passed back in multi-turn.
 		// Codex treats encrypted_content as opaque and echoes it back.
-		if msg.ReasoningContent != "" {
+		if enableMiMoCompat && msg.ReasoningContent != "" {
 			output = append(output, map[string]interface{}{
 				"type":              "reasoning",
 				"id":                fmt.Sprintf("reason_%s", resp.ID),
@@ -1511,18 +1559,37 @@ func chatCompletionToResponses(resp *model.ChatCompletionResponse, modelName str
 			})
 		}
 
-		// Text content
+		// Text content. Some upstreams emit Codex tool calls as XML-like text;
+		// convert those into real Responses function_call items.
 		text := ""
 		if s, ok := msg.Content.(string); ok {
 			text = s
 		}
-		output = append(output, map[string]interface{}{
-			"type":    "message",
-			"id":      fmt.Sprintf("msg_%s", resp.ID),
-			"role":    "assistant",
-			"status":  "completed",
-			"content": []map[string]interface{}{{"type": "output_text", "text": text, "annotations": []interface{}{}}},
-		})
+		var fakeCalls []fakeToolCall
+		if enableMiMoCompat {
+			text, fakeCalls = extractFakeToolCalls(text)
+		}
+		if strings.TrimSpace(text) != "" || len(msg.ToolCalls) == 0 && len(fakeCalls) == 0 {
+			output = append(output, map[string]interface{}{
+				"type":    "message",
+				"id":      fmt.Sprintf("msg_%s", resp.ID),
+				"role":    "assistant",
+				"status":  "completed",
+				"content": []map[string]interface{}{{"type": "output_text", "text": strings.TrimSpace(text), "annotations": []interface{}{}}},
+			})
+		}
+
+		for i, call := range fakeCalls {
+			callID := fmt.Sprintf("call_%s_%d", resp.ID, i)
+			output = append(output, map[string]interface{}{
+				"type":      "function_call",
+				"id":        fmt.Sprintf("fc_%s", callID),
+				"call_id":   callID,
+				"name":      call.Name,
+				"arguments": call.Arguments,
+				"status":    "completed",
+			})
+		}
 
 		// Tool calls → function_call output items
 		for _, tc := range msg.ToolCalls {
@@ -1571,7 +1638,132 @@ func cleanResponseToolCalls(resp *model.ChatCompletionResponse) {
 	}
 }
 
+type fakeToolCall struct {
+	Name      string
+	Arguments string
+}
+
+var (
+	fakeToolCallBlockRe = regexp.MustCompile(`(?s)<tool_call>\s*<function=([A-Za-z0-9_.-]+)>\s*(.*?)</function>\s*</tool_call>`)
+)
+
+func extractFakeToolCalls(text string) (string, []fakeToolCall) {
+	if text == "" {
+		return "", nil
+	}
+	var calls []fakeToolCall
+	cleaned := fakeToolCallBlockRe.ReplaceAllStringFunc(text, func(block string) string {
+		matches := fakeToolCallBlockRe.FindStringSubmatch(block)
+		if len(matches) != 3 {
+			return block
+		}
+		name := strings.TrimSpace(matches[1])
+		args := extractFakeToolArguments(matches[2])
+		if name != "" {
+			calls = append(calls, fakeToolCall{Name: name, Arguments: args})
+		}
+		return ""
+	})
+	return trimFakeToolResidue(cleaned), calls
+}
+
+func extractFakeToolArguments(body string) string {
+	body = strings.TrimSpace(body)
+	params := parseFakeToolParameters(body)
+	if len(params) > 0 {
+		args := map[string]interface{}{}
+		for i, param := range params {
+			name := strings.TrimSpace(param.name)
+			valueText := strings.TrimSpace(param.value)
+			if name == "" {
+				name = fmt.Sprintf("arg%d", i+1)
+			}
+			if strings.HasPrefix(name, "[") || strings.HasPrefix(name, "{") {
+				valueText = name
+				name = "plan"
+			}
+			args[name] = decodeFakeToolValue(valueText)
+		}
+		if data, err := json.Marshal(args); err == nil {
+			return string(data)
+		}
+	}
+	if body == "" {
+		return "{}"
+	}
+	if json.Valid([]byte(body)) {
+		return body
+	}
+	encoded, err := json.Marshal(map[string]string{"input": body})
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
+}
+
+type fakeToolParam struct {
+	name  string
+	value string
+}
+
+func parseFakeToolParameters(body string) []fakeToolParam {
+	var params []fakeToolParam
+	for {
+		start := strings.Index(body, "<parameter")
+		if start == -1 {
+			break
+		}
+		body = body[start+len("<parameter"):]
+		end := strings.Index(body, "</parameter>")
+		if end == -1 {
+			break
+		}
+		raw := strings.TrimSpace(body[:end])
+		body = body[end+len("</parameter>"):]
+
+		var param fakeToolParam
+		if strings.HasPrefix(raw, "=") {
+			raw = strings.TrimSpace(raw[1:])
+			if split := strings.Index(raw, ">"); split != -1 {
+				param.name = strings.TrimSpace(raw[:split])
+				param.value = strings.TrimSpace(raw[split+1:])
+			} else if strings.HasPrefix(raw, "[") || strings.HasPrefix(raw, "{") {
+				param.name = raw
+				param.value = raw
+			} else {
+				param.value = raw
+			}
+		} else if strings.HasPrefix(raw, ">") {
+			param.value = strings.TrimSpace(raw[1:])
+		} else {
+			param.value = raw
+		}
+		params = append(params, param)
+	}
+	return params
+}
+
+func decodeFakeToolValue(value string) interface{} {
+	if value == "" {
+		return ""
+	}
+	var decoded interface{}
+	if json.Unmarshal([]byte(value), &decoded) == nil {
+		return decoded
+	}
+	return value
+}
+
+func trimFakeToolResidue(text string) string {
+	text = strings.TrimSpace(text)
+	text = strings.Trim(text, "•*- \t\r\n")
+	return strings.TrimSpace(text)
+}
+
 func removeFakeToolCalls(text string) string {
+	if cleaned, calls := extractFakeToolCalls(text); len(calls) > 0 {
+		return cleaned
+	}
 	prefixes := []string{"<function="}
 	closings := []string{"</function"}
 	for i, prefix := range prefixes {

@@ -488,6 +488,7 @@ func (h *Admin) GetSettings(c *gin.Context) {
 		"port":        cfg.Server.Port,
 		"admin_key":   cfg.Server.AdminKey,
 		"access_keys": cfg.Server.AccessKeys,
+		"models":      h.pool.GetAvailableModels(),
 	})
 }
 
@@ -500,11 +501,38 @@ func (h *Admin) UpdateAccessKeys(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
+	req.AccessKeys = h.normalizeAccessKeyModelPolicies(req.AccessKeys)
 	if err := config.UpdateAccessKeys(req.AccessKeys); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update access keys: " + err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "access_keys": config.GetAccessKeyConfigs()})
+}
+
+func (h *Admin) normalizeAccessKeyModelPolicies(keys []config.AccessKeyConfig) []config.AccessKeyConfig {
+	visible := make(map[string]bool)
+	for _, m := range h.pool.GetAvailableModels() {
+		visible[m.ID] = true
+	}
+	for i := range keys {
+		keys[i].AllowedModels = filterVisibleModels(keys[i].AllowedModels, visible)
+		keys[i].ExcludedModels = filterVisibleModels(keys[i].ExcludedModels, visible)
+	}
+	return keys
+}
+
+func filterVisibleModels(models []string, visible map[string]bool) []string {
+	result := make([]string, 0, len(models))
+	seen := make(map[string]bool, len(models))
+	for _, modelName := range models {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" || seen[modelName] || !visible[modelName] {
+			continue
+		}
+		result = append(result, modelName)
+		seen[modelName] = true
+	}
+	return result
 }
 
 // FetchModels calls the upstream API to get available models.
