@@ -4,15 +4,38 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
 )
 
 type ServerConfig struct {
-	Port       int      `json:"port"       yaml:"port"`
-	AdminKey   string   `json:"admin_key"  yaml:"admin_key"`
-	AccessKeys []string `json:"access_keys" yaml:"access_keys"`
+	Port       int               `json:"port"       yaml:"port"`
+	AdminKey   string            `json:"admin_key"  yaml:"admin_key"`
+	AccessKeys []AccessKeyConfig `json:"access_keys" yaml:"access_keys"`
+}
+
+type AccessKeyConfig struct {
+	Key            string   `json:"key" yaml:"key"`
+	AllowedModels  []string `json:"allowed_models,omitempty" yaml:"allowed_models,omitempty"`
+	ExcludedModels []string `json:"excluded_models,omitempty" yaml:"excluded_models,omitempty"`
+}
+
+func (a *AccessKeyConfig) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		a.Key = value.Value
+		a.AllowedModels = nil
+		a.ExcludedModels = nil
+		return nil
+	}
+	type plain AccessKeyConfig
+	var out plain
+	if err := value.Decode(&out); err != nil {
+		return err
+	}
+	*a = AccessKeyConfig(out)
+	return nil
 }
 
 type ChannelConfig struct {
@@ -67,6 +90,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 3000
 	}
+	normalizeAccessKeys(&cfg.Server.AccessKeys)
 	for i := range cfg.Channels {
 		if cfg.Channels[i].Priority == 0 {
 			cfg.Channels[i].Priority = 10
@@ -82,6 +106,36 @@ func applyDefaults(cfg *Config) {
 			cfg.Channels[i].ModelMapping = make(map[string]string)
 		}
 	}
+}
+
+func normalizeAccessKeys(keys *[]AccessKeyConfig) {
+	cleaned := make([]AccessKeyConfig, 0, len(*keys))
+	seen := make(map[string]bool, len(*keys))
+	for _, key := range *keys {
+		key.Key = strings.TrimSpace(key.Key)
+		if key.Key == "" || seen[key.Key] {
+			continue
+		}
+		key.AllowedModels = cleanStringList(key.AllowedModels)
+		key.ExcludedModels = cleanStringList(key.ExcludedModels)
+		cleaned = append(cleaned, key)
+		seen[key.Key] = true
+	}
+	*keys = cleaned
+}
+
+func cleanStringList(values []string) []string {
+	cleaned := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		cleaned = append(cleaned, value)
+		seen[value] = true
+	}
+	return cleaned
 }
 
 // ---- Persistence ----
@@ -133,6 +187,7 @@ func UpdateChannel(name string, ch ChannelConfig) error {
 			if ch.DisabledKeys == nil {
 				ch.DisabledKeys = existing.DisabledKeys
 			}
+			ch.DisabledKeys = filterExistingKeys(ch.DisabledKeys, ch.Keys)
 			applyChannelDefaults(&ch)
 			globalConfig.Channels[i] = ch
 			return saveToDiskLocked()
@@ -238,7 +293,58 @@ func GetAdminKey() string {
 func GetAccessKeys() []string {
 	configMu.RLock()
 	defer configMu.RUnlock()
-	return globalConfig.Server.AccessKeys
+	keys := make([]string, 0, len(globalConfig.Server.AccessKeys))
+	for _, accessKey := range globalConfig.Server.AccessKeys {
+		keys = append(keys, accessKey.Key)
+	}
+	return keys
+}
+
+func GetAccessKeyConfigs() []AccessKeyConfig {
+	configMu.RLock()
+	defer configMu.RUnlock()
+	keys := make([]AccessKeyConfig, len(globalConfig.Server.AccessKeys))
+	copy(keys, globalConfig.Server.AccessKeys)
+	return keys
+}
+
+func UpdateAccessKeys(keys []AccessKeyConfig) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	normalizeAccessKeys(&keys)
+	globalConfig.Server.AccessKeys = keys
+	return saveToDiskLocked()
+}
+
+func FindAccessKey(token string) (AccessKeyConfig, bool) {
+	configMu.RLock()
+	defer configMu.RUnlock()
+	for _, key := range globalConfig.Server.AccessKeys {
+		if key.Key == token {
+			return key, true
+		}
+	}
+	return AccessKeyConfig{}, false
+}
+
+func AccessKeyCanUseModel(accessKey AccessKeyConfig, model string) bool {
+	if model == "" {
+		return true
+	}
+	for _, excluded := range accessKey.ExcludedModels {
+		if excluded == model {
+			return false
+		}
+	}
+	if len(accessKey.AllowedModels) == 0 {
+		return true
+	}
+	for _, allowed := range accessKey.AllowedModels {
+		if allowed == model {
+			return true
+		}
+	}
+	return false
 }
 
 func GetPort() int {

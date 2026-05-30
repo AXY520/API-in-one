@@ -2,7 +2,10 @@ package handler
 
 import (
 	"api-in-one/relay"
+	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,12 +13,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 // RequestLog represents a single API request log entry.
 type RequestLog struct {
 	ID              int64              `json:"id"`
-	Protocol        string             `json:"protocol"` // openai | claude-inbound | gemini-inbound
+	Protocol        string             `json:"protocol"` // openai | claude-inbound | gemini-inbound | responses
+	Mode            string             `json:"mode"`     // passthrough | converted
 	Model           string             `json:"model"`
 	ResolvedModel   string             `json:"resolved_model,omitempty"`
 	Channel         string             `json:"channel,omitempty"`
@@ -41,23 +47,24 @@ type LogFilter struct {
 	Query     string
 }
 
-// LogStore is a ring buffer for request logs.
+// LogStore persists request logs in SQLite. List queries intentionally return
+// metadata only; request bodies are loaded by the detail endpoint.
 type LogStore struct {
-	mu           sync.RWMutex
-	logs         []RequestLog
-	cap          int
-	nextID       int64
-	total        int64
-	persistMu    sync.Mutex
-	persistTimer *time.Timer
+	mu         sync.RWMutex
+	db         *sql.DB
+	path       string
+	inserted   int64
+	maxEntries int
 }
 
-var globalLogStore = &LogStore{
-	logs: make([]RequestLog, 0, 5000),
-	cap:  5000,
-}
+var globalLogStore = &LogStore{}
 
-const defaultLogPath = "data/request_logs.json"
+const (
+	defaultLogPath    = "data/request_logs.sqlite3"
+	legacyJSONLogPath = "data/request_logs.json"
+	defaultMaxLogRows = 20000
+	pruneEveryRows    = 200
+)
 
 func logRequest(protocol, model string, status int, duration time.Duration, err error) {
 	logRequestDetail(RequestLog{
@@ -73,21 +80,14 @@ func logRequestDetail(entry RequestLog) {
 	if entry.Timestamp == "" {
 		entry.Timestamp = time.Now().Format("2006-01-02 15:04:05")
 	}
-	globalLogStore.add(RequestLog{
-		Protocol:        entry.Protocol,
-		Model:           entry.Model,
-		ResolvedModel:   entry.ResolvedModel,
-		Channel:         entry.Channel,
-		AccessKey:       entry.AccessKey,
-		Status:          entry.Status,
-		Duration:        entry.Duration,
-		Stream:          entry.Stream,
-		Error:           entry.Error,
-		Attempts:        entry.Attempts,
-		Request:         entry.Request,
-		UpstreamRequest: entry.UpstreamRequest,
-		Timestamp:       entry.Timestamp,
-	})
+	if entry.Mode == "" {
+		if entry.UpstreamRequest != nil {
+			entry.Mode = "converted"
+		} else {
+			entry.Mode = "passthrough"
+		}
+	}
+	globalLogStore.add(entry)
 }
 
 func errStr(err error) string {
@@ -97,147 +97,395 @@ func errStr(err error) string {
 	return ""
 }
 
-func (s *LogStore) add(entry RequestLog) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.nextID++
-	entry.ID = s.nextID
-	s.total++
-
-	if len(s.logs) >= s.cap {
-		// Ring buffer: drop oldest
-		s.logs = append(s.logs[1:], entry)
-	} else {
-		s.logs = append(s.logs, entry)
+func InitLogStore(path string) {
+	if path == "" {
+		path = defaultLogPath
 	}
-	s.scheduleSave(defaultLogPath)
+	legacyPath := legacyPathFor(path)
+	if strings.HasSuffix(path, ".json") {
+		path = strings.TrimSuffix(path, ".json") + ".sqlite3"
+	}
+	if err := globalLogStore.open(path); err != nil {
+		slog.Warn("failed to initialize request log database", "path", path, "error", err)
+		return
+	}
+	if err := globalLogStore.importLegacyJSON(legacyPath); err != nil {
+		slog.Warn("failed to import legacy request logs", "error", err)
+	}
 }
 
-func (s *LogStore) recent(n int) []RequestLog {
+func (s *LogStore) open(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;`); err != nil {
+		_ = db.Close()
+		return err
+	}
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS request_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  protocol TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'passthrough',
+  model TEXT NOT NULL,
+  resolved_model TEXT,
+  channel TEXT,
+  access_key TEXT,
+  status INTEGER NOT NULL,
+  duration INTEGER NOT NULL,
+  stream INTEGER NOT NULL,
+  error TEXT,
+  attempts_json TEXT,
+  request_json TEXT,
+  upstream_request_json TEXT,
+  timestamp TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_request_logs_timestamp ON request_logs(id DESC);
+CREATE INDEX IF NOT EXISTS idx_request_logs_protocol ON request_logs(protocol);
+CREATE INDEX IF NOT EXISTS idx_request_logs_model ON request_logs(model);
+CREATE INDEX IF NOT EXISTS idx_request_logs_resolved_model ON request_logs(resolved_model);
+CREATE INDEX IF NOT EXISTS idx_request_logs_channel ON request_logs(channel);
+CREATE INDEX IF NOT EXISTS idx_request_logs_access_key ON request_logs(access_key);
+CREATE INDEX IF NOT EXISTS idx_request_logs_status ON request_logs(status);
+CREATE INDEX IF NOT EXISTS idx_request_logs_mode ON request_logs(mode);
+`); err != nil {
+		_ = db.Close()
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db != nil {
+		_ = s.db.Close()
+	}
+	s.db = db
+	s.path = path
+	s.maxEntries = defaultMaxLogRows
+	return nil
+}
+
+func legacyPathFor(path string) string {
+	if strings.HasSuffix(path, ".json") {
+		return path
+	}
+	return filepath.Join(filepath.Dir(path), "request_logs.json")
+}
+
+func (s *LogStore) add(entry RequestLog) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if n <= 0 || n > len(s.logs) {
-		n = len(s.logs)
+	db := s.db
+	s.mu.RUnlock()
+	if db == nil {
+		return
 	}
-	start := len(s.logs) - n
-	result := make([]RequestLog, n)
-	copy(result, s.logs[start:])
-	// Reverse to newest first
-	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
-		result[i], result[j] = result[j], result[i]
+	attemptsJSON := mustJSON(entry.Attempts)
+	requestJSON := mustJSON(entry.Request)
+	upstreamJSON := mustJSON(entry.UpstreamRequest)
+	stream := 0
+	if entry.Stream {
+		stream = 1
 	}
-	return result
+	if _, err := db.Exec(`
+INSERT INTO request_logs
+(protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		entry.Protocol, entry.Mode, entry.Model, entry.ResolvedModel, entry.Channel, entry.AccessKey, entry.Status, entry.Duration,
+		stream, entry.Error, attemptsJSON, requestJSON, upstreamJSON, entry.Timestamp,
+	); err != nil {
+		slog.Warn("failed to insert request log", "error", err)
+		return
+	}
+	s.mu.Lock()
+	s.inserted++
+	shouldPrune := s.maxEntries > 0 && s.inserted%pruneEveryRows == 0
+	s.mu.Unlock()
+	if shouldPrune {
+		s.prune()
+	}
+}
+
+func (s *LogStore) clear() error {
+	db := s.database()
+	if db == nil {
+		return nil
+	}
+	if _, err := db.Exec(`DELETE FROM request_logs`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`VACUUM`); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.inserted = 0
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *LogStore) prune() {
+	db := s.database()
+	if db == nil {
+		return
+	}
+	s.mu.RLock()
+	maxEntries := s.maxEntries
+	s.mu.RUnlock()
+	if maxEntries <= 0 {
+		return
+	}
+	if _, err := db.Exec(`DELETE FROM request_logs WHERE id NOT IN (SELECT id FROM request_logs ORDER BY id DESC LIMIT ?)`, maxEntries); err != nil {
+		slog.Warn("failed to prune request logs", "max_entries", maxEntries, "error", err)
+	}
 }
 
 func (s *LogStore) search(filter LogFilter) []RequestLog {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if filter.Limit <= 0 || filter.Limit > len(s.logs) {
-		filter.Limit = len(s.logs)
+	db := s.database()
+	if db == nil {
+		return nil
 	}
+	filter = normalizeLogFilter(filter)
+	where, args := buildLogWhere(filter)
+	args = append(args, filter.Limit, filter.Offset)
+	rows, err := db.Query(`
+SELECT id, protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, timestamp
+FROM request_logs `+where+`
+ORDER BY id DESC
+LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		slog.Warn("failed to query request logs", "error", err)
+		return nil
+	}
+	defer rows.Close()
+
 	result := make([]RequestLog, 0, filter.Limit)
-	skipped := 0
-	for i := len(s.logs) - 1; i >= 0 && len(result) < filter.Limit; i-- {
-		log := s.logs[i]
-		if !matchesLog(log, filter) {
+	for rows.Next() {
+		var log RequestLog
+		var stream int
+		var attemptsJSON string
+		if err := rows.Scan(&log.ID, &log.Protocol, &log.Mode, &log.Model, &log.ResolvedModel, &log.Channel, &log.AccessKey, &log.Status, &log.Duration, &stream, &log.Error, &attemptsJSON, &log.Timestamp); err != nil {
+			slog.Warn("failed to scan request log", "error", err)
 			continue
 		}
-		if skipped < filter.Offset {
-			skipped++
-			continue
-		}
+		log.Stream = stream == 1
+		_ = json.Unmarshal([]byte(attemptsJSON), &log.Attempts)
 		result = append(result, log)
 	}
 	return result
 }
 
 func (s *LogStore) count(filter LogFilter) int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	total := 0
-	filter.Offset = 0
-	filter.Limit = len(s.logs)
-	for _, log := range s.logs {
-		if matchesLog(log, filter) {
-			total++
-		}
+	db := s.database()
+	if db == nil {
+		return 0
+	}
+	where, args := buildLogWhere(filter)
+	var total int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM request_logs `+where, args...).Scan(&total); err != nil {
+		slog.Warn("failed to count request logs", "error", err)
+		return 0
+	}
+	return total
+}
+
+func (s *LogStore) total() int64 {
+	db := s.database()
+	if db == nil {
+		return 0
+	}
+	var total int64
+	if err := db.QueryRow(`SELECT COUNT(*) FROM request_logs`).Scan(&total); err != nil {
+		return 0
 	}
 	return total
 }
 
 func (s *LogStore) get(id int64) (RequestLog, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for i := len(s.logs) - 1; i >= 0; i-- {
-		if s.logs[i].ID == id {
-			return s.logs[i], true
-		}
+	db := s.database()
+	if db == nil {
+		return RequestLog{}, false
 	}
-	return RequestLog{}, false
+	var log RequestLog
+	var stream int
+	var attemptsJSON, requestJSON, upstreamJSON string
+	err := db.QueryRow(`
+SELECT id, protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp
+FROM request_logs WHERE id = ?`, id).
+		Scan(&log.ID, &log.Protocol, &log.Mode, &log.Model, &log.ResolvedModel, &log.Channel, &log.AccessKey, &log.Status, &log.Duration, &stream, &log.Error, &attemptsJSON, &requestJSON, &upstreamJSON, &log.Timestamp)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RequestLog{}, false
+	}
+	if err != nil {
+		slog.Warn("failed to get request log", "id", id, "error", err)
+		return RequestLog{}, false
+	}
+	log.Stream = stream == 1
+	_ = json.Unmarshal([]byte(attemptsJSON), &log.Attempts)
+	log.Request = decodeJSONValue(requestJSON)
+	log.UpstreamRequest = decodeJSONValue(upstreamJSON)
+	return log, true
 }
 
-func matchesLog(log RequestLog, filter LogFilter) bool {
-	if filter.Protocol != "" && log.Protocol != filter.Protocol {
-		return false
+func (s *LogStore) stats() map[string]interface{} {
+	db := s.database()
+	if db == nil {
+		return emptyStats()
 	}
-	if filter.Model != "" && log.Model != filter.Model && log.ResolvedModel != filter.Model {
-		return false
+	var total, successCount, errorCount, avgDuration int64
+	_ = db.QueryRow(`SELECT COUNT(*), COALESCE(CAST(AVG(duration) AS INTEGER), 0) FROM request_logs`).Scan(&total, &avgDuration)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM request_logs WHERE status >= 200 AND status < 400`).Scan(&successCount)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM request_logs WHERE status < 200 OR status >= 400`).Scan(&errorCount)
+	return map[string]interface{}{
+		"total":           total,
+		"success":         successCount,
+		"error":           errorCount,
+		"avg_duration_ms": avgDuration,
+		"models":          groupedCounts(db, "model"),
+		"protocols":       groupedCounts(db, "protocol"),
+		"modes":           groupedCounts(db, "mode"),
+		"recent_count":    total,
 	}
-	if filter.Channel != "" && log.Channel != filter.Channel {
-		found := false
-		for _, attempt := range log.Attempts {
-			if attempt.Channel == filter.Channel {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
+}
+
+func (s *LogStore) database() *sql.DB {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.db
+}
+
+func normalizeLogFilter(filter LogFilter) LogFilter {
+	if filter.Limit <= 0 {
+		filter.Limit = 50
 	}
-	if filter.AccessKey != "" && log.AccessKey != filter.AccessKey {
-		return false
+	if filter.Limit > 200 {
+		filter.Limit = 200
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	return filter
+}
+
+func buildLogWhere(filter LogFilter) (string, []interface{}) {
+	clauses := make([]string, 0, 8)
+	args := make([]interface{}, 0, 8)
+	if filter.Protocol != "" {
+		clauses = append(clauses, "protocol = ?")
+		args = append(args, filter.Protocol)
+	}
+	if filter.Model != "" {
+		clauses = append(clauses, "(model = ? OR resolved_model = ?)")
+		args = append(args, filter.Model, filter.Model)
+	}
+	if filter.Channel != "" {
+		clauses = append(clauses, "(channel = ? OR attempts_json LIKE ?)")
+		args = append(args, filter.Channel, "%\"channel\":\""+escapeLike(filter.Channel)+"\"%")
+	}
+	if filter.AccessKey != "" {
+		clauses = append(clauses, "access_key = ?")
+		args = append(args, filter.AccessKey)
 	}
 	switch filter.Status {
 	case "success":
-		if log.Status < 200 || log.Status >= 400 {
-			return false
-		}
+		clauses = append(clauses, "status >= 200 AND status < 400")
 	case "error":
-		if log.Status >= 200 && log.Status < 400 {
-			return false
-		}
+		clauses = append(clauses, "(status < 200 OR status >= 400)")
 	default:
 		if filter.Status != "" {
-			matched := false
-			statusText := strconv.Itoa(log.Status)
-			if statusText == filter.Status {
-				matched = true
-			}
-			if !matched {
-				return false
+			if status, err := strconv.Atoi(filter.Status); err == nil {
+				clauses = append(clauses, "status = ?")
+				args = append(args, status)
 			}
 		}
 	}
 	if filter.Query != "" {
-		q := filter.Query
-		if !contains(log.Model, q) && !contains(log.ResolvedModel, q) && !contains(log.Channel, q) && !contains(log.AccessKey, q) && !contains(log.Error, q) && !contains(strconv.FormatInt(log.ID, 10), q) {
-			return false
+		q := "%" + escapeLike(filter.Query) + "%"
+		clauses = append(clauses, "(model LIKE ? ESCAPE '\\' OR resolved_model LIKE ? ESCAPE '\\' OR channel LIKE ? ESCAPE '\\' OR access_key LIKE ? ESCAPE '\\' OR error LIKE ? ESCAPE '\\' OR CAST(id AS TEXT) LIKE ? ESCAPE '\\')")
+		args = append(args, q, q, q, q, q, q)
+	}
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return "WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
+
+func mustJSON(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func decodeJSONValue(raw string) interface{} {
+	if raw == "" {
+		return nil
+	}
+	var v interface{}
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		return nil
+	}
+	return v
+}
+
+func groupedCounts(db *sql.DB, column string) map[string]int64 {
+	if column != "model" && column != "protocol" && column != "mode" {
+		return map[string]int64{}
+	}
+	rows, err := db.Query(fmt.Sprintf(`SELECT %s, COUNT(*) FROM request_logs GROUP BY %s ORDER BY COUNT(*) DESC LIMIT 50`, column, column))
+	if err != nil {
+		return map[string]int64{}
+	}
+	defer rows.Close()
+	result := map[string]int64{}
+	for rows.Next() {
+		var key string
+		var count int64
+		if err := rows.Scan(&key, &count); err == nil {
+			result[key] = count
 		}
 	}
-	return true
+	return result
 }
 
-func InitLogStore(path string) {
-	if path == "" {
-		path = defaultLogPath
-	}
-	if err := globalLogStore.load(path); err != nil {
-		slog.Warn("failed to load request logs", "path", path, "error", err)
+func emptyStats() map[string]interface{} {
+	return map[string]interface{}{
+		"total":           int64(0),
+		"success":         int64(0),
+		"error":           int64(0),
+		"avg_duration_ms": int64(0),
+		"models":          map[string]int64{},
+		"protocols":       map[string]int64{},
+		"modes":           map[string]int64{},
+		"recent_count":    int64(0),
 	}
 }
 
-func (s *LogStore) load(path string) error {
+func (s *LogStore) importLegacyJSON(path string) error {
+	db := s.database()
+	if db == nil {
+		return nil
+	}
+	var existing int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM request_logs`).Scan(&existing); err != nil {
+		return err
+	}
+	if existing > 0 {
+		return nil
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -246,111 +494,40 @@ func (s *LogStore) load(path string) error {
 		return err
 	}
 	var snapshot struct {
-		Logs   []RequestLog `json:"logs"`
-		NextID int64        `json:"next_id"`
-		Total  int64        `json:"total"`
+		Logs []RequestLog `json:"logs"`
 	}
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(snapshot.Logs) > s.cap {
-		snapshot.Logs = snapshot.Logs[len(snapshot.Logs)-s.cap:]
-	}
-	s.logs = snapshot.Logs
-	s.nextID = snapshot.NextID
-	s.total = snapshot.Total
-	if s.total < int64(len(s.logs)) {
-		s.total = int64(len(s.logs))
-	}
-	for _, log := range s.logs {
-		if log.ID > s.nextID {
-			s.nextID = log.ID
-		}
-	}
-	return nil
-}
-
-func (s *LogStore) save(path string) {
-	s.mu.RLock()
-	snapshot := struct {
-		Logs   []RequestLog `json:"logs"`
-		NextID int64        `json:"next_id"`
-		Total  int64        `json:"total"`
-	}{
-		Logs:   append([]RequestLog(nil), s.logs...),
-		NextID: s.nextID,
-		Total:  s.total,
-	}
-	s.mu.RUnlock()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		slog.Warn("failed to create log dir", "path", path, "error", err)
-		return
-	}
-	tmp := path + ".tmp"
-	data, err := json.MarshalIndent(snapshot, "", "  ")
+	tx, err := db.Begin()
 	if err != nil {
-		slog.Warn("failed to marshal request logs", "error", err)
-		return
+		return err
 	}
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
-		slog.Warn("failed to write request logs", "path", tmp, "error", err)
-		return
+	stmt, err := tx.Prepare(`
+INSERT INTO request_logs
+(id, protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		slog.Warn("failed to replace request logs", "path", path, "error", err)
-	}
-}
-
-func (s *LogStore) scheduleSave(path string) {
-	s.persistMu.Lock()
-	defer s.persistMu.Unlock()
-	if s.persistTimer != nil {
-		s.persistTimer.Stop()
-	}
-	s.persistTimer = time.AfterFunc(500*time.Millisecond, func() {
-		s.save(path)
-	})
-}
-
-func contains(s, sub string) bool {
-	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
-}
-
-func (s *LogStore) stats() map[string]interface{} {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	total := s.total
-	var successCount, errorCount int64
-	var totalDuration int64
-	modelCounts := map[string]int64{}
-	protocolCounts := map[string]int64{}
-
-	for _, l := range s.logs {
-		if l.Status >= 200 && l.Status < 400 {
-			successCount++
-		} else {
-			errorCount++
+	defer stmt.Close()
+	for _, entry := range snapshot.Logs {
+		if entry.Mode == "" {
+			if entry.UpstreamRequest != nil {
+				entry.Mode = "converted"
+			} else {
+				entry.Mode = "passthrough"
+			}
 		}
-		totalDuration += l.Duration
-		modelCounts[l.Model]++
-		protocolCounts[l.Protocol]++
+		stream := 0
+		if entry.Stream {
+			stream = 1
+		}
+		if _, err := stmt.Exec(entry.ID, entry.Protocol, entry.Mode, entry.Model, entry.ResolvedModel, entry.Channel, entry.AccessKey, entry.Status, entry.Duration, stream, entry.Error, mustJSON(entry.Attempts), mustJSON(entry.Request), mustJSON(entry.UpstreamRequest), entry.Timestamp); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
 	}
-
-	var avgDuration int64
-	if len(s.logs) > 0 {
-		avgDuration = totalDuration / int64(len(s.logs))
-	}
-
-	return map[string]interface{}{
-		"total":           total,
-		"success":         successCount,
-		"error":           errorCount,
-		"avg_duration_ms": avgDuration,
-		"models":          modelCounts,
-		"protocols":       protocolCounts,
-		"recent_count":    len(s.logs),
-	}
+	return tx.Commit()
 }

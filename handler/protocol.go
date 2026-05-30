@@ -43,6 +43,15 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 		}})
 		return
 	}
+	if !requestCanUseModel(c, claudeReq.Model) {
+		c.JSON(http.StatusForbidden, gin.H{"error": map[string]interface{}{
+			"message": fmt.Sprintf("API key is not allowed to access model %q", claudeReq.Model),
+			"type":    "permission_error",
+			"param":   "model",
+			"code":    "model_not_allowed",
+		}})
+		return
+	}
 
 	if rawResult, ok := h.tryClaudePassthrough(c, &claudeReq, rawBody); ok {
 		relayHandler := Relay{engine: h.engine}
@@ -343,6 +352,15 @@ func (h *Protocol) GeminiGenerate(c *gin.Context) {
 	// Strip ":generateContent" or ":streamGenerateContent" suffix
 	modelName = strings.TrimSuffix(modelName, ":generateContent")
 	modelName = strings.TrimSuffix(modelName, ":streamGenerateContent")
+	if !requestCanUseModel(c, modelName) {
+		c.JSON(http.StatusForbidden, gin.H{"error": map[string]interface{}{
+			"message": fmt.Sprintf("API key is not allowed to access model %q", modelName),
+			"type":    "permission_error",
+			"param":   "model",
+			"code":    "model_not_allowed",
+		}})
+		return
+	}
 
 	var geminiReq geminiInboundRequest
 	if err := c.ShouldBindJSON(&geminiReq); err != nil {
@@ -911,6 +929,15 @@ func (h *Protocol) Responses(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": map[string]interface{}{
 			"message": "invalid request: " + err.Error(),
 			"type":    "invalid_request_error",
+		}})
+		return
+	}
+	if !requestCanUseModel(c, req.Model) {
+		c.JSON(http.StatusForbidden, gin.H{"error": map[string]interface{}{
+			"message": fmt.Sprintf("API key is not allowed to access model %q", req.Model),
+			"type":    "permission_error",
+			"param":   "model",
+			"code":    "model_not_allowed",
 		}})
 		return
 	}

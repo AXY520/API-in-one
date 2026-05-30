@@ -53,11 +53,13 @@ func Setup(engine *relay.Engine, pool *relay.Pool) *gin.Engine {
 		admin.DELETE("/channels/:name", adminHandler.DeleteChannel)
 		admin.POST("/channels/reload", adminHandler.ReloadConfig)
 		admin.GET("/settings", adminHandler.GetSettings)
+		admin.PUT("/access-keys", adminHandler.UpdateAccessKeys)
 		admin.POST("/models/fetch", adminHandler.FetchModels)
 		// Stats
 		admin.GET("/stats", adminHandler.GetStats)
 		admin.GET("/logs", adminHandler.GetLogs)
 		admin.GET("/logs/:id", adminHandler.GetLog)
+		admin.DELETE("/logs", adminHandler.ClearLogs)
 	}
 
 	return r

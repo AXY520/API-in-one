@@ -491,6 +491,22 @@ func (h *Admin) GetSettings(c *gin.Context) {
 	})
 }
 
+// UpdateAccessKeys updates client API keys and their model policies.
+func (h *Admin) UpdateAccessKeys(c *gin.Context) {
+	var req struct {
+		AccessKeys []config.AccessKeyConfig `json:"access_keys"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		return
+	}
+	if err := config.UpdateAccessKeys(req.AccessKeys); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update access keys: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "access_keys": config.GetAccessKeyConfigs()})
+}
+
 // FetchModels calls the upstream API to get available models.
 func (h *Admin) FetchModels(c *gin.Context) {
 	var req struct {
@@ -631,7 +647,7 @@ func (h *Admin) GetLogs(c *gin.Context) {
 	filteredTotal := globalLogStore.count(filter)
 	c.JSON(http.StatusOK, gin.H{
 		"logs":           globalLogStore.search(filter),
-		"total":          globalLogStore.total,
+		"total":          globalLogStore.total(),
 		"filtered_total": filteredTotal,
 		"page":           page,
 		"limit":          n,
@@ -651,4 +667,13 @@ func (h *Admin) GetLog(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"log": log})
+}
+
+// ClearLogs removes all persisted request logs.
+func (h *Admin) ClearLogs(c *gin.Context) {
+	if err := globalLogStore.clear(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to clear request logs: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

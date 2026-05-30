@@ -19,6 +19,15 @@ func NewModels(pool *relay.Pool) *Models {
 
 func (h *Models) ListModels(c *gin.Context) {
 	models := h.pool.GetAvailableModels()
+	if isAdmin, _ := c.Get("is_admin"); isAdmin != true {
+		filtered := make([]model.ModelObject, 0, len(models))
+		for _, item := range models {
+			if requestCanUseModel(c, item.ID) {
+				filtered = append(filtered, item)
+			}
+		}
+		models = filtered
+	}
 	c.JSON(http.StatusOK, model.ModelListResponse{
 		Object: "list",
 		Data:   models,

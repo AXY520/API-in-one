@@ -1,191 +1,99 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>API-in-one 管理面板</title>
+<link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" type="text/css" />
+<script src="https://cdn.tailwindcss.com"></script>
 <style>
-  :root {
-    --bg: #f6f8fa; --card: #fff; --border: #d1d9e0; --text: #1f2328;
-    --text2: #656d76; --blue: #0969da; --green: #1a7f37; --red: #cf222e;
-    --hover: #f3f4f6; --input-bg: #fff; --shadow: 0 1px 3px rgba(0,0,0,0.06);
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-
-  .layout { display: flex; min-height: 100vh; }
-  .sidebar { width: 220px; background: var(--card); border-right: 1px solid var(--border); padding: 20px 16px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-  .sidebar h1 { font-size: 18px; color: var(--blue); margin-bottom: 4px; }
-  .sidebar .sub { font-size: 12px; color: var(--text2); margin-bottom: 24px; }
-  .nav-item { display: block; padding: 8px 10px; border-radius: 6px; color: var(--text); text-decoration: none; font-size: 14px; cursor: pointer; margin-bottom: 2px; }
-  .nav-item:hover { background: var(--hover); }
-  .nav-item.active { background: #ddf4ff; color: var(--blue); font-weight: 500; }
-  .sidebar .sep { height: 1px; background: var(--border); margin: 12px 0; }
-
-  .main { flex: 1; padding: 24px 32px; min-width: 0; }
-  .main h2 { font-size: 20px; margin-bottom: 20px; }
-
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
-
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
-  th { color: var(--text2); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.3px; background: var(--bg); }
-  tr:hover td { background: #f8f9fb; }
-
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
-  .badge-green { background: #dafbe1; color: var(--green); }
-  .badge-red { background: #ffebe9; color: var(--red); }
-  .badge-blue { background: #ddf4ff; color: var(--blue); }
-  .badge-gray { background: #f0f3f6; color: var(--text2); }
-
-  .btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); cursor: pointer; font-size: 13px; transition: all 0.15s; display: inline-flex; align-items: center; gap: 4px; }
-  .btn:hover { background: var(--hover); border-color: #afb8c1; }
-  .btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .btn-primary:hover { background: #0860ca; }
-  .btn-danger { background: var(--card); border-color: var(--red); color: var(--red); }
-  .btn-danger:hover { background: #fff5f5; }
-  .btn-sm { padding: 4px 10px; font-size: 12px; }
-  .toolbar { display: flex; gap: 8px; margin-bottom: 20px; }
-
-  .tag { display: inline-block; padding: 2px 7px; background: #f0f3f6; border: 1px solid var(--border); border-radius: 4px; font-size: 11px; color: var(--text); font-family: 'SF Mono', 'Cascadia Code', monospace; }
-  .tag-blue { background: #ddf4ff; border-color: #b6e3ff; color: var(--blue); }
-  .action-btns { display: flex; gap: 4px; }
-
-  .empty { text-align: center; padding: 40px; color: var(--text2); font-size: 14px; }
-
-  .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 300; animation: slideIn 0.3s; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-  .toast-ok { background: #dafbe1; border: 1px solid var(--green); color: var(--green); }
-  .toast-err { background: #ffebe9; border: 1px solid var(--red); color: var(--red); }
-  @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-
-  #login-overlay { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 99; }
-  #login-box { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 32px; width: 360px; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
-  #login-box h2 { color: var(--blue); margin-bottom: 8px; }
-  #login-box input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font-size: 14px; margin-bottom: 12px; }
-  #login-box input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(9,105,218,0.15); }
-
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: flex-start; justify-content: center; z-index: 100; padding-top: 40px; overflow-y: auto; }
+  .modal-overlay { position: fixed; inset: 0; display: none; align-items: flex-start; justify-content: center; z-index: 50; padding: 2rem 1rem; overflow-y: auto; background: rgba(15, 23, 42, 0.45); }
   .modal-overlay.active { display: flex; }
-  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 660px; max-height: 85vh; overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.15); margin-bottom: 40px; }
-  .modal h3 { color: var(--text); margin-bottom: 20px; font-size: 17px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
-  .form-group { margin-bottom: 14px; }
-  .form-group label { display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600; color: var(--text); }
-  .form-group input, .form-group select, .form-group textarea {
-    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
-    background: var(--input-bg); color: var(--text); font-size: 14px; font-family: inherit;
-  }
-  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(9,105,218,0.12); }
-  .form-group textarea { resize: vertical; min-height: 60px; font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 13px; }
-  .form-group .hint { font-size: 11px; color: var(--text2); margin-top: 3px; }
-  .form-row { display: flex; gap: 12px; }
-  .form-row .form-group { flex: 1; }
-  .input-with-btn { display: flex; gap: 6px; }
-  .input-with-btn input { flex: 1; }
-  .switch-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; margin-top: 6px; }
-  .switch-label input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--green); }
-  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
-  .section { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
-  .section:last-of-type { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-  .section-title { font-size: 12px; font-weight: 700; color: var(--text2); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-
-  /* Mapping editor */
-  .mapping-editor { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-  .mapping-header { display: flex; background: var(--bg); padding: 8px 10px; font-size: 12px; font-weight: 600; color: var(--text2); border-bottom: 1px solid var(--border); }
-  .mapping-header span:first-child { flex: 1; }
-  .mapping-header span:last-child { flex: 1; }
-  .mapping-row { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
-  .mapping-row:last-child { border-bottom: none; }
-  .mapping-row .upstream { flex: 1; padding: 7px 10px; font-size: 13px; font-family: monospace; color: var(--text); background: var(--hover); }
-  .mapping-row .arrow-cell { padding: 0 6px; color: var(--text2); font-size: 12px; }
-  .mapping-row input { flex: 1; border: none; padding: 7px 10px; font-size: 13px; font-family: monospace; background: var(--input-bg); color: var(--text); outline: none; }
-  .mapping-row input:focus { background: #fff; }
-  .mapping-row input::placeholder { color: #c0c6cc; }
-
-  .info-box { background: #f0f3f6; border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-size: 13px; }
-  .info-box code { background: #ddf4ff; padding: 1px 5px; border-radius: 3px; font-size: 12px; color: var(--blue); }
-  .key-display { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; background: #f0f3f6; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; font-size: 12px; }
-
-  /* Model picker */
-  .picker-search { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; margin-bottom: 10px; background: var(--input-bg); color: var(--text); }
-  .picker-search:focus { outline: none; border-color: var(--blue); }
-  .picker-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
-  .picker-list { max-height: 400px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
-  .picker-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px; font-family: monospace; }
-  .picker-item:last-child { border-bottom: none; }
-  .picker-item:hover { background: var(--hover); }
-  .picker-item input[type=checkbox] { accent-color: var(--blue); width: 15px; height: 15px; }
-  .picker-count { font-size: 12px; color: var(--text2); }
-
-  /* Stats */
-  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; box-shadow: var(--shadow); }
-  .stat-card .label { font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 6px; }
-  .stat-card .value { font-size: 28px; font-weight: 700; color: var(--text); }
-  .stat-card .value.green { color: var(--green); }
-  .stat-card .value.red { color: var(--red); }
-  .stat-card .value.blue { color: var(--blue); }
-  .log-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
-  .log-status.ok { background: var(--green); }
-  .log-status.err { background: var(--red); }
-  .filters { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
-  .filters input, .filters select { padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font-size: 13px; }
-  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .json-box { background: #0d1117; color: #e6edf3; border-radius: 6px; padding: 12px; max-height: 360px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
-  .key-list { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-top: 10px; }
-  .key-row { display: grid; grid-template-columns: 44px 1fr 110px 120px 190px; gap: 8px; align-items: center; padding: 9px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
-  .key-row:last-child { border-bottom: none; }
-  .key-row.header { background: var(--bg); color: var(--text2); font-size: 12px; font-weight: 700; text-transform: uppercase; }
-  .key-secret { font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 12px; word-break: break-all; }
+  .mapping-row { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; }
+  .json-box { max-height: 24rem; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+  .log-status { display: inline-block; width: .5rem; height: .5rem; border-radius: 9999px; margin-right: .375rem; }
+  .log-status.ok { background: oklch(var(--su)); }
+  .log-status.err { background: oklch(var(--er)); }
+  .nav-item.active { background: rgba(103, 232, 249, .16); color: rgb(207, 250, 254); }
 </style>
 </head>
-<body>
+<body class="min-h-screen bg-slate-50 text-slate-900">
 
-<div id="login-overlay">
-  <div id="login-box">
-    <h2>🔑 API-in-one</h2>
-    <p style="color:var(--text2);margin-bottom:16px;font-size:13px">输入 Admin Key 登录</p>
-    <input type="password" id="key-input" placeholder="Admin Key" onkeydown="if(event.key==='Enter')doLogin()">
-    <button class="btn btn-primary" style="width:100%;padding:10px" onclick="doLogin()">登 录</button>
+<div id="login-overlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-100">
+  <div class="card w-full max-w-sm border border-slate-200 bg-white shadow-2xl ">
+    <div class="card-body">
+      <div class="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-100 text-xl text-cyan-700">AI</div>
+      <h2 class="card-title text-2xl text-slate-950">API-in-one Console</h2>
+      <p class="text-sm text-slate-500">输入 Admin Key 进入你的模型路由控制台</p>
+      <input class="input input-bordered w-full border-slate-200 bg-white text-slate-900" type="password" id="key-input" placeholder="Admin Key" onkeydown="if(event.key==='Enter')doLogin()">
+      <button class="btn border-0 bg-slate-900 text-white hover:bg-slate-800" onclick="doLogin()">登录</button>
+    </div>
   </div>
 </div>
 
-<div class="layout" id="app" style="display:none">
-  <div class="sidebar">
-    <h1>🚀 API-in-one</h1>
-    <p class="sub">API 聚合代理</p>
-    <div class="sep"></div>
-    <a class="nav-item active" onclick="switchTab('channels')">📡 Channels</a>
-    <a class="nav-item" onclick="switchTab('stats')">📊 统计</a>
-    <a class="nav-item" onclick="switchTab('settings')">⚙️ 设置</a>
+<div class="hidden min-h-screen bg-slate-100" id="app">
+  <div class="fixed inset-y-0 left-0 w-72 border-r border-slate-200 bg-white p-5 ">
+    <div class="mb-6">
+      <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-300 text-sm font-black text-slate-950">API</div>
+      <h1 class="text-xl font-semibold text-slate-950">API-in-one</h1>
+      <p class="text-xs text-slate-500">Model routing command center</p>
+    </div>
+    <ul class="menu gap-2 p-0">
+      <li><a class="nav-item active rounded-2xl text-slate-700" onclick="switchTab('channels')">控制台</a></li>
+      <li><a class="nav-item rounded-2xl text-slate-700" onclick="switchTab('stats')">请求流</a></li>
+      <li><a class="nav-item rounded-2xl text-slate-700" onclick="switchTab('settings')">凭据</a></li>
+    </ul>
+    <div class="absolute bottom-5 left-5 right-5 rounded-3xl border border-slate-200 bg-slate-100 p-4">
+      <div class="text-xs uppercase tracking-wide text-slate-500">Endpoint</div>
+      <div class="mt-1 truncate font-mono text-xs text-cyan-700">cli.aixinyin.asia</div>
+    </div>
   </div>
 
-  <div class="main">
+  <main class="ml-72 min-h-screen p-7">
     <div id="tab-channels">
-      <div class="toolbar">
-        <button class="btn btn-primary" onclick="openAddChannel()">＋ 添加 Channel</button>
-        <button class="btn" onclick="loadData()">↻ 刷新</button>
+      <div class="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <div class="mb-2 text-xs font-semibold uppercase tracking-[0.35em] text-cyan-700/70">Live Router</div>
+          <h2 class="text-4xl font-semibold tracking-tight text-slate-950">模型路由指挥台</h2>
+          <p class="mt-2 text-sm text-slate-500">用健康度、Key 状态和模型映射组织你的所有上游能力。</p>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn border-0 bg-slate-900 text-white hover:bg-slate-800" onclick="openAddChannel()">添加 Channel</button>
+          <button class="btn border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100" onclick="loadData()">刷新</button>
+        </div>
       </div>
-      <div class="card"><div id="channels-table"></div></div>
+      <div id="channel-overview" class="mb-5 grid grid-cols-1 gap-3 md:grid-cols-4"></div>
+      <div id="channels-table"></div>
     </div>
 
     <div id="tab-stats" style="display:none">
-      <div id="stats-cards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px"></div>
-      <div class="card">
-        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <h3 style="font-size:15px;margin:0">请求日志</h3>
-          <span style="font-size:12px;color:var(--text2)" id="log-count"></span>
+      <div class="mb-6">
+        <div class="mb-2 text-xs font-semibold uppercase tracking-[0.35em] text-blue-700/70">Traffic Stream</div>
+        <h2 class="text-4xl font-semibold tracking-tight text-slate-950">请求流工作台</h2>
+        <p class="mt-2 text-sm text-slate-500">查看每一次路由、重试、Key 命中和协议转换。</p>
+      </div>
+      <div id="stats-cards" class="mb-5 grid grid-cols-1 gap-3 md:grid-cols-4"></div>
+      <div class="card border border-slate-200 bg-white shadow-2xl ">
+        <div class="card-body gap-4">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold text-slate-950">请求日志</h3>
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-slate-500" id="log-count"></span>
+            <button class="btn btn-sm btn-error btn-outline" onclick="clearRequestLogs()">清空历史</button>
+          </div>
         </div>
-        <div class="filters">
-          <select id="log-filter-protocol" onchange="resetLogPageAndLoad()">
+        <div class="grid grid-cols-1 gap-2 md:grid-cols-3 xl:grid-cols-6">
+          <select class="select select-bordered select-sm" id="log-filter-protocol" onchange="resetLogPageAndLoad()">
             <option value="">全部协议</option>
             <option value="openai">OpenAI</option>
             <option value="claude-inbound">Claude</option>
             <option value="gemini-inbound">Gemini</option>
             <option value="responses">Responses</option>
           </select>
-          <input id="log-filter-model" placeholder="模型" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
-          <input id="log-filter-channel" placeholder="Channel" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
-          <input id="log-filter-access-key" placeholder="请求密钥" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
-          <select id="log-filter-status" onchange="resetLogPageAndLoad()">
+          <input class="input input-bordered input-sm" id="log-filter-model" placeholder="模型" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
+          <input class="input input-bordered input-sm" id="log-filter-channel" placeholder="Channel" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
+          <input class="input input-bordered input-sm" id="log-filter-access-key" placeholder="请求密钥" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
+          <select class="select select-bordered select-sm" id="log-filter-status" onchange="resetLogPageAndLoad()">
             <option value="">全部状态</option>
             <option value="success">成功</option>
             <option value="error">失败</option>
@@ -193,119 +101,135 @@
             <option value="500">500</option>
             <option value="502">502</option>
           </select>
-          <input id="log-filter-q" placeholder="搜索 ID / 错误" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
+          <input class="input input-bordered input-sm" id="log-filter-q" placeholder="搜索 ID / 错误" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
         </div>
         <div id="logs-table"></div>
-        <div class="toolbar" style="justify-content:flex-end;margin-top:12px;margin-bottom:0">
+        <div class="join justify-end">
           <button class="btn btn-sm" onclick="changeLogPage(-1)">上一页</button>
-          <span style="font-size:12px;color:var(--text2)" id="log-page-info"></span>
+          <span class="btn btn-sm no-animation cursor-default" id="log-page-info"></span>
           <button class="btn btn-sm" onclick="changeLogPage(1)">下一页</button>
+        </div>
         </div>
       </div>
     </div>
 
     <div id="tab-settings" style="display:none">
-      <h2>⚙️ 设置</h2>
-      <div class="card">
-        <div class="section-title">请求密钥</div>
-        <p style="font-size:13px;color:var(--text2);margin-bottom:12px">客户端调用 <code>/v1/chat/completions</code> 时使用的密钥（与 Admin Key 分开）</p>
-        <div id="access-keys-display"></div>
+      <div class="mb-6">
+        <div class="mb-2 text-xs font-semibold uppercase tracking-[0.35em] text-violet-700/70">Vault</div>
+        <h2 class="text-4xl font-semibold tracking-tight text-slate-950">凭据保险库</h2>
       </div>
-      <div class="card">
-        <div class="section-title">Admin Key</div>
-        <div id="admin-key-display" style="font-family:monospace;font-size:13px"></div>
+      <div class="card mb-4 border border-slate-200 bg-white shadow-2xl ">
+        <div class="card-body">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-xs font-semibold uppercase text-slate-500">请求密钥</div>
+            <p class="text-sm text-slate-500">允许模型留空表示全部可访问；排除模型优先级更高。</p>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-sm border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick="addAccessKeyPolicy()">添加密钥</button>
+            <button class="btn btn-sm border-0 bg-slate-900 text-white hover:bg-slate-800" onclick="saveAccessKeyPolicies()">保存</button>
+          </div>
+        </div>
+        <div id="access-keys-display" class="mt-4 space-y-3"></div>
+        </div>
+      </div>
+      <div class="card border border-slate-200 bg-white shadow-2xl ">
+        <div class="card-body">
+        <div class="text-xs font-semibold uppercase text-slate-500">Admin Key</div>
+        <div id="admin-key-display" class="font-mono text-sm"></div>
+        </div>
       </div>
     </div>
-  </div>
+  </main>
 </div>
 
 <!-- Channel Modal -->
 <div class="modal-overlay" id="channel-modal">
-  <div class="modal">
-    <h3 id="modal-title">添加 Channel</h3>
+  <div class="modal-box w-11/12 max-w-4xl">
+    <h3 class="mb-4 text-lg font-semibold" id="modal-title">添加 Channel</h3>
     <input type="hidden" id="edit-name" value="">
 
-    <div class="section">
-      <div class="section-title">基本信息</div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>名称 *</label>
-          <input type="text" id="f-name" placeholder="例如: my-openai">
-        </div>
-        <div class="form-group">
-          <label>类型 *</label>
-          <select id="f-type">
+    <div class="space-y-5">
+    <section class="rounded-box border border-base-300 p-4">
+      <div class="mb-3 text-xs font-semibold uppercase text-base-content/50">基本信息</div>
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <label class="form-control">
+          <div class="label"><span class="label-text">名称 *</span></div>
+          <input class="input input-bordered" type="text" id="f-name" placeholder="例如: my-openai">
+        </label>
+        <label class="form-control">
+          <div class="label"><span class="label-text">类型 *</span></div>
+          <select class="select select-bordered" id="f-type">
             <option value="openai">OpenAI 兼容</option>
             <option value="claude">Claude (Anthropic)</option>
             <option value="gemini">Gemini (Google)</option>
           </select>
-        </div>
+        </label>
       </div>
-      <div class="form-group">
-        <label>Base URL *</label>
-        <input type="text" id="f-baseurl" placeholder="https://api.openai.com/v1">
-        <div class="hint">默认 URL（OpenAI 格式）</div>
+      <label class="form-control mt-3">
+        <div class="label"><span class="label-text">Base URL *</span></div>
+        <input class="input input-bordered" type="text" id="f-baseurl" placeholder="https://api.openai.com/v1">
+        <div class="label"><span class="label-text-alt">默认 URL（OpenAI 格式）</span></div>
+      </label>
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <label class="form-control">
+          <div class="label"><span class="label-text">Claude URL（可选）</span></div>
+          <input class="input input-bordered" type="text" id="f-baseurl-claude" placeholder="https://api.anthropic.com">
+          <div class="label"><span class="label-text-alt">同一供应商的 Claude 协议地址</span></div>
+        </label>
+        <label class="form-control">
+          <div class="label"><span class="label-text">Gemini URL（可选）</span></div>
+          <input class="input input-bordered" type="text" id="f-baseurl-gemini" placeholder="https://generativelanguage.googleapis.com">
+          <div class="label"><span class="label-text-alt">同一供应商的 Gemini 协议地址</span></div>
+        </label>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Claude URL（可选）</label>
-          <input type="text" id="f-baseurl-claude" placeholder="https://api.anthropic.com">
-          <div class="hint">同一供应商的 Claude 协议地址</div>
-        </div>
-        <div class="form-group">
-          <label>Gemini URL（可选）</label>
-          <input type="text" id="f-baseurl-gemini" placeholder="https://generativelanguage.googleapis.com">
-          <div class="hint">同一供应商的 Gemini 协议地址</div>
-        </div>
-      </div>
-    </div>
+    </section>
 
-    <div class="section">
-      <div class="section-title">上游 API Keys（轮询使用）</div>
-      <div class="form-group">
-        <textarea id="f-keys" placeholder="sk-key1&#10;sk-key2" style="min-height:70px"></textarea>
-        <div class="hint" id="keys-hint">每行一个 Key，请求时自动轮询</div>
-      </div>
-    </div>
+    <section class="rounded-box border border-base-300 p-4">
+      <div class="mb-3 text-xs font-semibold uppercase text-base-content/50">上游 API Keys</div>
+      <label class="form-control">
+        <textarea class="textarea textarea-bordered min-h-28 font-mono text-xs" id="f-keys" placeholder="sk-key1&#10;sk-key2"></textarea>
+        <div class="label"><span class="label-text-alt" id="keys-hint">每行一个 Key，请求时自动轮询</span></div>
+      </label>
+    </section>
 
-    <div class="section">
-      <div class="section-title">模型配置</div>
-      <div class="form-group">
-        <label>上游模型列表</label>
-        <div class="input-with-btn">
-          <input type="text" id="f-models" placeholder="gpt-4o, gpt-4o-mini (逗号分隔)">
-          <button class="btn btn-sm" onclick="fetchModels()" id="btn-fetch">获取模型</button>
+    <section class="rounded-box border border-base-300 p-4">
+      <div class="mb-3 text-xs font-semibold uppercase text-base-content/50">模型配置</div>
+      <label class="form-control">
+        <div class="label"><span class="label-text">上游模型列表</span></div>
+        <div class="join w-full">
+          <input class="input input-bordered join-item w-full" type="text" id="f-models" placeholder="gpt-4o, gpt-4o-mini (逗号分隔)">
+          <button class="btn join-item" onclick="fetchModels()" id="btn-fetch">获取模型</button>
         </div>
-        <div class="hint">逗号分隔；或点「获取模型」自动拉取后勾选</div>
-      </div>
-
-      <div class="form-group" id="mapping-editor-wrap" style="display:none">
-        <label>模型映射（别名 → 上游模型 ID）</label>
+        <div class="label"><span class="label-text-alt">逗号分隔；或点「获取模型」自动拉取后勾选</span></div>
+      </label>
+      <div class="mt-3" id="mapping-editor-wrap" style="display:none">
+        <div class="mb-2 text-sm font-medium">模型映射（别名 → 上游模型 ID）</div>
         <div class="mapping-editor" id="mapping-editor"></div>
-        <div class="hint">左边是上游模型 ID（只读），右边填写客户端请求时用的别名，留空表示不映射</div>
+        <div class="mt-2 text-xs text-base-content/60">左边是上游模型 ID（只读），右边填写客户端请求时用的别名，留空表示不映射</div>
       </div>
+    </section>
+
+    <section class="rounded-box border border-base-300 p-4">
+      <div class="mb-3 text-xs font-semibold uppercase text-base-content/50">高级</div>
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <label class="form-control">
+          <div class="label"><span class="label-text">优先级</span></div>
+          <input class="input input-bordered" type="number" id="f-priority" value="10" min="1">
+        </label>
+        <label class="form-control">
+          <div class="label"><span class="label-text">权重</span></div>
+          <input class="input input-bordered" type="number" id="f-weight" value="100" min="1">
+        </label>
+        <label class="flex items-end gap-3 pb-3">
+          <input class="toggle toggle-success" type="checkbox" id="f-enabled" checked>
+          <span class="text-sm">启用</span>
+        </label>
+      </div>
+    </section>
     </div>
 
-    <div class="section">
-      <div class="section-title">高级</div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>优先级</label>
-          <input type="number" id="f-priority" value="10" min="1">
-          <div class="hint">数字越大越优先</div>
-        </div>
-        <div class="form-group">
-          <label>权重</label>
-          <input type="number" id="f-weight" value="100" min="1">
-        </div>
-        <div class="form-group">
-          <label>状态</label>
-          <label class="switch-label"><input type="checkbox" id="f-enabled" checked> 启用</label>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-actions">
+    <div class="modal-action">
       <button class="btn" onclick="closeModal('channel-modal')">取消</button>
       <button class="btn btn-primary" onclick="saveChannel()">保存</button>
     </div>
@@ -314,16 +238,16 @@
 
 <!-- Model Picker Modal -->
 <div class="modal-overlay" id="picker-modal">
-  <div class="modal" style="width:540px">
-    <h3>选择模型</h3>
-    <input type="text" class="picker-search" id="picker-search" placeholder="搜索模型..." oninput="filterPicker()">
-    <div class="picker-actions">
+  <div class="modal-box w-11/12 max-w-2xl">
+    <h3 class="mb-4 text-lg font-semibold">选择模型</h3>
+    <input type="text" class="input input-bordered mb-3 w-full" id="picker-search" placeholder="搜索模型..." oninput="filterPicker()">
+    <div class="mb-3 flex items-center gap-2">
       <button class="btn btn-sm" onclick="pickerSelectAll()">全选</button>
       <button class="btn btn-sm" onclick="pickerDeselectAll()">全不选</button>
-      <span class="picker-count" id="picker-count"></span>
+      <span class="ml-auto text-xs text-base-content/60" id="picker-count"></span>
     </div>
-    <div class="picker-list" id="picker-list"></div>
-    <div class="modal-actions">
+    <div class="max-h-96 overflow-y-auto rounded-box border border-base-300" id="picker-list"></div>
+    <div class="modal-action">
       <button class="btn" onclick="closeModal('picker-modal')">取消</button>
       <button class="btn btn-primary" onclick="applyPickerSelection()">确认选择</button>
     </div>
@@ -332,16 +256,16 @@
 
 <!-- Key Manager Modal -->
 <div class="modal-overlay" id="key-modal">
-  <div class="modal" style="width:900px">
-    <h3 id="key-modal-title">Key 管理</h3>
+  <div class="modal-box w-11/12 max-w-5xl">
+    <h3 class="mb-4 text-lg font-semibold" id="key-modal-title">Key 管理</h3>
     <input type="hidden" id="key-channel-name" value="">
     <div id="key-list"></div>
-    <div class="section" style="margin-top:16px">
-      <div class="section-title">批量替换</div>
-      <textarea id="key-editor" placeholder="每行一个 Key" style="min-height:110px;width:100%;font-family:'SF Mono','Cascadia Code',monospace"></textarea>
-      <div class="hint">保存会全量替换该 Channel 的上游 Key；空内容不会保存。</div>
+    <div class="mt-4 rounded-box border border-base-300 p-4">
+      <div class="mb-2 text-xs font-semibold uppercase text-base-content/50">批量替换</div>
+      <textarea class="textarea textarea-bordered min-h-32 w-full font-mono text-xs" id="key-editor" placeholder="每行一个 Key"></textarea>
+      <div class="mt-2 text-xs text-base-content/60">保存会全量替换该 Channel 的上游 Key；空内容不会保存。</div>
     </div>
-    <div class="modal-actions">
+    <div class="modal-action">
       <button class="btn" onclick="closeModal('key-modal')">关闭</button>
       <button class="btn" onclick="probeKeys()">探活</button>
       <button class="btn btn-primary" onclick="saveChannelKeys()">保存 Key</button>
@@ -351,10 +275,10 @@
 
 <!-- Log Detail Modal -->
 <div class="modal-overlay" id="log-modal">
-  <div class="modal" style="width:960px">
-    <h3 id="log-modal-title">请求详情</h3>
+  <div class="modal-box w-11/12 max-w-6xl">
+    <h3 class="mb-4 text-lg font-semibold" id="log-modal-title">请求详情</h3>
     <div id="log-detail"></div>
-    <div class="modal-actions">
+    <div class="modal-action">
       <button class="btn" onclick="closeModal('log-modal')">关闭</button>
     </div>
   </div>
@@ -366,6 +290,9 @@ let currentModels = []; // models currently in the models input (upstream ids)
 let fetchedMapping = {}; // alias → upstream id from edit
 let activeKeyChannel = null;
 let activeKeyRows = [];
+let channelKeyLoadState = 'idle';
+let channelOriginalKeys = [];
+let accessKeyPolicies = [];
 
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -392,7 +319,7 @@ function doLogin() {
   if (!API_KEY) return;
   loadData().then(() => {
     document.getElementById('login-overlay').style.display = 'none';
-    document.getElementById('app').style.display = 'flex';
+    document.getElementById('app').style.display = 'block';
   }).catch(() => toast('Key 无效或服务器不可达', true));
 }
 
@@ -413,70 +340,195 @@ async function loadData() {
 
 async function loadSettings() {
   const data = await api('/admin/settings');
-  const keys = data.access_keys || [];
-  let html = '';
-  if (keys.length) {
-    html = keys.map(k => {
-      const masked = k.length > 8 ? k.slice(0,4) + '****' + k.slice(-4) : k;
-      return `<span class="key-display">${esc(masked)}</span>`;
-    }).join(' ');
-  } else {
-    html = '<span style="color:var(--text2)">未配置（在 config.yaml 的 server.access_keys 中设置）</span>';
-  }
-  document.getElementById('access-keys-display').innerHTML = html;
+  accessKeyPolicies = normalizeAccessKeyPolicies(data.access_keys || []);
+  renderAccessKeyPolicies();
   const adminKey = data.admin_key || '';
   const maskedAdmin = adminKey.length > 8 ? adminKey.slice(0,4) + '****' + adminKey.slice(-4) : adminKey;
-  document.getElementById('admin-key-display').innerHTML = `<span class="key-display">${esc(maskedAdmin)}</span>`;
+  document.getElementById('admin-key-display').innerHTML = `<span class="badge badge-ghost font-mono">${esc(maskedAdmin)}</span>`;
+}
+
+function normalizeAccessKeyPolicies(keys) {
+  return keys.map(k => {
+    if (typeof k === 'string') {
+      return { key: k, allowed_models: [], excluded_models: [] };
+    }
+    return {
+      key: k.key || '',
+      allowed_models: Array.isArray(k.allowed_models) ? k.allowed_models : [],
+      excluded_models: Array.isArray(k.excluded_models) ? k.excluded_models : [],
+    };
+  });
+}
+
+function renderAccessKeyPolicies() {
+  const el = document.getElementById('access-keys-display');
+  if (!accessKeyPolicies.length) {
+    el.innerHTML = '<div class="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">还没有请求密钥，点击“添加密钥”创建。</div>';
+    return;
+  }
+  el.innerHTML = accessKeyPolicies.map((item, idx) => `
+    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Access Key #${idx + 1}</div>
+        <button class="btn btn-xs btn-error btn-outline" onclick="removeAccessKeyPolicy(${idx})">删除</button>
+      </div>
+      <label class="form-control">
+        <div class="label"><span class="label-text">请求密钥</span></div>
+        <input class="input input-bordered font-mono text-sm" value="${esc(item.key || '')}" oninput="accessKeyPolicies[${idx}].key=this.value">
+      </label>
+      <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <label class="form-control">
+          <div class="label"><span class="label-text">允许模型</span><span class="label-text-alt">留空 = 全部</span></div>
+          <textarea class="textarea textarea-bordered min-h-24 font-mono text-xs" placeholder="gpt-4o, claude-3-5-sonnet" oninput="accessKeyPolicies[${idx}].allowed_models=parseModelList(this.value)">${esc((item.allowed_models || []).join('\n'))}</textarea>
+        </label>
+        <label class="form-control">
+          <div class="label"><span class="label-text">排除模型</span><span class="label-text-alt">优先级最高</span></div>
+          <textarea class="textarea textarea-bordered min-h-24 font-mono text-xs" placeholder="gpt-4o-mini" oninput="accessKeyPolicies[${idx}].excluded_models=parseModelList(this.value)">${esc((item.excluded_models || []).join('\n'))}</textarea>
+        </label>
+      </div>
+    </div>
+  `).join('');
+}
+
+function parseModelList(value) {
+  const seen = new Set();
+  return value.split(/[\n,]+/).map(s => s.trim()).filter(s => {
+    if (!s || seen.has(s)) return false;
+    seen.add(s);
+    return true;
+  });
+}
+
+function addAccessKeyPolicy() {
+  accessKeyPolicies.push({ key: '', allowed_models: [], excluded_models: [] });
+  renderAccessKeyPolicies();
+}
+
+function removeAccessKeyPolicy(index) {
+  accessKeyPolicies.splice(index, 1);
+  renderAccessKeyPolicies();
+}
+
+async function saveAccessKeyPolicies() {
+  const keys = accessKeyPolicies.map(k => ({
+    key: (k.key || '').trim(),
+    allowed_models: k.allowed_models || [],
+    excluded_models: k.excluded_models || [],
+  })).filter(k => k.key);
+  try {
+    const data = await api('/admin/access-keys', { method: 'PUT', body: JSON.stringify({ access_keys: keys }) });
+    accessKeyPolicies = normalizeAccessKeyPolicies(data.access_keys || []);
+    renderAccessKeyPolicies();
+    toast('请求密钥已保存');
+  } catch(e) {
+    toast('保存请求密钥失败: ' + e.message, true);
+  }
 }
 
 function renderChannels(channels) {
+  renderChannelOverview(channels);
   if (!channels.length) {
-    document.getElementById('channels-table').innerHTML = '<div class="empty">暂无 Channel，点击「添加 Channel」开始</div>';
+    document.getElementById('channels-table').innerHTML = '<div class="rounded-[2rem] border border-slate-200 bg-slate-100 p-12 text-center text-sm text-slate-500">暂无 Channel，点击「添加 Channel」开始</div>';
     return;
   }
-  let html = '<table><thead><tr><th>名称</th><th>类型</th><th>Keys</th><th>模型 / 映射</th><th>优先级</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+  let html = '<div class="grid grid-cols-1 gap-4 xl:grid-cols-2">';
   for (const ch of channels) {
-    const sc = ch.healthy ? 'badge-green' : 'badge-red';
+    const sc = ch.healthy ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700';
     const st = ch.healthy ? '正常' : '异常';
     const keyStats = ch.key_stats || [];
-    const keys = keyStats.length ? keyStats.map(k => {
-      const cls = k.healthy ? 'badge-green' : 'badge-red';
+    const keyCount = ch.key_count || (ch.masked_keys || []).length || keyStats.length;
+    const keyPreview = keyStats.length ? keyStats.map(k => {
+      const cls = k.healthy ? 'bg-emerald-400' : 'bg-rose-400';
       const status = k.last_status ? ` · ${k.last_status}` : '';
-      return `<div style="margin-bottom:4px"><span class="key-display">${esc(k.masked_key)}</span> <span class="badge ${cls}">${k.healthy?'健康':'异常'}</span><br><span style="font-size:11px;color:var(--text2)">成功 ${k.success_requests||0} / 失败 ${k.failure_requests||0}${status}${k.last_latency_ms?` · ${k.last_latency_ms}ms`:''}</span></div>`;
-    }).join('') : (ch.masked_keys||[]).map(k => `<span class="key-display">${esc(k)}</span>`).join(' ');
-    // Models + mapping
-    const models = (ch.models||[]).map(m => `<span class="tag">${esc(m)}</span>`).join(' ');
+      return `<div class="flex items-center justify-between gap-3 rounded-2xl bg-slate-100 px-3 py-2">
+        <div class="min-w-0">
+          <div class="truncate font-mono text-xs text-slate-700">${esc(k.masked_key)}</div>
+          <div class="text-[11px] text-slate-500">成功 ${k.success_requests||0} / 失败 ${k.failure_requests||0}${status}${k.last_latency_ms?` · ${k.last_latency_ms}ms`:''}</div>
+        </div>
+        <span class="h-2.5 w-2.5 shrink-0 rounded-full ${cls}"></span>
+      </div>`;
+    }).join('') : (ch.masked_keys||[]).map(k => `<div class="rounded-2xl bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700">${esc(k)}</div>`).join('');
+    const models = (ch.models||[]).map(m => `<span class="rounded-full border border-slate-200 bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700">${esc(m)}</span>`).join(' ');
     let mappingHtml = '';
     const mm = ch.model_mapping || {};
     const mmKeys = Object.keys(mm);
     if (mmKeys.length) {
-      mappingHtml = '<div style="margin-top:4px">' + mmKeys.map(alias =>
-        `<span style="font-size:11px;color:var(--text2)"><span class="tag tag-blue">${esc(alias)}</span>→<span class="tag">${esc(mm[alias])}</span></span>`
-      ).join(' ') + '</div>';
+      mappingHtml = '<div class="mt-3 max-h-20 overflow-y-auto pr-1"><div class="flex flex-wrap gap-1.5">' + mmKeys.map(alias =>
+        `<span class="rounded-full bg-cyan-50 px-2 py-1 font-mono text-[11px] text-cyan-700">${esc(alias)} → ${esc(mm[alias])}</span>`
+      ).join('') + '</div></div>';
     }
-    html += `<tr>
-      <td><strong>${esc(ch.name)}</strong><br><span style="font-size:11px;color:var(--text2)">${esc(ch.base_url)}</span></td>
-      <td><span class="badge badge-blue">${esc(ch.type)}</span></td>
-      <td>${keys}</td>
-      <td>${models}${mappingHtml}</td>
-      <td>${ch.priority}</td>
-      <td><span class="badge ${sc}">${st}</span></td>
-      <td><div class="action-btns">
-        <button class="btn btn-sm" onclick='openKeyManager(${JSON.stringify(ch)})'>Keys</button>
-        <button class="btn btn-sm" onclick='openEditChannel(${JSON.stringify(ch)})'>编辑</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteChannel('${esc(ch.name)}')">删除</button>
-      </div></td>
-    </tr>`;
+    html += `<section class="group flex h-[32rem] flex-col overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm transition hover:border-cyan-200">
+      <div class="shrink-0 border-b border-slate-200 bg-slate-50 p-5">
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <div class="mb-2 flex items-center gap-2">
+              <span class="rounded-full border px-2 py-0.5 text-xs ${sc}">${st}</span>
+              <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">${esc(ch.type)}</span>
+            </div>
+            <h3 class="truncate text-2xl font-semibold text-slate-950">${esc(ch.name)}</h3>
+            <p class="mt-1 truncate font-mono text-xs text-slate-500">${esc(ch.base_url)}</p>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-right">
+            <div class="rounded-2xl bg-slate-100 px-3 py-2"><div class="text-lg font-semibold text-slate-950">${keyCount}</div><div class="text-[10px] uppercase text-slate-500">keys</div></div>
+            <div class="rounded-2xl bg-slate-100 px-3 py-2"><div class="text-lg font-semibold text-slate-950">${(ch.models||[]).length}</div><div class="text-[10px] uppercase text-slate-500">models</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="grid min-h-0 flex-1 gap-4 p-5 lg:grid-cols-[1fr_1.2fr]">
+        <div class="flex min-h-0 flex-col">
+          <div class="mb-2 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <span>Key health</span>
+            ${keyCount > 4 ? '<span class="text-[10px] font-medium normal-case tracking-normal text-slate-400">滚动查看全部</span>' : ''}
+          </div>
+          <div class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">${keyPreview || '<div class="text-sm text-slate-500">暂无 Key</div>'}</div>
+        </div>
+        <div class="min-h-0">
+          <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Models & aliases</div>
+          <div class="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto pr-1">${models || '<span class="text-sm text-slate-500">暂无模型</span>'}</div>
+          ${mappingHtml}
+        </div>
+      </div>
+      <div class="mt-auto flex shrink-0 items-center justify-between border-t border-slate-200 px-5 py-4">
+        <div class="text-xs text-slate-500">priority ${ch.priority} · weight ${ch.weight}</div>
+        <div class="flex gap-2">
+          <button class="btn btn-sm border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick='openKeyManager(${JSON.stringify(ch)})'>Keys</button>
+          <button class="btn btn-sm border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick='openEditChannel(${JSON.stringify(ch)})'>编辑</button>
+          <button class="btn btn-sm btn-error btn-outline" onclick="deleteChannel('${esc(ch.name)}')">删除</button>
+        </div>
+      </div>
+    </section>`;
   }
-  html += '</tbody></table>';
+  html += '</div>';
   document.getElementById('channels-table').innerHTML = html;
+}
+
+function renderChannelOverview(channels) {
+  const total = channels.length;
+  const healthy = channels.filter(ch => ch.healthy).length;
+  const keyCount = channels.reduce((sum, ch) => sum + (ch.key_count || (ch.masked_keys || []).length || 0), 0);
+  const modelCount = channels.reduce((set, ch) => {
+    (ch.models || []).forEach(m => set.add(m));
+    Object.keys(ch.model_mapping || {}).forEach(m => set.add(m));
+    return set;
+  }, new Set()).size;
+  document.getElementById('channel-overview').innerHTML = [
+    ['Channels', total, 'text-cyan-700'],
+    ['Healthy', healthy, 'text-emerald-700'],
+    ['Keys', keyCount, 'text-blue-700'],
+    ['Models', modelCount, 'text-violet-700'],
+  ].map(([label, value, color]) => `
+    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm ">
+      <div class="text-xs uppercase tracking-wide text-slate-500">${label}</div>
+      <div class="mt-2 text-3xl font-semibold ${color}">${value}</div>
+    </div>
+  `).join('');
 }
 
 async function openKeyManager(ch) {
   activeKeyChannel = ch;
   document.getElementById('key-channel-name').value = ch.name;
   document.getElementById('key-modal-title').textContent = 'Key 管理 — ' + ch.name;
-  document.getElementById('key-list').innerHTML = '<div class="empty">加载中...</div>';
+  document.getElementById('key-list').innerHTML = '<div class="p-8 text-center text-sm text-base-content/60">加载中...</div>';
   document.getElementById('key-editor').value = '';
   document.getElementById('key-modal').classList.add('active');
   try {
@@ -488,7 +540,7 @@ async function openKeyManager(ch) {
     document.getElementById('key-editor').value = (data.keys || []).join('\n');
     renderKeyRows();
   } catch(e) {
-    document.getElementById('key-list').innerHTML = '<div class="empty">读取 Key 失败</div>';
+    document.getElementById('key-list').innerHTML = '<div class="p-8 text-center text-sm text-error">读取 Key 失败</div>';
     toast('读取 Key 失败: '+e.message, true);
   }
 }
@@ -497,27 +549,27 @@ function renderKeyRows(probeResults = null) {
   const probeByIndex = {};
   (probeResults || []).forEach(r => probeByIndex[r.index] = r);
   if (!activeKeyRows.length) {
-    document.getElementById('key-list').innerHTML = '<div class="empty">暂无 Key</div>';
+    document.getElementById('key-list').innerHTML = '<div class="p-8 text-center text-sm text-base-content/60">暂无 Key</div>';
     return;
   }
-  let html = '<div class="key-list"><div class="key-row header"><div>#</div><div>Key</div><div>状态</div><div>统计</div><div>操作</div></div>';
+  let html = '<div class="overflow-x-auto rounded-box border border-base-300"><table class="table table-sm"><thead><tr><th>#</th><th>Key</th><th>状态</th><th>统计</th><th>操作</th></tr></thead><tbody>';
   for (const row of activeKeyRows) {
     const stat = row.stat || {};
     const probe = probeByIndex[row.index];
-    const health = row.disabled ? '<span class="badge badge-gray">已禁用</span>' : (stat.healthy === false ? '<span class="badge badge-red">异常</span>' : '<span class="badge badge-green">启用</span>');
-    const probeHtml = probe ? `<br><span style="font-size:11px;color:${probe.ok?'var(--green)':'var(--red)'}">探活 ${probe.status || 'ERR'} · ${probe.latency_ms || 0}ms</span>` : '';
-    html += `<div class="key-row">
-      <div>${row.index}</div>
-      <div class="key-secret">${esc(row.key)}</div>
-      <div>${health}${probeHtml}</div>
-      <div><span style="font-size:12px;color:var(--text2)">成功 ${stat.success_requests||0}<br>失败 ${stat.failure_requests||0}</span></div>
-      <div class="action-btns">
+    const health = row.disabled ? '<span class="badge badge-neutral">已禁用</span>' : (stat.healthy === false ? '<span class="badge badge-error">异常</span>' : '<span class="badge badge-success">启用</span>');
+    const probeHtml = probe ? `<br><span class="text-xs ${probe.ok?'text-success':'text-error'}">探活 ${probe.status || 'ERR'} · ${probe.latency_ms || 0}ms</span>` : '';
+    html += `<tr>
+      <td>${row.index}</td>
+      <td class="max-w-xl break-all font-mono text-xs">${esc(row.key)}</td>
+      <td>${health}${probeHtml}</td>
+      <td><span class="text-xs text-base-content/60">成功 ${stat.success_requests||0}<br>失败 ${stat.failure_requests||0}</span></td>
+      <td><div class="flex gap-1">
         <button class="btn btn-sm" onclick="setKeyDisabled(${row.index}, ${!row.disabled})">${row.disabled ? '启用' : '禁用'}</button>
         <button class="btn btn-sm" onclick="probeKeys(${row.index})">探活</button>
-      </div>
-    </div>`;
+      </div></td>
+    </tr>`;
   }
-  html += '</div>';
+  html += '</tbody></table></div>';
   document.getElementById('key-list').innerHTML = html;
 }
 
@@ -550,7 +602,14 @@ async function saveChannelKeys() {
   if (!raw) { toast('Key 内容不能为空', true); return; }
   if (!confirm('确定全量替换 "'+name+'" 的 Key？')) return;
   try {
-    await api('/admin/channels/'+encodeURIComponent(name)+'/keys', { method:'PUT', body:JSON.stringify({keys: raw}) });
+    const data = await api('/admin/channels/'+encodeURIComponent(name)+'/keys', { method:'PUT', body:JSON.stringify({keys: raw}) });
+    activeKeyRows = raw.split(/\r?\n|,|;/).map(k => k.trim()).filter(Boolean).map((key, index) => ({
+      index,
+      key,
+      masked_key: (data.masked_keys || [])[index] || maskKeyLocal(key),
+      disabled: false,
+      stat: {},
+    }));
     toast('Key 已保存');
     closeModal('key-modal');
     loadData();
@@ -560,6 +619,8 @@ async function saveChannelKeys() {
 // ---- Channel Modal ----
 
 function openAddChannel() {
+  channelKeyLoadState = 'ready';
+  channelOriginalKeys = [];
   document.getElementById('modal-title').textContent = '添加 Channel';
   document.getElementById('edit-name').value = '';
   document.getElementById('f-name').value = '';
@@ -581,7 +642,9 @@ function openAddChannel() {
   document.getElementById('channel-modal').classList.add('active');
 }
 
-function openEditChannel(ch) {
+async function openEditChannel(ch) {
+  channelKeyLoadState = 'loading';
+  channelOriginalKeys = [];
   document.getElementById('modal-title').textContent = '编辑 Channel — ' + ch.name;
   document.getElementById('edit-name').value = ch.name;
   document.getElementById('f-name').value = ch.name;
@@ -591,8 +654,8 @@ function openEditChannel(ch) {
   document.getElementById('f-baseurl-claude').value = ch.base_url_claude || '';
   document.getElementById('f-baseurl-gemini').value = ch.base_url_gemini || '';
   document.getElementById('f-keys').value = '';
-  document.getElementById('f-keys').placeholder = '留空表示保留现有 Key；输入新 Key 则整体替换';
-  document.getElementById('keys-hint').textContent = `已配置 ${ch.key_count || 0} 个 Key。出于安全考虑不回显原文，留空保存会保留现有 Key。`;
+  document.getElementById('f-keys').placeholder = '正在读取现有 Key...';
+  document.getElementById('keys-hint').textContent = `正在读取已配置的 ${ch.key_count || 0} 个 Key`;
   document.getElementById('f-models').value = (ch.models||[]).join(', ');
   document.getElementById('f-priority').value = ch.priority;
   document.getElementById('f-weight').value = ch.weight;
@@ -605,9 +668,27 @@ function openEditChannel(ch) {
     document.getElementById('mapping-editor-wrap').style.display = 'none';
   }
   document.getElementById('channel-modal').classList.add('active');
+  try {
+    const data = await api('/admin/channels/'+encodeURIComponent(ch.name)+'/keys');
+    channelOriginalKeys = data.keys || [];
+    document.getElementById('f-keys').value = channelOriginalKeys.join('\n');
+    document.getElementById('f-keys').placeholder = 'sk-key1\nsk-key2';
+    document.getElementById('keys-hint').textContent = `已加载 ${data.key_count || 0} 个 Key，保存会按文本框内容整体替换`;
+    channelKeyLoadState = 'ready';
+  } catch(e) {
+    channelKeyLoadState = 'error';
+    document.getElementById('keys-hint').textContent = '读取现有 Key 失败，请重新打开编辑窗口';
+    toast('读取现有 Key 失败: '+e.message, true);
+  }
 }
 
-function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+  if (id === 'channel-modal') {
+    channelKeyLoadState = 'idle';
+    channelOriginalKeys = [];
+  }
+}
 
 function renderMappingEditor() {
   const wrap = document.getElementById('mapping-editor-wrap');
@@ -617,16 +698,16 @@ function renderMappingEditor() {
   for (const [alias, upstream] of Object.entries(fetchedMapping)) {
     reverse[upstream] = alias;
   }
-  let html = '<div class="mapping-header"><span>上游模型 ID</span><span>客户端别名（留空 = 直通）</span></div>';
+  let html = '<div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 rounded-t-box bg-base-200 px-3 py-2 text-xs font-semibold text-base-content/60"><span>上游模型 ID</span><span></span><span>客户端别名（留空 = 直通）</span></div>';
   for (const m of currentModels) {
     const alias = reverse[m] || '';
-    html += `<div class="mapping-row">
-      <div class="upstream">${esc(m)}</div>
-      <div class="arrow-cell">→</div>
-      <input type="text" class="mapping-alias" data-upstream="${esc(m)}" value="${esc(alias)}" placeholder="${esc(m)}">
+    html += `<div class="mapping-row border-t border-base-300">
+      <div class="truncate bg-base-200/60 px-3 py-2 font-mono text-xs">${esc(m)}</div>
+      <div class="px-2 text-base-content/40">→</div>
+      <input type="text" class="mapping-alias input input-sm rounded-none border-0 font-mono" data-upstream="${esc(m)}" value="${esc(alias)}" placeholder="${esc(m)}">
     </div>`;
   }
-  document.getElementById('mapping-editor').innerHTML = html;
+  document.getElementById('mapping-editor').innerHTML = `<div class="overflow-hidden rounded-box border border-base-300">${html}</div>`;
 }
 
 let allFetchedModels = []; // all models from upstream
@@ -634,9 +715,11 @@ let pickerSelected = new Set(); // selected model ids
 
 async function fetchModels() {
   const type = document.getElementById('f-type').value;
-  const baseURL = document.getElementById('f-baseurl').value.trim();
+  const baseURL = modelFetchBaseURL(type);
   const keysRaw = document.getElementById('f-keys').value.trim();
   const keys = keysRaw.split('\n').map(k=>k.trim()).filter(k=>k);
+  if (channelKeyLoadState === 'loading') { toast('Key 还在加载，稍后再获取模型', true); return; }
+  if (channelKeyLoadState === 'error') { toast('现有 Key 读取失败，请重新打开编辑窗口', true); return; }
   if (!baseURL) { toast('请先填写 Base URL', true); return; }
   if (!keys.length) { toast('请先填写 Key', true); return; }
   const btn = document.getElementById('btn-fetch');
@@ -659,6 +742,16 @@ async function fetchModels() {
   finally { btn.disabled = false; btn.textContent = '获取模型'; }
 }
 
+function modelFetchBaseURL(type) {
+  if (type === 'claude') {
+    return document.getElementById('f-baseurl-claude').value.trim() || document.getElementById('f-baseurl').value.trim();
+  }
+  if (type === 'gemini') {
+    return document.getElementById('f-baseurl-gemini').value.trim() || document.getElementById('f-baseurl').value.trim();
+  }
+  return document.getElementById('f-baseurl').value.trim();
+}
+
 function renderPicker() {
   const q = document.getElementById('picker-search').value.toLowerCase();
   let html = '';
@@ -666,10 +759,10 @@ function renderPicker() {
   for (const m of allFetchedModels) {
     if (q && !m.toLowerCase().includes(q)) continue;
     const checked = pickerSelected.has(m) ? 'checked' : '';
-    html += `<label class="picker-item"><input type="checkbox" value="${esc(m)}" ${checked} onchange="togglePick(this)"> ${esc(m)}</label>`;
+    html += `<label class="flex cursor-pointer items-center gap-3 border-b border-base-300 px-3 py-2 font-mono text-xs hover:bg-base-200"><input class="checkbox checkbox-sm checkbox-primary" type="checkbox" value="${esc(m)}" ${checked} onchange="togglePick(this)"> <span class="break-all">${esc(m)}</span></label>`;
     shown++;
   }
-  document.getElementById('picker-list').innerHTML = html || '<div class="empty">无匹配模型</div>';
+  document.getElementById('picker-list').innerHTML = html || '<div class="p-8 text-center text-sm text-base-content/60">无匹配模型</div>';
   updatePickerCount();
 }
 
@@ -731,8 +824,10 @@ async function saveChannel() {
   const enabled = document.getElementById('f-enabled').checked;
   if (!name) { toast('请输入名称', true); return; }
   if (!baseURL) { toast('请输入 Base URL', true); return; }
+  if (editName && channelKeyLoadState === 'loading') { toast('Key 还在加载，加载完成后再保存', true); return; }
+  if (editName && channelKeyLoadState === 'error') { toast('现有 Key 读取失败，为避免误覆盖，请重新打开编辑窗口', true); return; }
   const keys = keysRaw.split('\n').map(k=>k.trim()).filter(k=>k);
-  if (!keys.length && !editName) { toast('至少输入一个 Key', true); return; }
+  if (!keys.length) { toast('至少保留一个 Key', true); return; }
   const models = modelsRaw.split(',').map(m=>m.trim()).filter(m=>m);
 
   // Collect mapping from editor
@@ -744,6 +839,10 @@ async function saveChannel() {
       model_mapping[alias] = upstream;
     }
   });
+
+  if (editName && keysChanged(channelOriginalKeys, keys) && !confirm('Key 列表已变更，保存会整体替换该 Channel 的上游 Key。确定保存？')) {
+    return;
+  }
 
   const body = { name, type, base_url: baseURL, base_url_claude: baseURLClaude, base_url_gemini: baseURLGemini, keys, models, model_mapping, priority, weight, enabled };
   try {
@@ -757,6 +856,14 @@ async function saveChannel() {
     closeModal('channel-modal');
     loadData();
   } catch(e) { toast('保存失败: '+e.message, true); }
+}
+
+function keysChanged(before, after) {
+  if (before.length !== after.length) return true;
+  for (let i = 0; i < before.length; i++) {
+    if (before[i] !== after[i]) return true;
+  }
+  return false;
 }
 
 async function deleteChannel(name) {
@@ -802,53 +909,57 @@ async function loadStats() {
     document.getElementById('log-page-info').textContent = `第 ${logPage} / ${logTotalPages} 页`;
   } catch(e) {
     document.getElementById('stats-cards').innerHTML = '';
-    document.getElementById('logs-table').innerHTML = '<div class="empty">需要 Admin Key 权限才能查看统计</div>';
+    document.getElementById('logs-table').innerHTML = '<div class="p-10 text-center text-sm text-base-content/60">需要 Admin Key 权限才能查看统计</div>';
   }
 }
 
 function renderStats(s) {
   const rate = s.total > 0 ? ((s.success / s.total) * 100).toFixed(1) : '0.0';
   document.getElementById('stats-cards').innerHTML = `
-    <div class="stat-card"><div class="label">总请求</div><div class="value blue">${s.total||0}</div></div>
-    <div class="stat-card"><div class="label">成功</div><div class="value green">${s.success||0}</div></div>
-    <div class="stat-card"><div class="label">失败</div><div class="value red">${s.error||0}</div></div>
-    <div class="stat-card"><div class="label">平均耗时</div><div class="value">${s.avg_duration_ms||0}ms</div></div>
+    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm "><div class="text-xs uppercase tracking-wide text-slate-500">总请求</div><div class="mt-2 text-3xl font-semibold text-cyan-700">${s.total||0}</div></div>
+    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm "><div class="text-xs uppercase tracking-wide text-slate-500">成功</div><div class="mt-2 text-3xl font-semibold text-emerald-700">${s.success||0}</div></div>
+    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm "><div class="text-xs uppercase tracking-wide text-slate-500">失败</div><div class="mt-2 text-3xl font-semibold text-rose-700">${s.error||0}</div></div>
+    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm "><div class="text-xs uppercase tracking-wide text-slate-500">平均耗时</div><div class="mt-2 text-3xl font-semibold text-violet-700">${s.avg_duration_ms||0}ms</div><div class="mt-1 text-xs text-slate-500">成功率 ${rate}%</div></div>
   `;
 }
 
 function renderLogs(logs) {
   if (!logs.length) {
-    document.getElementById('logs-table').innerHTML = '<div class="empty">暂无请求记录</div>';
+    document.getElementById('logs-table').innerHTML = '<div class="rounded-[1.5rem] border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">暂无请求记录</div>';
     return;
   }
-  let html = '<table><thead><tr><th>时间</th><th>请求密钥</th><th>协议</th><th>模型</th><th>Channel / Key</th><th>状态</th><th>耗时</th><th>尝试</th><th>错误</th><th>操作</th></tr></thead><tbody>';
+  let html = '<div class="overflow-x-auto rounded-[1.5rem] border border-slate-200 bg-white"><table class="table table-sm"><thead class="text-slate-500"><tr><th>时间</th><th>请求密钥</th><th>协议</th><th>模式</th><th>模型</th><th>Channel / Key</th><th>状态</th><th>耗时</th><th>尝试</th><th>错误</th><th>操作</th></tr></thead><tbody>';
   for (const l of logs) {
     const ok = l.status >= 200 && l.status < 400;
     const statusHtml = ok
       ? `<span class="log-status ok"></span>${l.status}`
       : `<span class="log-status err"></span>${l.status || 'ERR'}`;
     const proto = {'openai':'OpenAI','claude-inbound':'Claude','gemini-inbound':'Gemini'}[l.protocol] || l.protocol;
+    const mode = l.mode === 'converted'
+      ? '<span class="rounded-full bg-violet-50 px-2 py-1 text-xs text-violet-700">转换</span>'
+      : '<span class="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">透穿</span>';
     const attempts = l.attempts || [];
     const lastAttempt = attempts.length ? attempts[attempts.length - 1] : null;
-    const channelKey = `${esc(l.channel || (lastAttempt && lastAttempt.channel) || '-')}${lastAttempt ? `<br><span class="key-display">${esc(lastAttempt.masked_key || '-')}</span>` : ''}`;
+    const channelKey = `${esc(l.channel || (lastAttempt && lastAttempt.channel) || '-')}${lastAttempt ? `<br><span class="badge badge-ghost font-mono">${esc(lastAttempt.masked_key || '-')}</span>` : ''}`;
     const attemptHtml = attempts.length ? attempts.map(a => {
       const aok = a.status >= 200 && a.status < 400;
-      return `<span class="badge ${aok?'badge-green':'badge-red'}">${esc(a.channel)} #${a.key_index} ${a.status||'ERR'}</span>`;
+      return `<span class="rounded-full border ${aok?'border-emerald-200 bg-emerald-50 text-emerald-700':'border-rose-200 bg-rose-50 text-rose-700'} px-2 py-0.5 text-[11px]">${esc(a.channel)} #${a.key_index} ${a.status||'ERR'}</span>`;
     }).join(' ') : '-';
-    html += `<tr>
-      <td style="font-size:12px;color:var(--text2)">${esc(l.timestamp)}</td>
-      <td><span class="key-display">${esc(l.access_key || '-')}</span></td>
-      <td><span class="badge badge-blue">${proto}</span></td>
-      <td><span class="tag">${esc(l.model)}</span>${l.resolved_model && l.resolved_model !== l.model ? `<br><span style="font-size:11px;color:var(--text2)">→ ${esc(l.resolved_model)}</span>` : ''}</td>
+    html += `<tr class="border-white/5 hover:bg-slate-50">
+      <td class="text-xs text-slate-500">${esc(l.timestamp)}</td>
+      <td><span class="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700">${esc(l.access_key || '-')}</span></td>
+      <td><span class="rounded-full bg-cyan-50 px-2 py-1 text-xs text-cyan-700">${proto}</span></td>
+      <td>${mode}</td>
+      <td><span class="rounded-full border border-slate-200 bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700">${esc(l.model)}</span>${l.resolved_model && l.resolved_model !== l.model ? `<br><span class="text-xs text-slate-500">→ ${esc(l.resolved_model)}</span>` : ''}</td>
       <td>${channelKey}</td>
       <td>${statusHtml}</td>
       <td>${l.duration}ms</td>
-      <td style="max-width:260px">${attemptHtml}</td>
-      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--red);font-size:12px">${esc(l.error||'-')}</td>
-      <td><button class="btn btn-sm" onclick="openLogDetail(${l.id})">详情</button></td>
+      <td class="max-w-xs">${attemptHtml}</td>
+      <td class="max-w-xs truncate text-xs text-error">${esc(l.error||'-')}</td>
+      <td><button class="btn btn-sm border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick="openLogDetail(${l.id})">详情</button></td>
     </tr>`;
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   document.getElementById('logs-table').innerHTML = html;
 }
 
@@ -864,45 +975,58 @@ function resetLogPageAndLoad() {
   loadStats();
 }
 
+async function clearRequestLogs() {
+  if (!confirm('确定清空所有请求历史？这个操作不可恢复。')) return;
+  try {
+    await api('/admin/logs', { method: 'DELETE' });
+    logPage = 1;
+    toast('请求历史已清空');
+    loadStats();
+  } catch(e) {
+    toast('清空失败: ' + e.message, true);
+  }
+}
+
 async function openLogDetail(id) {
   document.getElementById('log-modal-title').textContent = '请求详情 #' + id;
-  document.getElementById('log-detail').innerHTML = '<div class="empty">加载中...</div>';
+  document.getElementById('log-detail').innerHTML = '<div class="p-8 text-center text-sm text-base-content/60">加载中...</div>';
   document.getElementById('log-modal').classList.add('active');
   try {
     const data = await api('/admin/logs/'+id);
     renderLogDetail(data.log);
   } catch(e) {
-    document.getElementById('log-detail').innerHTML = '<div class="empty">读取日志失败</div>';
+    document.getElementById('log-detail').innerHTML = '<div class="p-8 text-center text-sm text-error">读取日志失败</div>';
     toast('读取日志失败: '+e.message, true);
   }
 }
 
 function renderLogDetail(l) {
   const attempts = l.attempts || [];
+  const modeText = l.mode === 'converted' ? '转换' : '透穿';
   const attemptRows = attempts.length ? attempts.map(a => `
     <tr>
       <td>${a.attempt}</td><td>${esc(a.channel)}</td><td>${a.key_index}</td>
-      <td><span class="key-display">${esc(a.masked_key || '-')}</span></td>
+      <td><span class="badge badge-ghost font-mono">${esc(a.masked_key || '-')}</span></td>
       <td>${esc(a.model || '-')}</td><td>${a.status || 'ERR'}</td><td>${a.duration_ms || 0}ms</td>
-      <td style="color:var(--red);max-width:260px;word-break:break-word">${esc(a.error || '-')}</td>
+      <td class="max-w-xs break-words text-error">${esc(a.error || '-')}</td>
     </tr>
   `).join('') : '<tr><td colspan="8">无尝试记录</td></tr>';
   document.getElementById('log-detail').innerHTML = `
-    <div class="info-box" style="margin-bottom:12px">
-      <strong>${esc(l.protocol)}</strong> · ${esc(l.model || '-')} ${l.resolved_model && l.resolved_model !== l.model ? '→ '+esc(l.resolved_model) : ''} · ${l.status || 'ERR'} · ${l.duration || 0}ms · ${esc(l.timestamp || '')}
+    <div class="alert mb-4">
+      <strong>${esc(l.protocol)}</strong> · ${modeText} · ${esc(l.model || '-')} ${l.resolved_model && l.resolved_model !== l.model ? '→ '+esc(l.resolved_model) : ''} · ${l.status || 'ERR'} · ${l.duration || 0}ms · ${esc(l.timestamp || '')}
     </div>
-    <div class="section">
-      <div class="section-title">重试过程</div>
-      <table><thead><tr><th>#</th><th>Channel</th><th>Key</th><th>Masked</th><th>模型</th><th>状态</th><th>耗时</th><th>错误</th></tr></thead><tbody>${attemptRows}</tbody></table>
+    <div class="mb-4">
+      <div class="mb-2 text-xs font-semibold uppercase text-base-content/50">重试过程</div>
+      <div class="overflow-x-auto rounded-box border border-base-300"><table class="table table-sm"><thead><tr><th>#</th><th>Channel</th><th>Key</th><th>Masked</th><th>模型</th><th>状态</th><th>耗时</th><th>错误</th></tr></thead><tbody>${attemptRows}</tbody></table></div>
     </div>
-    <div class="detail-grid">
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div>
-        <div class="section-title">入站请求</div>
-        <pre class="json-box">${esc(JSON.stringify(l.request || {}, null, 2))}</pre>
+        <div class="mb-2 text-xs font-semibold uppercase text-base-content/50">入站请求</div>
+        <pre class="json-box rounded-box bg-slate-950 p-3 text-xs text-slate-100">${esc(JSON.stringify(l.request || {}, null, 2))}</pre>
       </div>
       <div>
-        <div class="section-title">转换后的上游请求</div>
-        <pre class="json-box">${esc(JSON.stringify(l.upstream_request || l.request || {}, null, 2))}</pre>
+        <div class="mb-2 text-xs font-semibold uppercase text-base-content/50">转换后的上游请求</div>
+        <pre class="json-box rounded-box bg-slate-950 p-3 text-xs text-slate-100">${esc(JSON.stringify(l.upstream_request || l.request || {}, null, 2))}</pre>
       </div>
     </div>
   `;
@@ -924,8 +1048,8 @@ function stopStatsAutoRefresh() {
 
 function toast(msg, isErr) {
   const el = document.createElement('div');
-  el.className = 'toast '+(isErr?'toast-err':'toast-ok');
-  el.textContent = msg;
+  el.className = 'toast toast-top toast-end z-[80]';
+  el.innerHTML = `<div class="alert ${isErr?'alert-error':'alert-success'} shadow-lg"><span>${esc(msg)}</span></div>`;
   document.body.appendChild(el);
   setTimeout(()=>el.remove(), 3000);
 }

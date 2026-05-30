@@ -37,14 +37,13 @@ func Auth() gin.HandlerFunc {
 		}
 
 		// Access keys → user access
-		for _, key := range config.GetAccessKeys() {
-			if key != "" && token == key {
-				c.Set("is_admin", false)
-				c.Set("api_key", token)
-				c.Set("api_key_masked", maskKey(token))
-				c.Next()
-				return
-			}
+		if accessKey, ok := config.FindAccessKey(token); ok && accessKey.Key != "" {
+			c.Set("is_admin", false)
+			c.Set("api_key", token)
+			c.Set("api_key_masked", maskKey(token))
+			c.Set("access_key_config", accessKey)
+			c.Next()
+			return
 		}
 
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{

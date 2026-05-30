@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"api-in-one/config"
 	"api-in-one/model"
 	"api-in-one/relay"
 	"encoding/json"
@@ -53,6 +54,17 @@ func (h *Relay) ChatCompletions(c *gin.Context) {
 				Message: "model is required",
 				Type:    "invalid_request_error",
 				Code:    "missing_model",
+			},
+		})
+		return
+	}
+	if !requestCanUseModel(c, req.Model) {
+		c.JSON(http.StatusForbidden, model.ErrorResponse{
+			Error: model.Error{
+				Message: fmt.Sprintf("API key is not allowed to access model %q", req.Model),
+				Type:    "permission_error",
+				Param:   "model",
+				Code:    "model_not_allowed",
 			},
 		})
 		return
@@ -123,6 +135,21 @@ func requestAccessKey(c *gin.Context) string {
 		}
 	}
 	return ""
+}
+
+func requestCanUseModel(c *gin.Context, modelName string) bool {
+	if isAdmin, _ := c.Get("is_admin"); isAdmin == true {
+		return true
+	}
+	value, ok := c.Get("access_key_config")
+	if !ok {
+		return true
+	}
+	accessKey, ok := value.(config.AccessKeyConfig)
+	if !ok {
+		return true
+	}
+	return config.AccessKeyCanUseModel(accessKey, modelName)
 }
 
 func attemptsFromError(err error) []relay.AttemptLog {
