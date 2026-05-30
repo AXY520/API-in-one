@@ -94,6 +94,7 @@ func (h *Protocol) handleClaudeStream(c *gin.Context, result *relay.RelayResult)
 		callID     string
 		name       string
 		argsBuf    string
+		started    bool
 	}{}
 
 	// message_start
@@ -169,6 +170,7 @@ func (h *Protocol) handleClaudeStream(c *gin.Context, result *relay.RelayResult)
 						callID     string
 						name       string
 						argsBuf    string
+						started    bool
 					}{
 						blockIndex: blockIndex,
 						callID:     tc.ID,
@@ -179,7 +181,12 @@ func (h *Protocol) handleClaudeStream(c *gin.Context, result *relay.RelayResult)
 					}
 					toolCallStates[idx] = st
 					blockIndex++
-
+				}
+				if tc.Function.Name != "" && st.name == "" {
+					st.name = tc.Function.Name
+				}
+				if !st.started && st.name != "" {
+					st.started = true
 					writeClaudeEvent("content_block_start", map[string]interface{}{
 						"type": "content_block_start", "index": st.blockIndex,
 						"content_block": map[string]interface{}{
@@ -187,15 +194,14 @@ func (h *Protocol) handleClaudeStream(c *gin.Context, result *relay.RelayResult)
 						},
 					})
 				}
-				if tc.Function.Name != "" && st.name == "" {
-					st.name = tc.Function.Name
-				}
 				if tc.Function.Arguments != "" {
 					st.argsBuf += tc.Function.Arguments
-					writeClaudeEvent("content_block_delta", map[string]interface{}{
-						"type": "content_block_delta", "index": st.blockIndex,
-						"delta": map[string]interface{}{"type": "input_json_delta", "partial_json": tc.Function.Arguments},
-					})
+					if st.started {
+						writeClaudeEvent("content_block_delta", map[string]interface{}{
+							"type": "content_block_delta", "index": st.blockIndex,
+							"delta": map[string]interface{}{"type": "input_json_delta", "partial_json": tc.Function.Arguments},
+						})
+					}
 				}
 			}
 		}
@@ -215,6 +221,23 @@ func (h *Protocol) handleClaudeStream(c *gin.Context, result *relay.RelayResult)
 
 	// Finalize tool call blocks
 	for _, st := range toolCallStates {
+		if st.name == "" {
+			st.name = "tool"
+		}
+		if !st.started {
+			writeClaudeEvent("content_block_start", map[string]interface{}{
+				"type": "content_block_start", "index": st.blockIndex,
+				"content_block": map[string]interface{}{
+					"type": "tool_use", "id": st.callID, "name": st.name,
+				},
+			})
+			if st.argsBuf != "" {
+				writeClaudeEvent("content_block_delta", map[string]interface{}{
+					"type": "content_block_delta", "index": st.blockIndex,
+					"delta": map[string]interface{}{"type": "input_json_delta", "partial_json": st.argsBuf},
+				})
+			}
+		}
 		writeClaudeEvent("content_block_stop", map[string]interface{}{
 			"type": "content_block_stop", "index": st.blockIndex,
 		})
@@ -226,7 +249,7 @@ func (h *Protocol) handleClaudeStream(c *gin.Context, result *relay.RelayResult)
 		stopReason = "tool_use"
 	}
 	writeClaudeEvent("message_delta", map[string]interface{}{
-		"type": "message_delta",
+		"type":  "message_delta",
 		"delta": map[string]interface{}{"stop_reason": stopReason},
 		"usage": map[string]interface{}{"output_tokens": 0},
 	})
@@ -338,9 +361,9 @@ func (h *Protocol) handleGeminiStream(c *gin.Context, result *relay.RelayResult)
 // Claude → OpenAI
 
 type claudeInboundRequest struct {
-	Model     string        `json:"model"`
-	MaxTokens int           `json:"max_tokens"`
-	System    interface{}   `json:"system,omitempty"` // string or []content block
+	Model     string      `json:"model"`
+	MaxTokens int         `json:"max_tokens"`
+	System    interface{} `json:"system,omitempty"` // string or []content block
 	Messages  []struct {
 		Role    string      `json:"role"`
 		Content interface{} `json:"content"`
@@ -548,8 +571,10 @@ func openAIToClaude(resp *model.ChatCompletionResponse) map[string]interface{} {
 
 	// Tool calls → tool_use content blocks
 	for _, tc := range msg.ToolCalls {
-		var inputMap map[string]interface{}
-		json.Unmarshal([]byte(tc.Function.Arguments), &inputMap)
+		inputMap := map[string]interface{}{}
+		if tc.Function.Arguments != "" {
+			json.Unmarshal([]byte(tc.Function.Arguments), &inputMap)
+		}
 		contentBlocks = append(contentBlocks, map[string]interface{}{
 			"type":  "tool_use",
 			"id":    tc.ID,
@@ -587,7 +612,7 @@ func getString(m map[string]interface{}, key string) string {
 // Gemini → OpenAI
 
 type geminiInboundRequest struct {
-	Contents         []struct {
+	Contents []struct {
 		Role  string `json:"role"`
 		Parts []struct {
 			Text string `json:"text"`
@@ -822,7 +847,7 @@ func (h *Protocol) handleResponsesStream(c *gin.Context, result *relay.RelayResu
 				"output_index": outputIndex,
 				"item": map[string]interface{}{
 					"id": reasonID, "type": "reasoning",
-					"summary": []map[string]interface{}{{"type": "summary_text", "text": reasoningAccum}},
+					"summary":           []map[string]interface{}{{"type": "summary_text", "text": reasoningAccum}},
 					"encrypted_content": reasoningAccum, "status": "completed",
 				},
 			})
@@ -845,11 +870,11 @@ func (h *Protocol) handleResponsesStream(c *gin.Context, result *relay.RelayResu
 
 	// Track tool_calls state
 	type toolCallState struct {
-		itemID    string
-		outIndex  int
-		callID    string
-		name      string
-		argsBuf   string
+		itemID   string
+		outIndex int
+		callID   string
+		name     string
+		argsBuf  string
 	}
 	toolCalls := map[int]*toolCallState{}
 
@@ -991,16 +1016,16 @@ func (h *Protocol) handleResponsesStream(c *gin.Context, result *relay.RelayResu
 // ---- Responses API structures ----
 
 type responsesInboundRequest struct {
-	Model              string        `json:"model"`
-	Input              interface{}   `json:"input"`            // string or []responsesInputItem
-	Instructions       string        `json:"instructions"`     // system prompt
-	Stream             bool          `json:"stream"`
-	MaxOutputTokens    int           `json:"max_output_tokens"`
-	Temperature        *float64      `json:"temperature"`
-	TopP               *float64      `json:"top_p"`
-	Tools              []interface{} `json:"tools,omitempty"`
-	ToolChoice         interface{}   `json:"tool_choice,omitempty"`
-	ParallelToolCalls  *bool         `json:"parallel_tool_calls,omitempty"`
+	Model             string        `json:"model"`
+	Input             interface{}   `json:"input"`        // string or []responsesInputItem
+	Instructions      string        `json:"instructions"` // system prompt
+	Stream            bool          `json:"stream"`
+	MaxOutputTokens   int           `json:"max_output_tokens"`
+	Temperature       *float64      `json:"temperature"`
+	TopP              *float64      `json:"top_p"`
+	Tools             []interface{} `json:"tools,omitempty"`
+	ToolChoice        interface{}   `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool         `json:"parallel_tool_calls,omitempty"`
 }
 
 type responsesInputItem struct {
@@ -1010,7 +1035,7 @@ type responsesInputItem struct {
 
 func responsesToChatCompletion(req *responsesInboundRequest) *model.ChatCompletionRequest {
 	oaiReq := &model.ChatCompletionRequest{
-		Model: req.Model,
+		Model:  req.Model,
 		Stream: req.Stream,
 	}
 	if req.MaxOutputTokens > 0 {
@@ -1062,7 +1087,7 @@ func responsesToChatCompletion(req *responsesInboundRequest) *model.ChatCompleti
 			if fn, ok := tc["function"].(map[string]interface{}); ok {
 				if name, ok := fn["name"].(string); ok {
 					oaiReq.ToolChoice = map[string]interface{}{
-						"type": "function",
+						"type":     "function",
 						"function": map[string]interface{}{"name": name},
 					}
 				}
@@ -1343,12 +1368,16 @@ func removeFakeToolCalls(text string) string {
 		closing := closings[i]
 		for {
 			idx := strings.Index(text, prefix)
-			if idx == -1 { break }
+			if idx == -1 {
+				break
+			}
 			rest := text[idx:]
 			endIdx := strings.Index(rest, closing)
 			if endIdx != -1 {
 				end := endIdx + len(closing)
-				if end < len(rest) && rest[end] == '>' { end++ }
+				if end < len(rest) && rest[end] == '>' {
+					end++
+				}
 				text = strings.TrimSpace(text[:idx] + rest[end:])
 			} else {
 				text = strings.TrimSpace(text[:idx])

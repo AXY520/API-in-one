@@ -50,9 +50,6 @@ type RelayResult struct {
 // protocol indicates the inbound protocol ("openai", "claude", "gemini", "responses")
 // and is used to select the appropriate base URL when a channel has multiple endpoints.
 func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, protocol string) (*RelayResult, error) {
-	// Sanitize messages and tools before sending upstream
-	sanitizeRequest(req)
-
 	var lastErr error
 
 	for attempt := 0; attempt < e.maxRetries; attempt++ {
@@ -84,6 +81,9 @@ func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, proto
 			lastErr = fmt.Errorf("no adaptor for type: %s or %s", adaptorType, ch.Type)
 			continue
 		}
+
+		preserveTools := ad.Name() == "openai"
+		sanitizeRequest(&reqCopy, preserveTools)
 
 		slog.Debug("relay attempt",
 			"attempt", attempt+1,
@@ -166,15 +166,13 @@ func (e *Engine) doRequest(ctx context.Context, ad adaptor.Adaptor, ch *model.Ch
 	return &RelayResult{Response: chatResp}, status, nil
 }
 
-// sanitizeRequest cleans up messages and tool_calls for upstream compatibility.
-func sanitizeRequest(req *model.ChatCompletionRequest) {
-	// Keep tools/tool_choice — let the model decide whether to use them.
-	// Salvage malformed tool_call arguments instead of stripping tools.
-	sanitizeMessages(req)
+// sanitizeRequest cleans up messages for upstream compatibility.
+func sanitizeRequest(req *model.ChatCompletionRequest, preserveTools bool) {
+	sanitizeMessages(req, preserveTools)
 	sanitizeToolCalls(req)
 }
 
-func sanitizeMessages(req *model.ChatCompletionRequest) {
+func sanitizeMessages(req *model.ChatCompletionRequest, preserveTools bool) {
 	// Phase 1: Convert tool/function role messages to user messages
 	var phase1 []model.Message
 	for _, msg := range req.Messages {
@@ -186,6 +184,10 @@ func sanitizeMessages(req *model.ChatCompletionRequest) {
 		case "user", "assistant":
 			phase1 = append(phase1, msg)
 		case "tool":
+			if preserveTools {
+				phase1 = append(phase1, msg)
+				continue
+			}
 			content := extractStringContent(msg.Content)
 			if content != "" {
 				if msg.ToolCallID != "" {
@@ -201,6 +203,11 @@ func sanitizeMessages(req *model.ChatCompletionRequest) {
 				}
 			}
 		case "function":
+			if preserveTools {
+				msg.Role = "tool"
+				phase1 = append(phase1, msg)
+				continue
+			}
 			content := extractStringContent(msg.Content)
 			if content != "" {
 				phase1 = append(phase1, model.Message{
@@ -213,10 +220,10 @@ func sanitizeMessages(req *model.ChatCompletionRequest) {
 		}
 	}
 
-	// Phase 2: Strip tool_calls but preserve reasoning_content
+	// Phase 2: Strip tool_calls only for upstreams that do not accept OpenAI tool messages.
 	var phase2 []model.Message
 	for _, msg := range phase1 {
-		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+		if !preserveTools && msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
 			msg.ToolCalls = nil
 			if isMessageEmpty(msg) && msg.ReasoningContent == "" {
 				continue
