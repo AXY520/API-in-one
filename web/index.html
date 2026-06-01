@@ -114,6 +114,9 @@
       align-items: center;
       justify-content: center;
       padding: 1.5rem;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      touch-action: none;
     }
     .dark .modal-overlay {
       background: rgba(3, 7, 18, 0.75);
@@ -126,6 +129,8 @@
       transform: scale(0.95);
       opacity: 0;
       transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      overscroll-behavior: contain;
+      touch-action: auto;
     }
     .modal-overlay.active .modal-content {
       transform: scale(1);
@@ -142,6 +147,25 @@
       color: inherit;
       border-radius: 2px;
       padding: 0 2px;
+    }
+    body.modal-open {
+      overflow: hidden;
+    }
+    @media (max-width: 640px) {
+      .modal-overlay {
+        padding: 0.75rem;
+        align-items: flex-start;
+      }
+      .modal-content {
+        width: 100%;
+        max-height: calc(100dvh - 1.5rem);
+        overflow-y: auto;
+        border-radius: 1.25rem;
+      }
+      .table :where(th,td) {
+        padding-left: .5rem;
+        padding-right: .5rem;
+      }
     }
   </style>
 </head>
@@ -404,16 +428,16 @@
           </div>
         </div>
 
-        <!-- Logs Table and details pane -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          <!-- Table -->
-          <div class="lg:col-span-2 rounded-3xl glass-card overflow-hidden">
+        <!-- Logs Table -->
+        <div class="rounded-3xl glass-card overflow-hidden">
             <div class="overflow-x-auto min-h-[400px]">
-              <table class="table w-full text-slate-700 dark:text-slate-300">
+              <table class="table table-sm w-full text-slate-700 dark:text-slate-300">
                 <thead>
                   <tr class="border-b border-slate-200 dark:border-white/5 text-slate-500 dark:text-slate-400 uppercase text-xs">
                     <th>时间</th>
-                    <th>协议/模型</th>
+                    <th>Key</th>
+                    <th>协议 / 模式</th>
+                    <th>模型</th>
                     <th>渠道</th>
                     <th>延时/状态</th>
                     <th>操作</th>
@@ -434,55 +458,6 @@
                 下一页 <i data-lucide="chevron-right" class="w-4 h-4"></i>
               </button>
             </div>
-          </div>
-
-          <!-- Drawer Detail Panel -->
-          <div class="rounded-3xl glass-card p-6 space-y-5 lg:sticky lg:top-6" id="log-detail-card">
-            <div class="flex items-center justify-between">
-              <h3 class="font-bold text-lg text-slate-900 dark:text-white">流水详情</h3>
-              <span class="text-xs text-slate-500 font-mono" id="log-detail-id">未选择</span>
-            </div>
-            <div id="log-detail-placeholder" class="py-12 text-center text-slate-500 text-sm">
-              <i data-lucide="file-text" class="w-12 h-12 mx-auto text-slate-300 dark:text-slate-700 mb-3"></i>
-              选择左侧一条流水记录查看完整 Payload 链路
-            </div>
-            <div id="log-detail-content" class="hidden space-y-4">
-              <div class="grid grid-cols-2 gap-3 text-xs">
-                <div class="p-3 bg-slate-200/50 dark:bg-white/5 rounded-xl border border-slate-300 dark:border-white/5">
-                  <div class="text-slate-500 mb-0.5">访问令牌 Access Key</div>
-                  <div class="font-mono text-slate-700 dark:text-slate-300 truncate" id="ld-key"></div>
-                </div>
-                <div class="p-3 bg-slate-200/50 dark:bg-white/5 rounded-xl border border-slate-300 dark:border-white/5">
-                  <div class="text-slate-500 mb-0.5">模式 Mode</div>
-                  <div class="font-mono text-slate-700 dark:text-slate-300" id="ld-mode"></div>
-                </div>
-              </div>
-
-              <!-- Retries list -->
-              <div class="space-y-1.5">
-                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400">重试探测链路 Attempts</div>
-                <div class="space-y-1" id="ld-attempts"></div>
-              </div>
-
-              <!-- Prompt body -->
-              <div class="space-y-1.5">
-                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
-                  <span>客户端请求 payload (Request)</span>
-                  <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-req-box')">复制</button>
-                </div>
-                <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-48 border border-white/5 text-emerald-400 scroll-fade" id="ld-req-box"></pre>
-              </div>
-
-              <!-- Upstream request -->
-              <div class="space-y-1.5" id="ld-upreq-container">
-                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
-                  <span>最终发出上游 payload (Converted Upstream)</span>
-                  <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-upreq-box')">复制</button>
-                </div>
-                <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-48 border border-white/5 text-purple-400 scroll-fade" id="ld-upreq-box"></pre>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -521,11 +496,11 @@
               <h3 class="font-bold text-lg text-slate-900 dark:text-white">模型 System Prompt 静态注入</h3>
               <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">在代理转发前，向指定客户端可见模型请求的消息流末尾追加注入固定的开发者提示词。</p>
             </div>
-            <button class="btn btn-sm btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveModelSystemPrompts()">
-              保存注入参数
+            <button class="btn btn-sm btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="openPromptModal()">
+              <i data-lucide="plus" class="w-4 h-4 mr-1"></i> 添加注入
             </button>
           </div>
-          <div id="model-prompts-display" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div id="model-prompts-display" class="space-y-2">
             <!-- Dynamic Injection -->
           </div>
         </div>
@@ -683,6 +658,74 @@
     </div>
   </div>
 
+  <!-- Modal: Request Log Detail -->
+  <div class="modal-overlay" id="log-modal">
+    <div class="modal-content w-full max-w-5xl glass-card border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-4">
+        <div>
+          <h3 class="text-xl font-bold text-slate-900 dark:text-white">流水详情</h3>
+          <span class="text-xs text-slate-500 font-mono" id="log-detail-id">未选择</span>
+        </div>
+        <button class="btn btn-sm btn-circle btn-ghost" onclick="closeModal('log-modal')"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div id="log-detail-content" class="space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div class="p-3 bg-slate-200/50 dark:bg-white/5 rounded-xl border border-slate-300 dark:border-white/5">
+            <div class="text-slate-500 mb-0.5">访问令牌 Access Key</div>
+            <div class="font-mono text-slate-700 dark:text-slate-300 truncate" id="ld-key"></div>
+          </div>
+          <div class="p-3 bg-slate-200/50 dark:bg-white/5 rounded-xl border border-slate-300 dark:border-white/5">
+            <div class="text-slate-500 mb-0.5">模式 Mode</div>
+            <div class="font-mono text-slate-700 dark:text-slate-300" id="ld-mode"></div>
+          </div>
+        </div>
+        <div class="space-y-1.5">
+          <div class="text-xs font-semibold text-slate-500 dark:text-slate-400">重试探测链路 Attempts</div>
+          <div class="space-y-1" id="ld-attempts"></div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
+              <span>客户端请求 payload (Request)</span>
+              <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-req-box')">复制</button>
+            </div>
+            <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-80 border border-white/5 text-emerald-400 scroll-fade" id="ld-req-box"></pre>
+          </div>
+          <div class="space-y-1.5" id="ld-upreq-container">
+            <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
+              <span>最终发出上游 payload (Converted Upstream)</span>
+              <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-upreq-box')">复制</button>
+            </div>
+            <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-80 border border-white/5 text-purple-400 scroll-fade" id="ld-upreq-box"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Model System Prompt Editor -->
+  <div class="modal-overlay" id="prompt-modal">
+    <div class="modal-content w-full max-w-2xl glass-card border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-3">
+        <h3 class="text-lg font-bold text-slate-900 dark:text-white" id="prompt-modal-title">添加模型注入</h3>
+        <button class="btn btn-sm btn-circle btn-ghost" onclick="closeModal('prompt-modal')"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <input type="hidden" id="prompt-original-model" value="">
+      <div class="form-control">
+        <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">模型</span></label>
+        <select class="select select-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white font-mono text-sm" id="prompt-model-select"></select>
+      </div>
+      <div class="form-control">
+        <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">System Prompt</span></label>
+        <textarea class="textarea textarea-bordered min-h-40 bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-white font-mono" id="prompt-textarea" placeholder="这个模型的系统提示词，留空不会保存"></textarea>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-slate-200 dark:border-white/5 pt-3">
+        <button class="btn btn-sm btn-ghost rounded-lg text-slate-400" onclick="closeModal('prompt-modal')">取消</button>
+        <button class="btn btn-sm btn-primary rounded-lg text-white" onclick="savePromptFromModal()">保存注入</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Key stats & manager -->
   <div class="modal-overlay" id="key-modal">
     <div class="modal-content w-full max-w-4xl glass-card border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
@@ -807,6 +850,11 @@
 
     // Auto load API_KEY from localStorage
     window.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.modal-overlay').forEach(modal => {
+        modal.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
+        modal.addEventListener('touchmove', e => e.stopPropagation(), { passive: true });
+      });
+
       const savedKey = localStorage.getItem('api-in-one-admin-key');
       if (savedKey) {
         document.getElementById('key-input').value = savedKey;
@@ -891,12 +939,16 @@
       const el = document.getElementById(id);
       if (el) {
         el.classList.add('active');
+        document.body.classList.add('modal-open');
       }
     }
     function closeModal(id) {
       const el = document.getElementById(id);
       if (el) {
         el.classList.remove('active');
+      }
+      if (!document.querySelector('.modal-overlay.active')) {
+        document.body.classList.remove('modal-open');
       }
     }
 
@@ -1605,7 +1657,7 @@
       if (q) query += `&q=${encodeURIComponent(q)}`;
 
       const body = document.getElementById('logs-table-body');
-      body.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-550">正在检索流水日志...</td></tr>`;
+      body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-550">正在检索流水日志...</td></tr>`;
 
       try {
         const data = await api(`/admin/logs${query}`);
@@ -1618,7 +1670,7 @@
         document.getElementById('log-page-info').textContent = `${logPage} / ${totalPages}`;
 
         if (list.length === 0) {
-          body.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-slate-500 italic">没有匹配的流量流水记录</td></tr>`;
+          body.innerHTML = `<tr><td colspan="7" class="py-12 text-center text-slate-500 italic">没有匹配的流量流水记录</td></tr>`;
           return;
         }
 
@@ -1626,17 +1678,23 @@
           const isOK = log.status >= 200 && log.status < 400;
           const statusCls = isOK ? 'text-emerald-700 bg-emerald-100/60 dark:text-emerald-400 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-900/30' : 'text-rose-700 bg-rose-100/60 dark:text-rose-400 dark:bg-rose-950/50 border-rose-300 dark:border-rose-900/30';
           const protoBadge = `<span class="badge badge-sm font-mono bg-slate-200 dark:bg-white/5 border-none text-[10px] text-slate-600 dark:text-slate-400">${esc(log.protocol)}</span>`;
+          const modeText = log.mode === 'converted' ? '转换' : '透穿';
+          const modeCls = log.mode === 'converted'
+            ? 'bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-400'
+            : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400';
           
           return `
             <tr class="border-b border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors" onclick="loadLogDetail(${log.id}, this)">
               <td class="font-mono text-[10px] text-slate-500">${esc(log.timestamp)}</td>
+              <td><span class="badge badge-sm bg-slate-200 dark:bg-white/5 border-none font-mono text-[10px] text-slate-700 dark:text-slate-300">${esc(log.access_key || 'N/A')}</span></td>
               <td>
-                <div class="font-bold text-slate-800 dark:text-slate-300 text-sm font-mono truncate max-w-[180px]">${esc(log.model)}</div>
-                <div class="flex gap-1 items-center mt-1">
+                <div class="flex flex-wrap gap-1 items-center">
                   ${protoBadge}
-                  <span class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">id: ${log.id}</span>
+                  <span class="badge badge-sm border-none text-[10px] ${modeCls}">${modeText}</span>
                 </div>
+                <span class="block text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-1">id: ${log.id}</span>
               </td>
+              <td class="font-bold text-slate-800 dark:text-slate-300 text-sm font-mono truncate max-w-[220px]">${esc(log.model)}</td>
               <td class="font-mono text-xs text-slate-600 dark:text-slate-400">${esc(log.channel || 'N/A')}</td>
               <td>
                 <span class="badge ${statusCls} font-mono text-[10px] py-1 border">${log.status}</span>
@@ -1650,7 +1708,7 @@
         }).join('');
         lucide.createIcons();
       } catch(e) {
-        body.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-rose-450">流水拉取失败: ${esc(e.message)}</td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-rose-450">流水拉取失败: ${esc(e.message)}</td></tr>`;
       }
     }
 
@@ -1666,9 +1724,9 @@
         rowEl.classList.add('bg-cyan-500/10', 'dark:bg-cyan-500/20');
       }
 
-      document.getElementById('log-detail-placeholder').classList.add('hidden');
       const content = document.getElementById('log-detail-content');
-      content.classList.add('hidden');
+      content.classList.add('opacity-50');
+      openModal('log-modal');
 
       try {
         const data = await api(`/admin/logs/${id}`);
@@ -1708,8 +1766,10 @@
           upReqContainer.classList.add('hidden');
         }
 
-        content.classList.remove('hidden');
+        content.classList.remove('opacity-50');
+        lucide.createIcons();
       } catch(e) {
+        closeModal('log-modal');
         showToast('获取日志详情失败: ' + e.message, true);
       }
     }
@@ -1787,42 +1847,82 @@
 
     function renderModelSystemPrompts() {
       const el = document.getElementById('model-prompts-display');
-      if (accessPolicyModels.length === 0) {
-        el.innerHTML = `<div class="col-span-full py-8 text-center text-slate-400 text-sm">暂无可配置注入的公开模型。需先在渠道里添加模型参数。</div>`;
+      const entries = Object.entries(modelSystemPrompts)
+        .filter(([, prompt]) => (prompt || '').trim())
+        .sort(([a], [b]) => a.localeCompare(b));
+      if (entries.length === 0) {
+        el.innerHTML = `<div class="py-6 text-center text-slate-400 text-sm rounded-2xl border border-dashed border-slate-300 dark:border-white/10">暂无模型注入，点击“添加注入”创建。</div>`;
         return;
       }
 
-      el.innerHTML = accessPolicyModels.map(model => {
-        const value = modelSystemPrompts[model] || '';
-        const hasPrompt = !!value.trim();
-        const borderCls = hasPrompt ? 'border-cyan-550/30 bg-cyan-100/20 dark:bg-cyan-950/10' : 'border-slate-200 dark:border-white/5 bg-slate-100/50 dark:bg-slate-900/20';
-
-        return `
-          <div class="p-4 rounded-2xl border ${borderCls} flex flex-col justify-between space-y-3">
-            <div class="flex items-center justify-between">
-              <span class="font-mono text-xs font-semibold text-slate-800 dark:text-slate-300 truncate max-w-[200px]">${esc(model)}</span>
-              ${hasPrompt ? '<span class="badge badge-sm bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-400 border-none text-[10px]">已启用注入</span>' : '<span class="badge badge-sm bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-none text-[10px]">默认</span>'}
-            </div>
-            <textarea class="textarea textarea-bordered h-20 bg-white dark:bg-slate-950/40 border-slate-300 dark:border-white/5 focus:border-cyan-500 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-300" 
-              placeholder="留空即不做任何注入修改" 
-              oninput="modelSystemPrompts['${escAttr(model)}']=this.value">${esc(value)}</textarea>
+      el.innerHTML = entries.map(([model, prompt]) => `
+        <div class="flex flex-col gap-2 rounded-2xl border border-cyan-200/70 bg-cyan-50/50 p-3 dark:border-cyan-500/20 dark:bg-cyan-950/10 sm:flex-row sm:items-center sm:justify-between">
+          <div class="min-w-0">
+            <div class="font-mono text-xs font-semibold text-slate-900 dark:text-slate-200">${esc(model)}</div>
+            <div class="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">${esc(prompt)}</div>
           </div>
-        `;
-      }).join('');
+          <div class="flex shrink-0 gap-2">
+            <button class="btn btn-xs rounded-lg border-slate-200 dark:border-white/10" onclick="openPromptModal('${escAttr(model)}')">编辑</button>
+            <button class="btn btn-xs btn-error btn-outline rounded-lg" onclick="removeModelSystemPrompt('${escAttr(model)}')">删除</button>
+          </div>
+        </div>
+      `).join('');
+      lucide.createIcons();
+    }
+
+    function openPromptModal(modelName = '') {
+      const select = document.getElementById('prompt-model-select');
+      const currentModels = accessPolicyModels.slice();
+      if (modelName && !currentModels.includes(modelName)) currentModels.unshift(modelName);
+      if (currentModels.length === 0) {
+        showToast('暂无可选模型，先在渠道中配置模型', true);
+        return;
+      }
+      select.innerHTML = currentModels.map(model =>
+        `<option value="${esc(model)}">${esc(model)}</option>`
+      ).join('');
+      select.value = modelName || currentModels[0];
+      document.getElementById('prompt-original-model').value = modelName;
+      document.getElementById('prompt-textarea').value = modelName ? (modelSystemPrompts[modelName] || '') : '';
+      document.getElementById('prompt-modal-title').textContent = modelName ? '编辑模型注入' : '添加模型注入';
+      openModal('prompt-modal');
+    }
+
+    async function savePromptFromModal() {
+      const original = document.getElementById('prompt-original-model').value;
+      const model = document.getElementById('prompt-model-select').value;
+      const prompt = document.getElementById('prompt-textarea').value.trim();
+      if (!model || !prompt) {
+        showToast('模型和 Prompt 都不能为空', true);
+        return;
+      }
+      if (original && original !== model) {
+        delete modelSystemPrompts[original];
+      }
+      modelSystemPrompts[model] = prompt;
+      closeModal('prompt-modal');
+      await saveModelSystemPrompts();
+    }
+
+    async function removeModelSystemPrompt(model) {
+      if (!confirm(`删除 ${model} 的系统提示词注入？`)) return;
+      delete modelSystemPrompts[model];
+      await saveModelSystemPrompts();
     }
 
     async function saveModelSystemPrompts() {
       try {
         const prompts = {};
         for (const [model, p] of Object.entries(modelSystemPrompts)) {
-          if (p.trim()) prompts[model] = p.trim();
+          if ((p || '').trim()) prompts[model] = p.trim();
         }
-        await api('/admin/model-system-prompts', {
+        const data = await api('/admin/model-system-prompts', {
           method: 'PUT',
           body: JSON.stringify({ model_system_prompts: prompts })
         });
-        showToast('模型自定义系统提示词已成功更新注入！');
-        loadSettings();
+        modelSystemPrompts = data.model_system_prompts || prompts;
+        renderModelSystemPrompts();
+        showToast('模型系统提示词注入已保存');
       } catch(e) {
         showToast('保存提示词配置失败: ' + e.message, true);
       }
