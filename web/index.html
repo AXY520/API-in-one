@@ -338,7 +338,7 @@
         </div>
 
         <!-- Channels Container Grid -->
-        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6" id="channels-list-container">
+        <div class="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4" id="channels-list-container">
           <!-- Dynamic injection -->
         </div>
       </div>
@@ -611,7 +611,7 @@
           <div class="form-control">
             <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">支持的模型列表 (英文逗号分隔)</span></label>
             <div class="flex gap-2">
-              <input class="input input-bordered flex-1 bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-sm text-slate-800 dark:text-white" type="text" id="f-models" placeholder="gpt-4o, gpt-4o-mini">
+              <input class="input input-bordered flex-1 bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-sm text-slate-800 dark:text-white" type="text" id="f-models" placeholder="gpt-4o, gpt-4o-mini" oninput="refreshMappingModelOptions()">
               <button class="btn bg-slate-200 dark:bg-white/5 hover:bg-slate-300 dark:hover:bg-white/10 text-slate-800 dark:text-white border-slate-300 dark:border-white/10 rounded-xl" id="btn-fetch" onclick="fetchModels()">
                 拉取可用模型
               </button>
@@ -662,7 +662,7 @@
   <div class="modal-overlay" id="picker-modal">
     <div class="modal-content w-full max-w-lg glass-card border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-2xl space-y-4">
       <div class="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-3">
-        <h3 class="text-lg font-bold text-slate-900 dark:text-white">配置密钥受控模型</h3>
+        <h3 class="text-lg font-bold text-slate-900 dark:text-white" id="picker-title">配置密钥受控模型</h3>
         <button class="btn btn-sm btn-circle btn-ghost" onclick="closeModal('picker-modal')"><i data-lucide="x" class="w-4 h-4"></i></button>
       </div>
       <input type="text" class="input input-bordered w-full bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-white" id="picker-search" placeholder="筛选模型名称..." oninput="filterPicker()">
@@ -747,6 +747,8 @@
     let accessKeyPolicies = [];
     let accessPolicyModels = [];
     let modelSystemPrompts = {};
+    let fetchedChannelModels = [];
+    let pickerMode = 'policy';
 
     // Filter properties for Logs
     let logPage = 1;
@@ -1144,80 +1146,29 @@
           statusBadge = `<span class="badge bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border-none">故障熔断</span>`;
         }
 
-        const statsHtml = ch.key_stats ? ch.key_stats.map(k => {
-          const statusColor = k.disabled ? 'bg-slate-400 dark:bg-slate-600' : (k.healthy ? 'bg-emerald-500' : 'bg-rose-500');
-          return `
-            <div class="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-black/20 text-xs font-mono border border-slate-200/50 dark:border-none">
-              <span class="truncate text-slate-600 dark:text-slate-400">${esc(k.masked_key)}</span>
-              <span class="h-2 w-2 rounded-full ${statusColor}"></span>
-            </div>
-          `;
-        }).join('') : '';
-
-        const modelsPills = !isEnabled
-          ? '<span class="text-xs text-slate-400 dark:text-slate-600 italic">渠道已禁用，模型不对外显示</span>'
-          : (ch.models ? ch.models.map(m => 
-              `<span class="badge bg-slate-200/60 dark:bg-white/5 border-none text-[10px] text-slate-600 dark:text-slate-400 font-mono py-1.5 h-auto">${esc(m)}</span>`
-            ).join(' ') : '无模型配置');
-
         const aliases = Object.keys(ch.model_mapping || {});
-        let mappingBadge = '';
-        if (isEnabled && aliases.length > 0) {
-          mappingBadge = `<span class="badge bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400 border-none text-[10px]">有映射 (${aliases.length})</span>`;
-        }
 
         return `
-          <div class="glass-card glass-card-hover rounded-3xl p-6 flex flex-col justify-between space-y-5">
+          <div class="glass-card glass-card-hover rounded-2xl p-4 flex flex-col justify-between gap-4">
             <div>
-              <div class="flex items-start justify-between">
-                <div class="space-y-1">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 space-y-1">
                   <div class="flex items-center gap-2">
-                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">${esc(ch.name)}</h3>
+                    <h3 class="truncate text-lg font-bold text-slate-900 dark:text-white">${esc(ch.name)}</h3>
                     ${statusBadge}
                   </div>
-                  <div class="text-xs font-semibold text-slate-500 dark:text-slate-500 font-mono truncate max-w-sm">${esc(ch.base_url)}</div>
-                </div>
-                <div class="badge bg-cyan-100 dark:bg-cyan-500/10 border-none text-cyan-800 dark:text-cyan-400 text-xs py-1 font-semibold">${esc(ch.type)}</div>
-              </div>
-
-              <!-- Metrics Summary -->
-              <div class="grid grid-cols-3 gap-2 mt-4 text-center text-xs">
-                <div class="p-2 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl">
-                  <div class="text-slate-500">优先级</div>
-                  <div class="font-bold text-slate-800 dark:text-slate-300 font-mono mt-0.5">${ch.priority}</div>
-                </div>
-                <div class="p-2 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl">
-                  <div class="text-slate-500">权重</div>
-                  <div class="font-bold text-slate-800 dark:text-slate-300 font-mono mt-0.5">${ch.weight}</div>
-                </div>
-                <div class="p-2 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl">
-                  <div class="text-slate-500">总 Keys</div>
-                  <div class="font-bold text-slate-800 dark:text-slate-300 font-mono mt-0.5">${ch.key_count}</div>
-                </div>
-              </div>
-
-              <!-- Keys list mini -->
-              <div class="mt-4 space-y-1.5">
-                <div class="text-[11px] font-bold text-slate-500 uppercase">Keys 运行矩阵</div>
-                <div class="grid grid-cols-2 gap-1.5 max-h-24 overflow-y-auto pr-1 scroll-fade">
-                  ${statsHtml || '<div class="col-span-2 text-xs text-slate-400 italic">无 Key 统计数据</div>'}
-                </div>
-              </div>
-
-              <!-- Models lists -->
-              <div class="mt-4 space-y-1.5">
-                <div class="text-[11px] font-bold text-slate-500 uppercase flex items-center justify-between">
-                  <span>支持的模型及别名</span>
-                  ${mappingBadge}
-                </div>
-                <div class="flex flex-wrap gap-1 max-h-16 overflow-y-auto pr-1 scroll-fade">
-                  ${modelsPills}
+                  <div class="truncate text-xs font-semibold text-slate-500 dark:text-slate-500 font-mono">${esc(ch.base_url)}</div>
+                  <div class="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span class="badge bg-cyan-100 dark:bg-cyan-500/10 border-none text-cyan-800 dark:text-cyan-400 text-[10px] font-semibold">${esc(ch.type)}</span>
+                    ${ch.supports_responses ? '<span class="badge bg-violet-100 dark:bg-violet-500/10 border-none text-violet-700 dark:text-violet-400 text-[10px]">Responses</span>' : ''}
+                    ${isEnabled && aliases.length > 0 ? `<span class="badge bg-slate-200 dark:bg-white/5 border-none text-slate-500 dark:text-slate-400 text-[10px]">映射 ${aliases.length}</span>` : ''}
+                  </div>
                 </div>
               </div>
             </div>
 
             <!-- Card Actions -->
-            <div class="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-white/5">
+            <div class="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-white/5">
               <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-500 dark:text-slate-400">
                 <input class="toggle toggle-xs toggle-primary" type="checkbox" ${ch.enabled ? 'checked' : ''} onchange="setChannelEnabled('${escAttr(ch.name)}', this.checked)">
                 <span>启用渠道</span>
@@ -1290,7 +1241,7 @@
       document.getElementById('f-baseurl-gemini').value = ch.base_url_gemini || '';
       document.getElementById('f-supports-responses').checked = !!ch.supports_responses;
       document.getElementById('f-keys').value = '';
-      document.getElementById('f-keys').placeholder = '【留空则保持原有 Key 不变】';
+      document.getElementById('f-keys').placeholder = '正在读取已有 Key...';
       document.getElementById('f-models').value = (ch.models || []).join(', ');
       document.getElementById('f-priority').value = ch.priority;
       document.getElementById('f-weight').value = ch.weight;
@@ -1305,6 +1256,15 @@
       }
 
       openModal('channel-modal');
+      api(`/admin/channels/${encodeURIComponent(ch.name)}/keys`)
+        .then(data => {
+          document.getElementById('f-keys').value = (data.keys || []).join('\n');
+          document.getElementById('f-keys').placeholder = 'sk-key1\nsk-key2';
+        })
+        .catch(e => {
+          document.getElementById('f-keys').placeholder = '读取已有 Key 失败';
+          showToast('读取已有 Key 失败: ' + e.message, true);
+        });
       lucide.createIcons();
     }
 
@@ -1313,13 +1273,27 @@
       const div = document.createElement('div');
       div.className = 'flex items-center gap-2 mt-2';
       div.innerHTML = `
-        <input class="input input-bordered input-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-lg flex-1 text-slate-800 dark:text-slate-300 font-mono text-xs" type="text" placeholder="上游模型 ID" value="${escAttr(upstream)}">
+        <select class="mapping-upstream select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-lg flex-1 text-slate-800 dark:text-slate-300 font-mono text-xs" data-value="${escAttr(upstream)}"></select>
         <span class="text-slate-400 dark:text-slate-500 font-mono">→</span>
-        <input class="input input-bordered input-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-lg flex-1 text-slate-800 dark:text-slate-300 font-mono text-xs" type="text" placeholder="客户端调用别名" value="${escAttr(alias)}">
+        <input class="mapping-alias input input-bordered input-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-lg flex-1 text-slate-800 dark:text-slate-300 font-mono text-xs" type="text" placeholder="客户端调用别名" value="${escAttr(alias)}">
         <button class="btn btn-sm btn-ghost hover:bg-rose-100 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg" onclick="this.parentNode.remove()"><i data-lucide="trash" class="w-4 h-4"></i></button>
       `;
       container.appendChild(div);
+      refreshMappingModelOptions();
       lucide.createIcons();
+    }
+
+    function refreshMappingModelOptions() {
+      const models = parseModelList(document.getElementById('f-models').value);
+      document.querySelectorAll('.mapping-upstream').forEach(select => {
+        const previous = select.value || select.dataset.value || '';
+        const choices = previous && !models.includes(previous) ? [previous, ...models] : models;
+        select.innerHTML = '<option value="">选择上游模型</option>' + choices.map(model =>
+          `<option value="${esc(model)}">${esc(model)}</option>`
+        ).join('');
+        if (previous) select.value = previous;
+        select.dataset.value = select.value;
+      });
     }
 
     function adaptDefaultURL() {
@@ -1369,11 +1343,8 @@
 
         const list = data.models || [];
         if (list.length > 0) {
-          const modelsInput = document.getElementById('f-models');
-          const current = parseModelList(modelsInput.value);
-          const merged = Array.from(new Set([...current, ...list]));
-          modelsInput.value = merged.join(', ');
-          showToast(`拉取成功，合并注入了 ${list.length} 个模型支持`);
+          openFetchedModelPicker(list);
+          showToast(`拉取成功，请选择要启用的模型`);
         } else {
           showToast('上游返回的模型列表为空', true);
         }
@@ -1383,6 +1354,16 @@
         btn.textContent = originalText;
         btn.disabled = false;
       }
+    }
+
+    function openFetchedModelPicker(models) {
+      pickerMode = 'channel-models';
+      fetchedChannelModels = Array.from(new Set(models)).sort((a, b) => a.localeCompare(b));
+      pickerSelected = new Set(parseModelList(document.getElementById('f-models').value));
+      document.getElementById('picker-title').textContent = '选择此渠道要启用的模型';
+      document.getElementById('picker-search').value = '';
+      renderPickerList();
+      openModal('picker-modal');
     }
 
     async function saveChannel() {
@@ -1410,8 +1391,8 @@
       const modelMapping = {};
       const rows = document.getElementById('mapping-editor').children;
       for (const row of rows) {
-        const upstream = row.children[0].value.trim();
-        const alias = row.children[2].value.trim();
+        const upstream = row.querySelector('.mapping-upstream')?.value.trim() || '';
+        const alias = row.querySelector('.mapping-alias')?.value.trim() || '';
         if (upstream && alias) {
           modelMapping[alias] = upstream;
         }
@@ -1977,10 +1958,12 @@
     let pickerSelected = new Set();
 
     function openPicker(keyIdx, field) {
+      pickerMode = 'policy';
       pickerKeyIdx = keyIdx;
       pickerField = field;
       pickerSelected = new Set(accessKeyPolicies[keyIdx][field] || []);
       
+      document.getElementById('picker-title').textContent = '配置密钥受控模型';
       document.getElementById('picker-search').value = '';
       renderPickerList();
       openModal('picker-modal');
@@ -1989,8 +1972,9 @@
     function renderPickerList() {
       const container = document.getElementById('picker-list');
       const query = document.getElementById('picker-search').value.toLowerCase();
+      const sourceModels = pickerMode === 'channel-models' ? fetchedChannelModels : accessPolicyModels;
 
-      const filtered = accessPolicyModels.filter(m => m.toLowerCase().includes(query));
+      const filtered = sourceModels.filter(m => m.toLowerCase().includes(query));
       
       if (filtered.length === 0) {
         container.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">无模型匹配此过滤</div>`;
@@ -2025,7 +2009,8 @@
     }
 
     function pickerSelectAll() {
-      accessPolicyModels.forEach(m => pickerSelected.add(m));
+      const sourceModels = pickerMode === 'channel-models' ? fetchedChannelModels : accessPolicyModels;
+      sourceModels.forEach(m => pickerSelected.add(m));
       renderPickerList();
     }
     function pickerDeselectAll() {
@@ -2034,6 +2019,18 @@
     }
 
     function applyPickerSelection() {
+      if (pickerMode === 'channel-models') {
+        const selected = fetchedChannelModels.filter(m => pickerSelected.has(m));
+        if (selected.length === 0) {
+          showToast('请至少选择一个模型', true);
+          return;
+        }
+        document.getElementById('f-models').value = selected.join(', ');
+        closeModal('picker-modal');
+        refreshMappingModelOptions();
+        showToast(`已选择 ${selected.length} 个模型`);
+        return;
+      }
       accessKeyPolicies[pickerKeyIdx][pickerField] = Array.from(pickerSelected).sort((a,b) => a.localeCompare(b));
       closeModal('picker-modal');
       renderAccessKeyPolicies();
