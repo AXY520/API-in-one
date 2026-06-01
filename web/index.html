@@ -198,7 +198,7 @@
   </div>
 
   <!-- Main Application Wrapper -->
-  <div class="hidden min-h-screen flex flex-col md:flex-row" id="app">
+  <div class="hidden h-screen flex flex-col md:flex-row overflow-hidden" id="app">
     
     <!-- Sidebar / Navigation -->
     <aside class="w-full md:w-72 shrink-0 md:h-screen sticky top-0 bg-slate-100/90 dark:bg-[#080d19]/80 backdrop-blur-xl border-b md:border-b-0 md:border-r border-slate-200 dark:border-white/5 flex flex-col p-6 z-50 transition-colors duration-300">
@@ -669,34 +669,24 @@
         <button class="btn btn-sm btn-circle btn-ghost" onclick="closeModal('log-modal')"><i data-lucide="x" class="w-5 h-5"></i></button>
       </div>
       <div id="log-detail-content" class="space-y-4">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-          <div class="p-3 bg-slate-200/50 dark:bg-white/5 rounded-xl border border-slate-300 dark:border-white/5">
-            <div class="text-slate-500 mb-0.5">访问令牌 Access Key</div>
-            <div class="font-mono text-slate-700 dark:text-slate-300 truncate" id="ld-key"></div>
-          </div>
-          <div class="p-3 bg-slate-200/50 dark:bg-white/5 rounded-xl border border-slate-300 dark:border-white/5">
-            <div class="text-slate-500 mb-0.5">模式 Mode</div>
-            <div class="font-mono text-slate-700 dark:text-slate-300" id="ld-mode"></div>
-          </div>
-        </div>
         <div class="space-y-1.5">
           <div class="text-xs font-semibold text-slate-500 dark:text-slate-400">重试探测链路 Attempts</div>
           <div class="space-y-1" id="ld-attempts"></div>
         </div>
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="space-y-4">
           <div class="space-y-1.5">
             <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
               <span>客户端请求 payload (Request)</span>
               <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-req-box')">复制</button>
             </div>
-            <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-80 border border-white/5 text-emerald-400 scroll-fade" id="ld-req-box"></pre>
+            <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-[55vh] border border-white/5 text-emerald-400 scroll-fade" id="ld-req-box"></pre>
           </div>
           <div class="space-y-1.5" id="ld-upreq-container">
             <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
               <span>最终发出上游 payload (Converted Upstream)</span>
               <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-upreq-box')">复制</button>
             </div>
-            <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-80 border border-white/5 text-purple-400 scroll-fade" id="ld-upreq-box"></pre>
+            <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-[55vh] border border-white/5 text-purple-400 scroll-fade" id="ld-upreq-box"></pre>
           </div>
         </div>
       </div>
@@ -1802,9 +1792,6 @@
         const log = data.log || {};
         
         document.getElementById('log-detail-id').textContent = `Log ID: ${log.id}`;
-        document.getElementById('ld-key').textContent = log.access_key || 'N/A';
-        document.getElementById('ld-mode').textContent = log.mode || 'passthrough';
-        
         const attempts = log.attempts || [];
         const attemptsContainer = document.getElementById('ld-attempts');
         if (attempts.length === 0) {
@@ -2189,7 +2176,7 @@
       renderPickerList();
     }
 
-    function applyPickerSelection() {
+    async function applyPickerSelection() {
       if (pickerMode === 'channel-models') {
         const selected = fetchedChannelModels.filter(m => pickerSelected.has(m));
         if (selected.length === 0) {
@@ -2205,6 +2192,7 @@
       accessKeyPolicies[pickerKeyIdx][pickerField] = Array.from(pickerSelected).sort((a,b) => a.localeCompare(b));
       closeModal('picker-modal');
       renderAccessKeyPolicies();
+      await saveAccessKeyPolicies();
     }
 
     // ==================== SHARED UTILS ====================
