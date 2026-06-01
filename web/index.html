@@ -169,11 +169,11 @@
     }
   </style>
 </head>
-<body class="min-h-screen bg-slate-50 dark:bg-gradient-to-tr dark:from-[#070b13] dark:via-[#0b101c] dark:to-[#0e1629] text-slate-700 dark:text-slate-200 antialiased overflow-x-hidden transition-colors duration-300">
+<body class="h-screen bg-slate-50 dark:bg-gradient-to-tr dark:from-[#070b13] dark:via-[#0b101c] dark:to-[#0e1629] text-slate-700 dark:text-slate-200 antialiased overflow-hidden transition-colors duration-300">
 
   <!-- Background Decorative Orbs -->
-  <div class="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-500/5 dark:bg-cyan-900/10 blur-[150px] pointer-events-none"></div>
-  <div class="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-500/5 dark:bg-purple-900/10 blur-[150px] pointer-events-none"></div>
+  <div class="fixed top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-500/5 dark:bg-cyan-900/10 blur-[150px] pointer-events-none"></div>
+  <div class="fixed bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-500/5 dark:bg-purple-900/10 blur-[150px] pointer-events-none"></div>
 
   <!-- Login Page -->
   <div id="login-overlay" class="fixed inset-0 z-[200] flex items-center justify-center bg-[#070b13] p-4">
@@ -777,6 +777,7 @@
     let fetchedMapping = {};
     let activeKeyChannel = null;
     let activeKeyRows = [];
+    let keyModelPickerIndex = null;
     let accessKeyPolicies = [];
     let accessPolicyModels = [];
     let modelSystemPrompts = {};
@@ -1515,10 +1516,12 @@
         const data = await api(`/admin/channels/${encodeURIComponent(ch.name)}/keys`);
         activeKeyRows = (data.keys || []).map((key, index) => {
           const stat = (ch.key_stats || []).find(s => s.index === index) || {};
+          const keyModels = (data.key_models || {})[String(index)] || [];
           return {
             index,
             key,
             masked_key: (data.masked_keys || [])[index] || key.slice(0, 8) + '...',
+            models: keyModels,
             disabled: !!stat.disabled,
             stat
           };
@@ -1560,7 +1563,14 @@
         return `
           <tr class="border-b border-slate-200 dark:border-white/5 font-mono text-xs">
             <td>${row.index}</td>
-            <td class="text-slate-700 dark:text-slate-300">${esc(row.masked_key)}</td>
+            <td class="text-slate-700 dark:text-slate-300">
+              ${esc(row.masked_key)}
+              <div class="mt-1 flex max-w-64 flex-wrap gap-1 overflow-hidden">
+                ${(row.models || []).slice(0, 3).map(model => `<span class="badge badge-xs max-w-24 truncate border-none bg-slate-200 text-[10px] text-slate-600 dark:bg-white/5 dark:text-slate-400">${esc(model)}</span>`).join('')}
+                ${(row.models || []).length > 3 ? `<span class="badge badge-xs border-none bg-cyan-100 text-[10px] text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-400">+${row.models.length - 3}</span>` : ''}
+                ${(row.models || []).length === 0 ? '<span class="text-[10px] text-slate-400 dark:text-slate-600">继承渠道全部模型</span>' : ''}
+              </div>
+            </td>
             <td>
               <div>${statusBadge}</div>
               ${probeText}
@@ -1578,12 +1588,25 @@
                 <button class="btn btn-xs btn-ghost hover:bg-amber-100 dark:hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400" onclick="probeKeys(${row.index})">
                   探活
                 </button>
+                <button class="btn btn-xs btn-ghost hover:bg-cyan-100 dark:hover:bg-cyan-500/10 hover:text-cyan-600 dark:hover:text-cyan-400" onclick="openKeyModelPicker(${row.index})">
+                  模型
+                </button>
               </div>
             </td>
           </tr>
         `;
       }).join('');
       lucide.createIcons();
+    }
+
+    function openKeyModelPicker(index) {
+      keyModelPickerIndex = index;
+      pickerMode = 'key-models';
+      pickerSelected = new Set(activeKeyRows[index].models || []);
+      document.getElementById('picker-title').textContent = `配置 Key #${index} 可用模型`;
+      document.getElementById('picker-search').value = '';
+      renderPickerList();
+      openModal('picker-modal');
     }
 
     async function setKeyDisabled(index, disabled) {
@@ -1624,6 +1647,12 @@
       const cName = document.getElementById('key-channel-name').value;
       const rawText = document.getElementById('key-editor').value;
       const keys = parseModelList(rawText);
+      const keyModels = {};
+      activeKeyRows.forEach(row => {
+        if ((row.models || []).length > 0 && row.key) {
+          keyModels[row.key] = row.models;
+        }
+      });
 
       if (keys.length === 0) {
         showToast('必须要输入至少一个有效的 API Key', true);
@@ -1633,7 +1662,7 @@
       try {
         await api(`/admin/channels/${encodeURIComponent(cName)}/keys`, {
           method: 'PUT',
-          body: JSON.stringify({ keys })
+          body: JSON.stringify({ keys, key_models: keyModels })
         });
         showToast('密钥库全量更新保存成功！');
         closeModal('key-modal');
@@ -2138,7 +2167,9 @@
     function renderPickerList() {
       const container = document.getElementById('picker-list');
       const query = document.getElementById('picker-search').value.toLowerCase();
-      const sourceModels = pickerMode === 'channel-models' ? fetchedChannelModels : accessPolicyModels;
+      const sourceModels = pickerMode === 'channel-models'
+        ? fetchedChannelModels
+        : (pickerMode === 'key-models' ? (activeKeyChannel?.models || []) : accessPolicyModels);
 
       const filtered = sourceModels.filter(m => m.toLowerCase().includes(query));
       
@@ -2175,7 +2206,9 @@
     }
 
     function pickerSelectAll() {
-      const sourceModels = pickerMode === 'channel-models' ? fetchedChannelModels : accessPolicyModels;
+      const sourceModels = pickerMode === 'channel-models'
+        ? fetchedChannelModels
+        : (pickerMode === 'key-models' ? (activeKeyChannel?.models || []) : accessPolicyModels);
       sourceModels.forEach(m => pickerSelected.add(m));
       renderPickerList();
     }
@@ -2195,6 +2228,12 @@
         closeModal('picker-modal');
         refreshMappingModelOptions();
         showToast(`已选择 ${selected.length} 个模型`);
+        return;
+      }
+      if (pickerMode === 'key-models') {
+        activeKeyRows[keyModelPickerIndex].models = (activeKeyChannel?.models || []).filter(m => pickerSelected.has(m));
+        closeModal('picker-modal');
+        renderKeyRows();
         return;
       }
       accessKeyPolicies[pickerKeyIdx][pickerField] = Array.from(pickerSelected).sort((a,b) => a.localeCompare(b));

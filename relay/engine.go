@@ -123,7 +123,7 @@ func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, proto
 			reqCopy.Tools = append([]model.Tool(nil), req.Tools...)
 		}
 
-		key := ch.NextKey()
+		key := ch.NextKeyForModel(resolvedModel)
 		if key == "" {
 			lastErr = fmt.Errorf("channel %s: no key available", ch.Name)
 			attempts = append(attempts, AttemptLog{
@@ -225,7 +225,7 @@ func (e *Engine) DoRaw(ctx context.Context, protocol, requestedModel string, str
 		if err != nil {
 			return nil, err
 		}
-		key := ch.NextKey()
+		key := ch.NextKeyForModel(resolvedModel)
 		if key == "" {
 			lastErr = fmt.Errorf("channel %s: no key available", ch.Name)
 			attempts = append(attempts, AttemptLog{
@@ -318,7 +318,7 @@ func (e *Engine) DoRawResponses(ctx context.Context, requestedModel string, stre
 		if err != nil {
 			return nil, err
 		}
-		key := ch.NextKey()
+		key := ch.NextKeyForModel(resolvedModel)
 		if key == "" {
 			lastErr = fmt.Errorf("channel %s: no key available", ch.Name)
 			attempts = append(attempts, AttemptLog{

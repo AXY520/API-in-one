@@ -30,6 +30,29 @@ func TestNextKeySkipsDisabledKeys(t *testing.T) {
 	}
 }
 
+func TestNextKeyForModelUsesOnlyAllowedKeys(t *testing.T) {
+	ch := NewChannel("test", "openai", "https://example.com", "", "", false,
+		[]string{"key-a", "key-b"},
+		[]string{"model-a", "model-b"},
+		nil,
+		10,
+		100,
+		map[string][]string{
+			"key-a": {"model-a"},
+			"key-b": {"model-b"},
+		},
+	)
+
+	for i := 0; i < 4; i++ {
+		if got := ch.NextKeyForModel("model-b"); got != "key-b" {
+			t.Fatalf("expected key-b for model-b, got %q", got)
+		}
+	}
+	if got := ch.NextKeyForModel("model-c"); got != "" {
+		t.Fatalf("expected no key for unsupported model, got %q", got)
+	}
+}
+
 func TestRecordKeyResultResetsConsecutiveFailures(t *testing.T) {
 	ch := NewChannel("test", "openai", "https://example.com", "", "", false, []string{"key-a"}, []string{"m"}, nil, 10, 100)
 	ch.RecordKeyResult("key-a", 429, time.Millisecond, errors.New("rate limited"))

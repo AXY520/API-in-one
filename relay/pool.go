@@ -15,7 +15,7 @@ type Channel = model.Channel
 
 // NewChannelFromConfig creates a Channel from a config.ChannelConfig.
 func NewChannelFromConfig(cc config.ChannelConfig) *Channel {
-	ch := model.NewChannel(cc.Name, cc.Type, cc.BaseURL, cc.BaseURLClaude, cc.BaseURLGemini, cc.SupportsResponses, cc.Keys, cc.Models, cc.ModelMapping, cc.Priority, cc.Weight)
+	ch := model.NewChannel(cc.Name, cc.Type, cc.BaseURL, cc.BaseURLClaude, cc.BaseURLGemini, cc.SupportsResponses, cc.Keys, cc.Models, cc.ModelMapping, cc.Priority, cc.Weight, cc.KeyModels)
 	if cc.Enabled != nil {
 		ch.Enabled = *cc.Enabled
 	}

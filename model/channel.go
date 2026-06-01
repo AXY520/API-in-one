@@ -16,6 +16,7 @@ type Channel struct {
 	SupportsResponses bool   // whether upstream accepts /v1/responses natively
 	Keys              []string
 	DisabledKeys      map[string]bool
+	KeyModels         map[string][]string
 	Models            []string
 	ModelMapping      map[string]string // alias → upstream model id
 	Priority          int
@@ -43,9 +44,13 @@ type KeyStats struct {
 }
 
 // NewChannel creates a Channel from config.
-func NewChannel(name, typ, baseURL, baseURLClaude, baseURLGemini string, supportsResponses bool, keys, models []string, modelMapping map[string]string, priority, weight int) *Channel {
+func NewChannel(name, typ, baseURL, baseURLClaude, baseURLGemini string, supportsResponses bool, keys, models []string, modelMapping map[string]string, priority, weight int, keyModels ...map[string][]string) *Channel {
 	if modelMapping == nil {
 		modelMapping = make(map[string]string)
+	}
+	keyModelPolicy := map[string][]string(nil)
+	if len(keyModels) > 0 {
+		keyModelPolicy = keyModels[0]
 	}
 	ch := &Channel{
 		Name:              name,
@@ -55,6 +60,7 @@ func NewChannel(name, typ, baseURL, baseURLClaude, baseURLGemini string, support
 		BaseURLGemini:     baseURLGemini,
 		SupportsResponses: supportsResponses,
 		Keys:              keys,
+		KeyModels:         keyModelPolicy,
 		Models:            models,
 		ModelMapping:      modelMapping,
 		Priority:          priority,
@@ -89,18 +95,28 @@ func (c *Channel) DisabledKeyList() []string {
 
 // NextKey returns the next API key using round-robin.
 func (c *Channel) NextKey() string {
+	return c.NextKeyForModel("")
+}
+
+func (c *Channel) NextKeyForModel(modelName string) string {
 	if len(c.Keys) == 0 {
 		return ""
 	}
 	for i := 0; i < len(c.Keys); i++ {
 		idx := c.keyIndex.Add(1)
 		keyIdx := int((idx - 1) % uint64(len(c.Keys)))
-		if c.IsKeyHealthy(keyIdx) {
+		if c.IsKeyHealthy(keyIdx) && c.KeyCanUseModel(keyIdx, modelName) {
 			return c.Keys[keyIdx]
 		}
 	}
-	idx := c.keyIndex.Add(1)
-	return c.Keys[(idx-1)%uint64(len(c.Keys))]
+	for i := 0; i < len(c.Keys); i++ {
+		idx := c.keyIndex.Add(1)
+		keyIdx := int((idx - 1) % uint64(len(c.Keys)))
+		if c.KeyCanUseModel(keyIdx, modelName) {
+			return c.Keys[keyIdx]
+		}
+	}
+	return ""
 }
 
 func (c *Channel) KeyIndex(key string) int {
@@ -121,6 +137,27 @@ func (c *Channel) IsKeyHealthy(index int) bool {
 	}
 	key := c.Keys[index]
 	return !c.DisabledKeys[key] && c.KeyStats[index].ConsecutiveFailure < 3
+}
+
+func (c *Channel) KeyCanUseModel(index int, modelName string) bool {
+	if modelName == "" {
+		return true
+	}
+	if index < 0 || index >= len(c.Keys) {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	models := c.KeyModels[c.Keys[index]]
+	if len(models) == 0 {
+		return true
+	}
+	for _, allowed := range models {
+		if allowed == modelName {
+			return true
+		}
+	}
+	return false
 }
 
 // RecordSuccess resets the failure count.

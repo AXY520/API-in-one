@@ -222,6 +222,7 @@ func (h *Admin) GetChannelKeys(c *gin.Context) {
 		"key_count":     len(ch.Keys),
 		"masked_keys":   maskKeys(ch.Keys),
 		"disabled_keys": maskKeys(ch.DisabledKeys),
+		"key_models":    maskKeyModels(ch.Keys, ch.KeyModels),
 	})
 }
 
@@ -229,7 +230,9 @@ func (h *Admin) GetChannelKeys(c *gin.Context) {
 func (h *Admin) UpdateChannelKeys(c *gin.Context) {
 	name := c.Param("name")
 	var req struct {
-		Keys interface{} `json:"keys"`
+		Keys            interface{}         `json:"keys"`
+		KeyModels       map[string][]string `json:"key_models"`
+		KeyModelByIndex map[string][]string `json:"key_model_by_index"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
@@ -244,6 +247,11 @@ func (h *Admin) UpdateChannelKeys(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+	keyModels := unmaskKeyModels(keys, req.KeyModels, req.KeyModelByIndex)
+	if err := config.UpdateChannelKeyModels(name, keyModels); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
 	h.rebuildPool()
 	c.JSON(http.StatusOK, gin.H{
 		"message":     "channel keys updated",
@@ -251,6 +259,35 @@ func (h *Admin) UpdateChannelKeys(c *gin.Context) {
 		"key_count":   len(keys),
 		"masked_keys": maskKeys(keys),
 	})
+}
+
+func maskKeyModels(keys []string, keyModels map[string][]string) map[string][]string {
+	result := make(map[string][]string, len(keys))
+	for i, key := range keys {
+		models := keyModels[key]
+		if len(models) == 0 {
+			continue
+		}
+		result[strconv.Itoa(i)] = append([]string(nil), models...)
+	}
+	return result
+}
+
+func unmaskKeyModels(keys []string, byKey map[string][]string, byIndex map[string][]string) map[string][]string {
+	result := make(map[string][]string)
+	for key, models := range byKey {
+		if models != nil {
+			result[key] = models
+		}
+	}
+	for rawIndex, models := range byIndex {
+		index, err := strconv.Atoi(rawIndex)
+		if err != nil || index < 0 || index >= len(keys) || len(models) == 0 {
+			continue
+		}
+		result[keys[index]] = models
+	}
+	return result
 }
 
 // UpdateChannelKeyState enables or disables one upstream key by index.

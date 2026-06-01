@@ -40,19 +40,20 @@ func (a *AccessKeyConfig) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type ChannelConfig struct {
-	Name              string            `json:"name"          yaml:"name"`
-	Type              string            `json:"type"          yaml:"type"`              // openai | claude | gemini
-	BaseURL           string            `json:"base_url"      yaml:"base_url"`          // default URL (openai)
-	BaseURLClaude     string            `json:"base_url_claude" yaml:"base_url_claude"` // optional: Claude protocol URL
-	BaseURLGemini     string            `json:"base_url_gemini" yaml:"base_url_gemini"` // optional: Gemini protocol URL
-	SupportsResponses bool              `json:"supports_responses" yaml:"supports_responses"`
-	Keys              []string          `json:"keys"          yaml:"keys"`
-	DisabledKeys      []string          `json:"disabled_keys,omitempty" yaml:"disabled_keys,omitempty"`
-	Models            []string          `json:"models"        yaml:"models"`
-	ModelMapping      map[string]string `json:"model_mapping"  yaml:"model_mapping"`
-	Priority          int               `json:"priority"      yaml:"priority"`
-	Weight            int               `json:"weight"        yaml:"weight"`
-	Enabled           *bool             `json:"enabled"       yaml:"enabled"`
+	Name              string              `json:"name"          yaml:"name"`
+	Type              string              `json:"type"          yaml:"type"`              // openai | claude | gemini
+	BaseURL           string              `json:"base_url"      yaml:"base_url"`          // default URL (openai)
+	BaseURLClaude     string              `json:"base_url_claude" yaml:"base_url_claude"` // optional: Claude protocol URL
+	BaseURLGemini     string              `json:"base_url_gemini" yaml:"base_url_gemini"` // optional: Gemini protocol URL
+	SupportsResponses bool                `json:"supports_responses" yaml:"supports_responses"`
+	Keys              []string            `json:"keys"          yaml:"keys"`
+	DisabledKeys      []string            `json:"disabled_keys,omitempty" yaml:"disabled_keys,omitempty"`
+	KeyModels         map[string][]string `json:"key_models,omitempty" yaml:"key_models,omitempty"`
+	Models            []string            `json:"models"        yaml:"models"`
+	ModelMapping      map[string]string   `json:"model_mapping"  yaml:"model_mapping"`
+	Priority          int                 `json:"priority"      yaml:"priority"`
+	Weight            int                 `json:"weight"        yaml:"weight"`
+	Enabled           *bool               `json:"enabled"       yaml:"enabled"`
 }
 
 type Config struct {
@@ -120,6 +121,7 @@ func applyDefaults(cfg *Config) {
 		if cfg.Channels[i].ModelMapping == nil {
 			cfg.Channels[i].ModelMapping = make(map[string]string)
 		}
+		cfg.Channels[i].KeyModels = filterKeyModels(cfg.Channels[i].KeyModels, cfg.Channels[i].Keys, cfg.Channels[i].Models)
 	}
 }
 
@@ -217,7 +219,11 @@ func UpdateChannel(name string, ch ChannelConfig) error {
 			if ch.DisabledKeys == nil {
 				ch.DisabledKeys = existing.DisabledKeys
 			}
+			if ch.KeyModels == nil {
+				ch.KeyModels = existing.KeyModels
+			}
 			ch.DisabledKeys = filterExistingKeys(ch.DisabledKeys, ch.Keys)
+			ch.KeyModels = filterKeyModels(ch.KeyModels, ch.Keys, ch.Models)
 			applyChannelDefaults(&ch)
 			globalConfig.Channels[i] = ch
 			return saveToDiskLocked()
@@ -236,6 +242,21 @@ func UpdateChannelKeys(name string, keys []string) error {
 			}
 			existing.Keys = keys
 			existing.DisabledKeys = filterExistingKeys(existing.DisabledKeys, keys)
+			existing.KeyModels = filterKeyModels(existing.KeyModels, keys, existing.Models)
+			applyChannelDefaults(&existing)
+			globalConfig.Channels[i] = existing
+			return saveToDiskLocked()
+		}
+	}
+	return fmt.Errorf("channel %q not found", name)
+}
+
+func UpdateChannelKeyModels(name string, keyModels map[string][]string) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	for i, existing := range globalConfig.Channels {
+		if existing.Name == name {
+			existing.KeyModels = filterKeyModels(keyModels, existing.Keys, existing.Models)
 			applyChannelDefaults(&existing)
 			globalConfig.Channels[i] = existing
 			return saveToDiskLocked()
@@ -254,6 +275,43 @@ func filterExistingKeys(values []string, allowed []string) []string {
 		if allowedSet[key] {
 			result = append(result, key)
 		}
+	}
+	return result
+}
+
+func filterKeyModels(values map[string][]string, keys []string, models []string) map[string][]string {
+	if len(values) == 0 {
+		return nil
+	}
+	keySet := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		keySet[key] = true
+	}
+	modelSet := make(map[string]bool, len(models))
+	for _, model := range models {
+		modelSet[model] = true
+	}
+	result := make(map[string][]string)
+	for key, list := range values {
+		if !keySet[key] {
+			continue
+		}
+		cleaned := cleanStringList(list)
+		if len(modelSet) > 0 {
+			filtered := cleaned[:0]
+			for _, model := range cleaned {
+				if modelSet[model] {
+					filtered = append(filtered, model)
+				}
+			}
+			cleaned = filtered
+		}
+		if len(cleaned) > 0 {
+			result[key] = cleaned
+		}
+	}
+	if len(result) == 0 {
+		return nil
 	}
 	return result
 }
