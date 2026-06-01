@@ -1200,10 +1200,13 @@
         }
 
         const aliases = Object.keys(ch.model_mapping || {});
+        const enabledModels = ch.models || [];
+        const visibleModels = enabledModels.slice(0, 4);
+        const hiddenModelCount = enabledModels.length - visibleModels.length;
 
         return `
-          <div class="glass-card glass-card-hover rounded-2xl p-4 flex flex-col justify-between gap-4">
-            <div>
+          <div class="glass-card glass-card-hover rounded-2xl p-4 flex h-[188px] flex-col justify-between gap-3">
+            <div class="min-h-0">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0 space-y-1">
                   <div class="flex items-center gap-2">
@@ -1217,6 +1220,11 @@
                     ${isEnabled && aliases.length > 0 ? `<span class="badge bg-slate-200 dark:bg-white/5 border-none text-slate-500 dark:text-slate-400 text-[10px]">映射 ${aliases.length}</span>` : ''}
                   </div>
                 </div>
+              </div>
+              <div class="mt-3 flex min-h-10 flex-wrap content-start gap-1 overflow-hidden" title="${escAttr(enabledModels.join(', '))}">
+                ${visibleModels.map(model => `<span class="badge max-w-[140px] truncate border-none bg-slate-200 text-[10px] font-mono text-slate-600 dark:bg-white/5 dark:text-slate-400">${esc(model)}</span>`).join('')}
+                ${hiddenModelCount > 0 ? `<span class="badge border-none bg-cyan-100 text-[10px] text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-400">+${hiddenModelCount}</span>` : ''}
+                ${enabledModels.length === 0 ? '<span class="text-[10px] italic text-slate-400 dark:text-slate-600">未配置模型</span>' : ''}
               </div>
             </div>
 
