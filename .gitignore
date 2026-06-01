@@ -2,3 +2,4 @@ config.local.yaml
 *.local.yaml
 1.txt
 api-in-one
+references/

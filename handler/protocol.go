@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -53,6 +52,7 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 		}})
 		return
 	}
+	rawBody = h.applyRawClaudeSystemPrompt(rawBody, &claudeReq)
 
 	if rawResult, ok := h.tryClaudePassthrough(c, &claudeReq, rawBody); ok {
 		relayHandler := Relay{engine: h.engine}
@@ -62,6 +62,7 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 
 	// Convert Claude → OpenAI
 	oaiReq := claudeToOpenAI(&claudeReq)
+	applyModelSystemPrompt(oaiReq, h.modelSystemPrompt(claudeReq.Model))
 
 	start := time.Now()
 	result, err := h.engine.Do(c.Request.Context(), oaiReq, "claude")
@@ -373,6 +374,7 @@ func (h *Protocol) GeminiGenerate(c *gin.Context) {
 	}
 
 	oaiReq := geminiToOpenAI(&geminiReq, modelName)
+	applyModelSystemPrompt(oaiReq, h.modelSystemPrompt(modelName))
 
 	start := time.Now()
 	result, err := h.engine.Do(c.Request.Context(), oaiReq, "gemini")
@@ -925,8 +927,16 @@ func parseOpenAIChunk(data []byte) *model.ChatCompletionChunk {
 
 // Responses handles POST /v1/responses (OpenAI Responses API format)
 func (h *Protocol) Responses(c *gin.Context) {
+	rawBody, readErr := io.ReadAll(c.Request.Body)
+	if readErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": map[string]interface{}{
+			"message": "invalid request: " + readErr.Error(),
+			"type":    "invalid_request_error",
+		}})
+		return
+	}
 	var req responsesInboundRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := json.Unmarshal(rawBody, &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": map[string]interface{}{
 			"message": "invalid request: " + err.Error(),
 			"type":    "invalid_request_error",
@@ -942,14 +952,24 @@ func (h *Protocol) Responses(c *gin.Context) {
 		}})
 		return
 	}
+	rawBody = h.applyRawResponsesSystemPrompt(rawBody, &req)
 
-	oaiReq := responsesToChatCompletion(&req, isMiMoCompatModel(req.Model))
+	if rawResult, ok := h.tryResponsesPassthrough(c, &req, rawBody); ok {
+		relayHandler := Relay{engine: h.engine}
+		relayHandler.writeRawResponse(c, rawResult.Response)
+		return
+	}
+
+	enableMiMoCompat := h.responsesMayUseMiMoCompat(req.Model)
+	oaiReq := responsesToChatCompletion(&req, enableMiMoCompat)
+	applyModelSystemPrompt(oaiReq, h.modelSystemPrompt(req.Model))
 
 	start := time.Now()
 	result, err := h.engine.Do(c.Request.Context(), oaiReq, "responses")
 	if err != nil {
 		logRequestDetail(RequestLog{
 			Protocol:        "responses",
+			Mode:            "converted",
 			Model:           req.Model,
 			Status:          502,
 			Duration:        time.Since(start).Milliseconds(),
@@ -969,6 +989,7 @@ func (h *Protocol) Responses(c *gin.Context) {
 
 	logRequestDetail(RequestLog{
 		Protocol:        "responses",
+		Mode:            "converted",
 		Model:           req.Model,
 		ResolvedModel:   result.Model,
 		Channel:         result.Channel,
@@ -981,7 +1002,7 @@ func (h *Protocol) Responses(c *gin.Context) {
 		AccessKey:       requestAccessKey(c),
 	})
 
-	enableMiMoCompat := isMiMoCompatResult(result.Channel, req.Model, result.Model)
+	enableMiMoCompat = enableMiMoCompat || isMiMoCompatResult(result.Channel, req.Model, result.Model)
 	if req.Stream {
 		h.handleResponsesStream(c, result, req.Model, enableMiMoCompat)
 		return
@@ -989,6 +1010,115 @@ func (h *Protocol) Responses(c *gin.Context) {
 
 	resp := chatCompletionToResponses(result.Response, req.Model, enableMiMoCompat)
 	c.JSON(http.StatusOK, resp)
+}
+
+func (h *Protocol) tryResponsesPassthrough(c *gin.Context, req *responsesInboundRequest, rawBody []byte) (*relay.RawRelayResult, bool) {
+	start := time.Now()
+	result, err := h.engine.DoRawResponses(c.Request.Context(), req.Model, req.Stream, rawBody, c.Request.Header)
+	if err != nil {
+		if errors.Is(err, relay.ErrNoAvailableChannel) {
+			return nil, false
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": map[string]interface{}{
+			"message": fmt.Sprintf("relay error: %v", err),
+			"type":    "upstream_error",
+		}})
+		logRequestDetail(RequestLog{
+			Protocol:  "responses",
+			Mode:      "passthrough",
+			Model:     req.Model,
+			Status:    502,
+			Duration:  time.Since(start).Milliseconds(),
+			Stream:    req.Stream,
+			Error:     err.Error(),
+			Attempts:  attemptsFromError(err),
+			Request:   req,
+			AccessKey: requestAccessKey(c),
+		})
+		return nil, true
+	}
+	logRequestDetail(RequestLog{
+		Protocol:      "responses",
+		Mode:          "passthrough",
+		Model:         req.Model,
+		ResolvedModel: result.Model,
+		Channel:       result.Channel,
+		Status:        result.Response.StatusCode,
+		Duration:      time.Since(start).Milliseconds(),
+		Stream:        req.Stream,
+		Attempts:      result.Attempts,
+		Request:       req,
+		AccessKey:     requestAccessKey(c),
+	})
+	return result, true
+}
+
+func (h *Protocol) applyRawResponsesSystemPrompt(rawBody []byte, req *responsesInboundRequest) []byte {
+	prompt := h.modelSystemPrompt(req.Model)
+	if prompt == "" {
+		return rawBody
+	}
+	reqCopy := *req
+	if reqCopy.Instructions == "" {
+		reqCopy.Instructions = prompt
+	} else if !strings.Contains(reqCopy.Instructions, prompt) {
+		reqCopy.Instructions = strings.TrimSpace(reqCopy.Instructions) + "\n\n" + prompt
+	}
+	data, err := json.Marshal(reqCopy)
+	if err != nil {
+		return rawBody
+	}
+	req.Instructions = reqCopy.Instructions
+	return data
+}
+
+func (h *Protocol) modelSystemPrompt(modelName string) string {
+	_, resolved, err := h.engine.PeekRoute(modelName)
+	if err != nil {
+		return systemPromptForModel(modelName, "")
+	}
+	return systemPromptForModel(modelName, resolved)
+}
+
+func (h *Protocol) applyRawClaudeSystemPrompt(rawBody []byte, req *claudeInboundRequest) []byte {
+	prompt := h.modelSystemPrompt(req.Model)
+	if prompt == "" {
+		return rawBody
+	}
+	reqCopy := *req
+	reqCopy.System = mergeClaudeSystemPrompt(req.System, prompt)
+	data, err := json.Marshal(reqCopy)
+	if err != nil {
+		return rawBody
+	}
+	req.System = reqCopy.System
+	return data
+}
+
+func mergeClaudeSystemPrompt(system interface{}, prompt string) interface{} {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return system
+	}
+	existing := extractSystemText(system)
+	if strings.TrimSpace(existing) == "" {
+		return prompt
+	}
+	if strings.Contains(existing, prompt) {
+		return system
+	}
+	return existing + "\n\n" + prompt
+}
+
+func (h *Protocol) responsesMayUseMiMoCompat(modelName string) bool {
+	if isMiMoCompatModel(modelName) {
+		return true
+	}
+	ch, resolved, err := h.engine.PeekRoute(modelName)
+	if err != nil {
+		return false
+	}
+	return isMiMoCompatResult(ch.Name, modelName, resolved)
 }
 
 func (h *Protocol) handleResponsesStream(c *gin.Context, result *relay.RelayResult, modelName string, enableMiMoCompat bool) {
@@ -1229,6 +1359,11 @@ func (h *Protocol) handleResponsesStream(c *gin.Context, result *relay.RelayResu
 		if !messageStarted {
 			startMessage()
 		}
+		if textAccum != "" {
+			writeEvent("response.output_text.delta", map[string]interface{}{
+				"output_index": outputIndex, "content_index": 0, "delta": textAccum,
+			})
+		}
 		writeEvent("response.output_text.done", map[string]interface{}{
 			"output_index": outputIndex, "content_index": 0, "text": textAccum,
 		})
@@ -1252,559 +1387,4 @@ func (h *Protocol) handleResponsesStream(c *gin.Context, result *relay.RelayResu
 			"id": respID, "object": "response", "status": "completed", "model": modelName, "output": output,
 		},
 	})
-}
-
-// ---- Responses API structures ----
-
-type responsesInboundRequest struct {
-	Model             string        `json:"model"`
-	Input             interface{}   `json:"input"`        // string or []responsesInputItem
-	Instructions      string        `json:"instructions"` // system prompt
-	Stream            bool          `json:"stream"`
-	MaxOutputTokens   int           `json:"max_output_tokens"`
-	Temperature       *float64      `json:"temperature"`
-	TopP              *float64      `json:"top_p"`
-	Tools             []interface{} `json:"tools,omitempty"`
-	ToolChoice        interface{}   `json:"tool_choice,omitempty"`
-	ParallelToolCalls *bool         `json:"parallel_tool_calls,omitempty"`
-}
-
-type responsesInputItem struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
-}
-
-func responsesToChatCompletion(req *responsesInboundRequest, enableMiMoCompat bool) *model.ChatCompletionRequest {
-	oaiReq := &model.ChatCompletionRequest{
-		Model:  req.Model,
-		Stream: req.Stream,
-	}
-	if req.MaxOutputTokens > 0 {
-		oaiReq.MaxTokens = &req.MaxOutputTokens
-	}
-	if req.Temperature != nil {
-		oaiReq.Temperature = req.Temperature
-	}
-	if req.TopP != nil {
-		oaiReq.TopP = req.TopP
-	}
-
-	if req.Instructions != "" {
-		oaiReq.Messages = append(oaiReq.Messages, model.Message{
-			Role:    "system",
-			Content: req.Instructions,
-		})
-	}
-
-	// Convert tools: Responses API format → Chat Completions format
-	for _, t := range req.Tools {
-		tm, ok := t.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		toolType, _ := tm["type"].(string)
-		if toolType == "function" {
-			oaiTool := model.Tool{Type: "function"}
-			if name, ok := tm["name"].(string); ok {
-				oaiTool.Function.Name = name
-			}
-			if desc, ok := tm["description"].(string); ok {
-				oaiTool.Function.Description = desc
-			}
-			if params, ok := tm["parameters"]; ok {
-				oaiTool.Function.Parameters = params
-			}
-			oaiReq.Tools = append(oaiReq.Tools, oaiTool)
-		}
-		// Skip non-function tools (web_search, code_interpreter, etc.)
-	}
-
-	// Convert tool_choice
-	if req.ToolChoice != nil {
-		switch tc := req.ToolChoice.(type) {
-		case string:
-			oaiReq.ToolChoice = tc
-		case map[string]interface{}:
-			if fn, ok := tc["function"].(map[string]interface{}); ok {
-				if name, ok := fn["name"].(string); ok {
-					oaiReq.ToolChoice = map[string]interface{}{
-						"type":     "function",
-						"function": map[string]interface{}{"name": name},
-					}
-				}
-			}
-		}
-	}
-
-	// Input items → messages
-	// Uses buffering to assemble reasoning + function_calls into one assistant message
-	switch v := req.Input.(type) {
-	case string:
-		oaiReq.Messages = append(oaiReq.Messages, model.Message{
-			Role:    "user",
-			Content: v,
-		})
-	case []interface{}:
-		// Buffer for assembling assistant turn (reasoning + tool_calls + text)
-		var pendingReasoning string
-		var pendingToolCalls []model.ToolCall
-		var pendingText string
-
-		flushPending := func() {
-			hasReasoning := pendingReasoning != ""
-			hasTools := len(pendingToolCalls) > 0
-			hasText := pendingText != ""
-			if !hasReasoning && !hasTools && !hasText {
-				return
-			}
-			msg := model.Message{Role: "assistant"}
-			if hasText {
-				msg.Content = pendingText
-			} else if !hasTools {
-				msg.Content = ""
-			}
-			if hasTools {
-				msg.ToolCalls = pendingToolCalls
-			}
-			if hasReasoning {
-				msg.ReasoningContent = pendingReasoning
-			}
-			oaiReq.Messages = append(oaiReq.Messages, msg)
-			pendingReasoning = ""
-			pendingToolCalls = nil
-			pendingText = ""
-		}
-
-		for _, item := range v {
-			m, ok := item.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			itemType, _ := m["type"].(string)
-
-			switch itemType {
-			case "reasoning":
-				if !enableMiMoCompat {
-					continue
-				}
-				// Buffer reasoning content (MiMo requires it back)
-				encrypted, _ := m["encrypted_content"].(string)
-				if encrypted == "" {
-					// Try summary text as fallback
-					if summary, ok := m["summary"].([]interface{}); ok {
-						for _, s := range summary {
-							if sm, ok := s.(map[string]interface{}); ok {
-								if sm["type"] == "summary_text" {
-									encrypted += getString(sm, "text")
-								}
-							}
-						}
-					}
-				}
-				if encrypted != "" {
-					pendingReasoning += encrypted
-				}
-
-			case "function_call":
-				// Buffer tool call (may be multiple in same turn)
-				callID := getString(m, "call_id")
-				name := getString(m, "name")
-				args := getString(m, "arguments")
-				if args == "" {
-					args = "{}"
-				}
-				pendingToolCalls = append(pendingToolCalls, model.ToolCall{
-					ID:   callID,
-					Type: "function",
-					Function: model.FunctionCall{
-						Name:      name,
-						Arguments: args,
-					},
-				})
-
-			case "message":
-				role, _ := m["role"].(string)
-				if role == "assistant" {
-					// Buffer assistant text
-					content := extractContentText(m["content"])
-					if s, ok := content.(string); ok {
-						pendingText = s
-					}
-				} else {
-					// Non-assistant message → flush pending and add
-					flushPending()
-					msg := model.Message{Role: role}
-					msg.Content = extractContentText(m["content"])
-					oaiReq.Messages = append(oaiReq.Messages, msg)
-				}
-
-			case "function_call_output":
-				// Tool result → flush pending assistant turn, then add tool message
-				flushPending()
-				oaiReq.Messages = append(oaiReq.Messages, model.Message{
-					Role:       "tool",
-					ToolCallID: getString(m, "call_id"),
-					Content:    getString(m, "output"),
-				})
-
-			default:
-				// Unknown item type → try as message
-				flushPending()
-				role, _ := m["role"].(string)
-				if role != "" {
-					msg := model.Message{Role: role}
-					msg.Content = extractContentText(m["content"])
-					oaiReq.Messages = append(oaiReq.Messages, msg)
-				}
-			}
-		}
-		// Flush any remaining buffered assistant turn
-		flushPending()
-	}
-
-	if enableMiMoCompat {
-		oaiReq.Messages = mergeConsecutiveRoles(oaiReq.Messages)
-	}
-
-	return oaiReq
-}
-
-// mergeConsecutiveRoles merges consecutive messages with the same role.
-// MiMo requires alternating user/assistant roles.
-func mergeConsecutiveRoles(msgs []model.Message) []model.Message {
-	if len(msgs) <= 1 {
-		return msgs
-	}
-	var merged []model.Message
-	for _, msg := range msgs {
-		if len(merged) > 0 && merged[len(merged)-1].Role == msg.Role && msg.Role != "system" {
-			prev := &merged[len(merged)-1]
-			// Merge content
-			prevText := contentToString(prev.Content)
-			curText := contentToString(msg.Content)
-			if prevText != "" && curText != "" {
-				prev.Content = prevText + "\n" + curText
-			} else if curText != "" {
-				prev.Content = curText
-			}
-			// Merge tool_calls
-			prev.ToolCalls = append(prev.ToolCalls, msg.ToolCalls...)
-			// Merge reasoning
-			if msg.ReasoningContent != "" {
-				prev.ReasoningContent += "\n" + msg.ReasoningContent
-			}
-		} else {
-			merged = append(merged, msg)
-		}
-	}
-	return merged
-}
-
-func extractContentText(content interface{}) interface{} {
-	if content == nil {
-		return ""
-	}
-	switch v := content.(type) {
-	case string:
-		return v
-	case []interface{}:
-		var parts []model.ContentPart
-		for _, p := range v {
-			if m, ok := p.(map[string]interface{}); ok {
-				partType, _ := m["type"].(string)
-				if partType == "input_text" || partType == "text" {
-					text, _ := m["text"].(string)
-					parts = append(parts, model.ContentPart{Type: "text", Text: text})
-				}
-			}
-		}
-		if len(parts) > 0 {
-			return parts
-		}
-		return ""
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}
-
-func isMiMoCompatResult(channelName, requestedModel, resolvedModel string) bool {
-	return isMiMoCompatModel(requestedModel) || isMiMoCompatModel(resolvedModel) || isXiaomiChannel(channelName)
-}
-
-func isMiMoCompatModel(modelName string) bool {
-	return strings.Contains(strings.ToLower(modelName), "mimo")
-}
-
-func isXiaomiChannel(channelName string) bool {
-	name := strings.ToLower(channelName)
-	return strings.Contains(name, "xiaomi") || strings.Contains(channelName, "小米")
-}
-
-func chatCompletionToResponses(resp *model.ChatCompletionResponse, modelName string, enableMiMoCompat bool) map[string]interface{} {
-	var output []map[string]interface{}
-
-	if len(resp.Choices) > 0 && resp.Choices[0].Message != nil {
-		msg := resp.Choices[0].Message
-
-		// Reasoning → reasoning output item with encrypted_content
-		// MiMo requires reasoning_content to be passed back in multi-turn.
-		// Codex treats encrypted_content as opaque and echoes it back.
-		if enableMiMoCompat && msg.ReasoningContent != "" {
-			output = append(output, map[string]interface{}{
-				"type":              "reasoning",
-				"id":                fmt.Sprintf("reason_%s", resp.ID),
-				"summary":           []map[string]interface{}{{"type": "summary_text", "text": msg.ReasoningContent}},
-				"encrypted_content": msg.ReasoningContent,
-				"status":            "completed",
-			})
-		}
-
-		// Text content. Some upstreams emit Codex tool calls as XML-like text;
-		// convert those into real Responses function_call items.
-		text := ""
-		if s, ok := msg.Content.(string); ok {
-			text = s
-		}
-		var fakeCalls []fakeToolCall
-		if enableMiMoCompat {
-			text, fakeCalls = extractFakeToolCalls(text)
-		}
-		if strings.TrimSpace(text) != "" || len(msg.ToolCalls) == 0 && len(fakeCalls) == 0 {
-			output = append(output, map[string]interface{}{
-				"type":    "message",
-				"id":      fmt.Sprintf("msg_%s", resp.ID),
-				"role":    "assistant",
-				"status":  "completed",
-				"content": []map[string]interface{}{{"type": "output_text", "text": strings.TrimSpace(text), "annotations": []interface{}{}}},
-			})
-		}
-
-		for i, call := range fakeCalls {
-			callID := fmt.Sprintf("call_%s_%d", resp.ID, i)
-			output = append(output, map[string]interface{}{
-				"type":      "function_call",
-				"id":        fmt.Sprintf("fc_%s", callID),
-				"call_id":   callID,
-				"name":      call.Name,
-				"arguments": call.Arguments,
-				"status":    "completed",
-			})
-		}
-
-		// Tool calls → function_call output items
-		for _, tc := range msg.ToolCalls {
-			output = append(output, map[string]interface{}{
-				"type":      "function_call",
-				"id":        fmt.Sprintf("fc_%s", tc.ID),
-				"call_id":   tc.ID,
-				"name":      tc.Function.Name,
-				"arguments": tc.Function.Arguments,
-				"status":    "completed",
-			})
-		}
-	}
-
-	return map[string]interface{}{
-		"id":         resp.ID,
-		"object":     "response",
-		"created_at": resp.Created,
-		"status":     "completed",
-		"model":      modelName,
-		"output":     output,
-		"usage": map[string]interface{}{
-			"input_tokens":  resp.Usage.PromptTokens,
-			"output_tokens": resp.Usage.CompletionTokens,
-			"total_tokens":  resp.Usage.TotalTokens,
-		},
-	}
-}
-
-// cleanResponseToolCalls removes fake tool call syntax from model response text.
-func cleanResponseToolCalls(resp *model.ChatCompletionResponse) {
-	if len(resp.Choices) == 0 || resp.Choices[0].Message == nil {
-		return
-	}
-	msg := resp.Choices[0].Message
-	if msg.Content == nil {
-		return
-	}
-	text, ok := msg.Content.(string)
-	if !ok || text == "" {
-		return
-	}
-	cleaned := removeFakeToolCalls(text)
-	if cleaned != text {
-		msg.Content = strings.TrimSpace(cleaned)
-	}
-}
-
-type fakeToolCall struct {
-	Name      string
-	Arguments string
-}
-
-var (
-	fakeToolCallBlockRe = regexp.MustCompile(`(?s)<tool_call>\s*<function=([A-Za-z0-9_.-]+)>\s*(.*?)</function>\s*</tool_call>`)
-)
-
-func extractFakeToolCalls(text string) (string, []fakeToolCall) {
-	if text == "" {
-		return "", nil
-	}
-	var calls []fakeToolCall
-	cleaned := fakeToolCallBlockRe.ReplaceAllStringFunc(text, func(block string) string {
-		matches := fakeToolCallBlockRe.FindStringSubmatch(block)
-		if len(matches) != 3 {
-			return block
-		}
-		name := strings.TrimSpace(matches[1])
-		args := extractFakeToolArguments(matches[2])
-		if name != "" {
-			calls = append(calls, fakeToolCall{Name: name, Arguments: args})
-		}
-		return ""
-	})
-	return trimFakeToolResidue(cleaned), calls
-}
-
-func extractFakeToolArguments(body string) string {
-	body = strings.TrimSpace(body)
-	params := parseFakeToolParameters(body)
-	if len(params) > 0 {
-		args := map[string]interface{}{}
-		for i, param := range params {
-			name := strings.TrimSpace(param.name)
-			valueText := strings.TrimSpace(param.value)
-			if name == "" {
-				name = fmt.Sprintf("arg%d", i+1)
-			}
-			if strings.HasPrefix(name, "[") || strings.HasPrefix(name, "{") {
-				valueText = name
-				name = "plan"
-			}
-			args[name] = decodeFakeToolValue(valueText)
-		}
-		if data, err := json.Marshal(args); err == nil {
-			return string(data)
-		}
-	}
-	if body == "" {
-		return "{}"
-	}
-	if json.Valid([]byte(body)) {
-		return body
-	}
-	encoded, err := json.Marshal(map[string]string{"input": body})
-	if err != nil {
-		return "{}"
-	}
-	return string(encoded)
-}
-
-type fakeToolParam struct {
-	name  string
-	value string
-}
-
-func parseFakeToolParameters(body string) []fakeToolParam {
-	var params []fakeToolParam
-	for {
-		start := strings.Index(body, "<parameter")
-		if start == -1 {
-			break
-		}
-		body = body[start+len("<parameter"):]
-		end := strings.Index(body, "</parameter>")
-		if end == -1 {
-			break
-		}
-		raw := strings.TrimSpace(body[:end])
-		body = body[end+len("</parameter>"):]
-
-		var param fakeToolParam
-		if strings.HasPrefix(raw, "=") {
-			raw = strings.TrimSpace(raw[1:])
-			if split := strings.Index(raw, ">"); split != -1 {
-				param.name = strings.TrimSpace(raw[:split])
-				param.value = strings.TrimSpace(raw[split+1:])
-			} else if strings.HasPrefix(raw, "[") || strings.HasPrefix(raw, "{") {
-				param.name = raw
-				param.value = raw
-			} else {
-				param.value = raw
-			}
-		} else if strings.HasPrefix(raw, ">") {
-			param.value = strings.TrimSpace(raw[1:])
-		} else {
-			param.value = raw
-		}
-		params = append(params, param)
-	}
-	return params
-}
-
-func decodeFakeToolValue(value string) interface{} {
-	if value == "" {
-		return ""
-	}
-	var decoded interface{}
-	if json.Unmarshal([]byte(value), &decoded) == nil {
-		return decoded
-	}
-	return value
-}
-
-func trimFakeToolResidue(text string) string {
-	text = strings.TrimSpace(text)
-	text = strings.Trim(text, "•*- \t\r\n")
-	return strings.TrimSpace(text)
-}
-
-func removeFakeToolCalls(text string) string {
-	if cleaned, calls := extractFakeToolCalls(text); len(calls) > 0 {
-		return cleaned
-	}
-	prefixes := []string{"<function="}
-	closings := []string{"</function"}
-	for i, prefix := range prefixes {
-		closing := closings[i]
-		for {
-			idx := strings.Index(text, prefix)
-			if idx == -1 {
-				break
-			}
-			rest := text[idx:]
-			endIdx := strings.Index(rest, closing)
-			if endIdx != -1 {
-				end := endIdx + len(closing)
-				if end < len(rest) && rest[end] == '>' {
-					end++
-				}
-				text = strings.TrimSpace(text[:idx] + rest[end:])
-			} else {
-				text = strings.TrimSpace(text[:idx])
-				break
-			}
-		}
-	}
-	return text
-}
-
-func contentToString(content interface{}) string {
-	if content == nil {
-		return ""
-	}
-	if s, ok := content.(string); ok {
-		return s
-	}
-	if parts, ok := content.([]model.ContentPart); ok {
-		var texts []string
-		for _, p := range parts {
-			if p.Type == "text" && p.Text != "" {
-				texts = append(texts, p.Text)
-			}
-		}
-		return strings.Join(texts, "")
-	}
-	return fmt.Sprintf("%v", content)
 }

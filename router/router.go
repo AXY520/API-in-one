@@ -23,8 +23,8 @@ func Setup(engine *relay.Engine, pool *relay.Pool) *gin.Engine {
 	r.StaticFile("/", "./web/index.html")
 	r.StaticFile("/admin", "./web/index.html")
 
-	// API v1 - OpenAI format (requires any valid key)
-	v1 := r.Group("/v1", middleware.Auth())
+	// API v1 - OpenAI format (requires a client access key)
+	v1 := r.Group("/v1", middleware.APIAuth())
 	{
 		v1.POST("/chat/completions", relayHandler.ChatCompletions)
 		v1.GET("/models", modelsHandler.ListModels)
@@ -35,7 +35,7 @@ func Setup(engine *relay.Engine, pool *relay.Pool) *gin.Engine {
 	}
 
 	// Gemini format inbound
-	gemini := r.Group("/v1beta", middleware.Auth())
+	gemini := r.Group("/v1beta", middleware.APIAuth())
 	{
 		gemini.POST("/models/:model", protocolHandler.GeminiGenerate)
 	}
@@ -54,6 +54,7 @@ func Setup(engine *relay.Engine, pool *relay.Pool) *gin.Engine {
 		admin.POST("/channels/reload", adminHandler.ReloadConfig)
 		admin.GET("/settings", adminHandler.GetSettings)
 		admin.PUT("/access-keys", adminHandler.UpdateAccessKeys)
+		admin.PUT("/model-system-prompts", adminHandler.UpdateModelSystemPrompts)
 		admin.POST("/models/fetch", adminHandler.FetchModels)
 		// Stats
 		admin.GET("/stats", adminHandler.GetStats)

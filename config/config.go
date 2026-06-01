@@ -11,9 +11,10 @@ import (
 )
 
 type ServerConfig struct {
-	Port       int               `json:"port"       yaml:"port"`
-	AdminKey   string            `json:"admin_key"  yaml:"admin_key"`
-	AccessKeys []AccessKeyConfig `json:"access_keys" yaml:"access_keys"`
+	Port               int               `json:"port"       yaml:"port"`
+	AdminKey           string            `json:"admin_key"  yaml:"admin_key"`
+	AccessKeys         []AccessKeyConfig `json:"access_keys" yaml:"access_keys"`
+	ModelSystemPrompts map[string]string `json:"model_system_prompts,omitempty" yaml:"model_system_prompts,omitempty"`
 }
 
 type AccessKeyConfig struct {
@@ -39,18 +40,19 @@ func (a *AccessKeyConfig) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type ChannelConfig struct {
-	Name          string            `json:"name"          yaml:"name"`
-	Type          string            `json:"type"          yaml:"type"`              // openai | claude | gemini
-	BaseURL       string            `json:"base_url"      yaml:"base_url"`          // default URL (openai)
-	BaseURLClaude string            `json:"base_url_claude" yaml:"base_url_claude"` // optional: Claude protocol URL
-	BaseURLGemini string            `json:"base_url_gemini" yaml:"base_url_gemini"` // optional: Gemini protocol URL
-	Keys          []string          `json:"keys"          yaml:"keys"`
-	DisabledKeys  []string          `json:"disabled_keys,omitempty" yaml:"disabled_keys,omitempty"`
-	Models        []string          `json:"models"        yaml:"models"`
-	ModelMapping  map[string]string `json:"model_mapping"  yaml:"model_mapping"`
-	Priority      int               `json:"priority"      yaml:"priority"`
-	Weight        int               `json:"weight"        yaml:"weight"`
-	Enabled       *bool             `json:"enabled"       yaml:"enabled"`
+	Name              string            `json:"name"          yaml:"name"`
+	Type              string            `json:"type"          yaml:"type"`              // openai | claude | gemini
+	BaseURL           string            `json:"base_url"      yaml:"base_url"`          // default URL (openai)
+	BaseURLClaude     string            `json:"base_url_claude" yaml:"base_url_claude"` // optional: Claude protocol URL
+	BaseURLGemini     string            `json:"base_url_gemini" yaml:"base_url_gemini"` // optional: Gemini protocol URL
+	SupportsResponses bool              `json:"supports_responses" yaml:"supports_responses"`
+	Keys              []string          `json:"keys"          yaml:"keys"`
+	DisabledKeys      []string          `json:"disabled_keys,omitempty" yaml:"disabled_keys,omitempty"`
+	Models            []string          `json:"models"        yaml:"models"`
+	ModelMapping      map[string]string `json:"model_mapping"  yaml:"model_mapping"`
+	Priority          int               `json:"priority"      yaml:"priority"`
+	Weight            int               `json:"weight"        yaml:"weight"`
+	Enabled           *bool             `json:"enabled"       yaml:"enabled"`
 }
 
 type Config struct {
@@ -90,7 +92,11 @@ func applyDefaults(cfg *Config) {
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 3000
 	}
+	if cfg.Server.ModelSystemPrompts == nil {
+		cfg.Server.ModelSystemPrompts = make(map[string]string)
+	}
 	normalizeAccessKeys(&cfg.Server.AccessKeys)
+	normalizeModelSystemPrompts(cfg.Server.ModelSystemPrompts)
 	for i := range cfg.Channels {
 		if cfg.Channels[i].Priority == 0 {
 			cfg.Channels[i].Priority = 10
@@ -105,6 +111,21 @@ func applyDefaults(cfg *Config) {
 		if cfg.Channels[i].ModelMapping == nil {
 			cfg.Channels[i].ModelMapping = make(map[string]string)
 		}
+	}
+}
+
+func normalizeModelSystemPrompts(prompts map[string]string) {
+	for modelName, prompt := range prompts {
+		cleanName := strings.TrimSpace(modelName)
+		prompt = strings.TrimSpace(prompt)
+		if cleanName == "" || prompt == "" {
+			delete(prompts, modelName)
+			continue
+		}
+		if cleanName != modelName {
+			delete(prompts, modelName)
+		}
+		prompts[cleanName] = prompt
 	}
 }
 
@@ -313,6 +334,27 @@ func UpdateAccessKeys(keys []AccessKeyConfig) error {
 	defer configMu.Unlock()
 	normalizeAccessKeys(&keys)
 	globalConfig.Server.AccessKeys = keys
+	return saveToDiskLocked()
+}
+
+func GetModelSystemPrompts() map[string]string {
+	configMu.RLock()
+	defer configMu.RUnlock()
+	prompts := make(map[string]string, len(globalConfig.Server.ModelSystemPrompts))
+	for modelName, prompt := range globalConfig.Server.ModelSystemPrompts {
+		prompts[modelName] = prompt
+	}
+	return prompts
+}
+
+func UpdateModelSystemPrompts(prompts map[string]string) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	if prompts == nil {
+		prompts = make(map[string]string)
+	}
+	normalizeModelSystemPrompts(prompts)
+	globalConfig.Server.ModelSystemPrompts = prompts
 	return saveToDiskLocked()
 }
 

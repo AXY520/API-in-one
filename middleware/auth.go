@@ -11,19 +11,8 @@ import (
 // Auth validates Bearer token against admin_key or access_keys.
 func Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": gin.H{"message": "missing Authorization header", "type": "auth_error"},
-			})
-			return
-		}
-
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if token == authHeader {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": gin.H{"message": "invalid Authorization format, expected Bearer token", "type": "auth_error"},
-			})
+		token, ok := bearerToken(c)
+		if !ok {
 			return
 		}
 
@@ -50,6 +39,47 @@ func Auth() gin.HandlerFunc {
 			"error": gin.H{"message": "invalid API key", "type": "auth_error"},
 		})
 	}
+}
+
+// APIAuth validates only client request keys. Admin keys are intentionally not
+// accepted for model APIs; they are scoped to the admin UI/API.
+func APIAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token, ok := bearerToken(c)
+		if !ok {
+			return
+		}
+		if accessKey, ok := config.FindAccessKey(token); ok && accessKey.Key != "" {
+			c.Set("is_admin", false)
+			c.Set("api_key", token)
+			c.Set("api_key_masked", maskKey(token))
+			c.Set("access_key_config", accessKey)
+			c.Next()
+			return
+		}
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"error": gin.H{"message": "invalid API key", "type": "auth_error"},
+		})
+	}
+}
+
+func bearerToken(c *gin.Context) (string, bool) {
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"error": gin.H{"message": "missing Authorization header", "type": "auth_error"},
+		})
+		return "", false
+	}
+
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+	if token == authHeader {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"error": gin.H{"message": "invalid Authorization format, expected Bearer token", "type": "auth_error"},
+		})
+		return "", false
+	}
+	return token, true
 }
 
 func maskKey(key string) string {

@@ -14,12 +14,30 @@
   .log-status { display: inline-block; width: .5rem; height: .5rem; border-radius: 9999px; margin-right: .375rem; }
   .log-status.ok { background: oklch(var(--su)); }
   .log-status.err { background: oklch(var(--er)); }
-  .nav-item.active { background: rgba(103, 232, 249, .16); color: rgb(207, 250, 254); }
+  .nav-item.active { background: rgba(103, 232, 249, .22); color: rgb(14, 116, 144); }
+  .desktop-only { display: block; }
+  .mobile-only { display: none; }
+  .scroll-fade { scrollbar-width: thin; scrollbar-color: rgb(203 213 225) transparent; }
+  .touch-target { min-height: 2.75rem; }
+  @media (max-width: 767px) {
+    body { background: rgb(248 250 252); }
+    .desktop-only { display: none; }
+    .mobile-only { display: block; }
+    .modal-overlay { padding: 0; align-items: stretch; background: rgba(15, 23, 42, 0.38); }
+    .modal-overlay .modal-box { width: 100%; max-width: none; min-height: 100dvh; max-height: 100dvh; overflow-y: auto; border-radius: 0; padding: 1rem; padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+    .modal-action { position: sticky; bottom: 0; z-index: 2; margin: 1rem -1rem calc(-5rem - env(safe-area-inset-bottom)); padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom)); background: rgba(255,255,255,.96); border-top: 1px solid rgb(226 232 240); backdrop-filter: blur(12px); }
+    .modal-action .btn { width: 100%; min-height: 2.75rem; }
+    .mapping-row { grid-template-columns: minmax(0,1fr); gap: .5rem; }
+    .mobile-table-scroll { margin-left: -1rem; margin-right: -1rem; border-left: 0; border-right: 0; border-radius: 0; }
+    .json-box { max-height: 18rem; }
+    .toast { left: .75rem; right: .75rem; }
+    .toast .alert { width: 100%; }
+  }
 </style>
 </head>
-<body class="min-h-screen bg-slate-50 text-slate-900">
+<body class="min-h-screen overflow-x-hidden bg-slate-50 text-slate-900">
 
-<div id="login-overlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-100">
+<div id="login-overlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-100 p-4">
   <div class="card w-full max-w-sm border border-slate-200 bg-white shadow-2xl ">
     <div class="card-body">
       <div class="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-100 text-xl text-cyan-700">AI</div>
@@ -31,17 +49,17 @@
   </div>
 </div>
 
-<div class="hidden min-h-screen bg-slate-100" id="app">
-  <div class="fixed inset-y-0 left-0 w-72 border-r border-slate-200 bg-white p-5 ">
+<div class="hidden min-h-screen bg-slate-100 pb-24 md:pb-0" id="app">
+  <div class="fixed inset-y-0 left-0 hidden w-72 border-r border-slate-200 bg-white p-5 md:block">
     <div class="mb-6">
       <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-300 text-sm font-black text-slate-950">API</div>
       <h1 class="text-xl font-semibold text-slate-950">API-in-one</h1>
       <p class="text-xs text-slate-500">Model routing command center</p>
     </div>
     <ul class="menu gap-2 p-0">
-      <li><a class="nav-item active rounded-2xl text-slate-700" onclick="switchTab('channels')">控制台</a></li>
-      <li><a class="nav-item rounded-2xl text-slate-700" onclick="switchTab('stats')">请求流</a></li>
-      <li><a class="nav-item rounded-2xl text-slate-700" onclick="switchTab('settings')">凭据</a></li>
+      <li><a class="nav-item active rounded-2xl text-slate-700" data-tab="channels" onclick="switchTab('channels')">控制台</a></li>
+      <li><a class="nav-item rounded-2xl text-slate-700" data-tab="stats" onclick="switchTab('stats')">请求流</a></li>
+      <li><a class="nav-item rounded-2xl text-slate-700" data-tab="settings" onclick="switchTab('settings')">凭据</a></li>
     </ul>
     <div class="absolute bottom-5 left-5 right-5 rounded-3xl border border-slate-200 bg-slate-100 p-4">
       <div class="text-xs uppercase tracking-wide text-slate-500">Endpoint</div>
@@ -49,37 +67,39 @@
     </div>
   </div>
 
-  <main class="ml-72 min-h-screen p-7">
+  <main class="min-h-screen p-3 pb-28 sm:p-4 md:ml-72 md:p-7">
     <div id="tab-channels">
-      <div class="mb-6 flex items-start justify-between gap-4">
+      <div class="mb-4 rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm md:mb-6 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
+      <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <div class="mb-2 text-xs font-semibold uppercase tracking-[0.35em] text-cyan-700/70">Live Router</div>
-          <h2 class="text-4xl font-semibold tracking-tight text-slate-950">模型路由指挥台</h2>
-          <p class="mt-2 text-sm text-slate-500">用健康度、Key 状态和模型映射组织你的所有上游能力。</p>
+          <div class="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-cyan-700/70 md:tracking-[0.35em]">Live Router</div>
+          <h2 class="text-2xl font-semibold tracking-tight text-slate-950 md:text-4xl">模型路由指挥台</h2>
+          <p class="mt-2 text-sm leading-6 text-slate-500">用健康度、Key 状态和模型映射组织你的所有上游能力。</p>
         </div>
-        <div class="flex gap-2">
-          <button class="btn border-0 bg-slate-900 text-white hover:bg-slate-800" onclick="openAddChannel()">添加 Channel</button>
-          <button class="btn border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100" onclick="loadData()">刷新</button>
+        <div class="grid grid-cols-2 gap-2 md:flex">
+          <button class="btn touch-target border-0 bg-slate-900 text-white hover:bg-slate-800" onclick="openAddChannel()">添加</button>
+          <button class="btn touch-target border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100" onclick="loadData()">刷新</button>
         </div>
+      </div>
       </div>
       <div id="channel-overview" class="mb-5 grid grid-cols-1 gap-3 md:grid-cols-4"></div>
       <div id="channels-table"></div>
     </div>
 
     <div id="tab-stats" style="display:none">
-      <div class="mb-6">
-        <div class="mb-2 text-xs font-semibold uppercase tracking-[0.35em] text-blue-700/70">Traffic Stream</div>
-        <h2 class="text-4xl font-semibold tracking-tight text-slate-950">请求流工作台</h2>
-        <p class="mt-2 text-sm text-slate-500">查看每一次路由、重试、Key 命中和协议转换。</p>
+      <div class="mb-4 rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm md:mb-6 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
+        <div class="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-blue-700/70 md:tracking-[0.35em]">Traffic Stream</div>
+        <h2 class="text-2xl font-semibold tracking-tight text-slate-950 md:text-4xl">请求流工作台</h2>
+        <p class="mt-2 text-sm leading-6 text-slate-500">查看每一次路由、重试、Key 命中和协议转换。</p>
       </div>
       <div id="stats-cards" class="mb-5 grid grid-cols-1 gap-3 md:grid-cols-4"></div>
-      <div class="card border border-slate-200 bg-white shadow-2xl ">
-        <div class="card-body gap-4">
-        <div class="flex items-center justify-between">
+      <div class="card border border-slate-200 bg-white shadow-sm md:shadow-xl">
+        <div class="card-body gap-4 p-3 sm:p-4 md:p-8">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <h3 class="font-semibold text-slate-950">请求日志</h3>
-          <div class="flex items-center gap-3">
+          <div class="flex items-center justify-between gap-3 md:justify-end">
             <span class="text-xs text-slate-500" id="log-count"></span>
-            <button class="btn btn-sm btn-error btn-outline" onclick="clearRequestLogs()">清空历史</button>
+            <button class="btn btn-sm touch-target btn-error btn-outline" onclick="clearRequestLogs()">清空历史</button>
           </div>
         </div>
         <div class="grid grid-cols-1 gap-2 md:grid-cols-3 xl:grid-cols-6">
@@ -90,9 +110,15 @@
             <option value="gemini-inbound">Gemini</option>
             <option value="responses">Responses</option>
           </select>
-          <input class="input input-bordered input-sm" id="log-filter-model" placeholder="模型" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
-          <input class="input input-bordered input-sm" id="log-filter-channel" placeholder="Channel" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
-          <input class="input input-bordered input-sm" id="log-filter-access-key" placeholder="请求密钥" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
+          <select class="select select-bordered select-sm" id="log-filter-model" onchange="resetLogPageAndLoad()">
+            <option value="">全部模型</option>
+          </select>
+          <select class="select select-bordered select-sm" id="log-filter-channel" onchange="resetLogPageAndLoad()">
+            <option value="">全部 Channel</option>
+          </select>
+          <select class="select select-bordered select-sm" id="log-filter-access-key" onchange="resetLogPageAndLoad()">
+            <option value="">全部请求密钥</option>
+          </select>
           <select class="select select-bordered select-sm" id="log-filter-status" onchange="resetLogPageAndLoad()">
             <option value="">全部状态</option>
             <option value="success">成功</option>
@@ -104,28 +130,28 @@
           <input class="input input-bordered input-sm" id="log-filter-q" placeholder="搜索 ID / 错误" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
         </div>
         <div id="logs-table"></div>
-        <div class="join justify-end">
-          <button class="btn btn-sm" onclick="changeLogPage(-1)">上一页</button>
-          <span class="btn btn-sm no-animation cursor-default" id="log-page-info"></span>
-          <button class="btn btn-sm" onclick="changeLogPage(1)">下一页</button>
+        <div class="join grid grid-cols-[1fr_auto_1fr] justify-end md:flex">
+          <button class="btn btn-sm touch-target join-item" onclick="changeLogPage(-1)">上一页</button>
+          <span class="btn btn-sm touch-target join-item no-animation cursor-default" id="log-page-info"></span>
+          <button class="btn btn-sm touch-target join-item" onclick="changeLogPage(1)">下一页</button>
         </div>
         </div>
       </div>
     </div>
 
     <div id="tab-settings" style="display:none">
-      <div class="mb-6">
-        <div class="mb-2 text-xs font-semibold uppercase tracking-[0.35em] text-violet-700/70">Vault</div>
-        <h2 class="text-4xl font-semibold tracking-tight text-slate-950">凭据保险库</h2>
+      <div class="mb-4 rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm md:mb-6 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
+        <div class="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-violet-700/70 md:tracking-[0.35em]">Vault</div>
+        <h2 class="text-2xl font-semibold tracking-tight text-slate-950 md:text-4xl">凭据保险库</h2>
       </div>
-      <div class="card mb-4 border border-slate-200 bg-white shadow-2xl ">
-        <div class="card-body">
-        <div class="flex items-center justify-between gap-3">
+      <div class="card mb-4 border border-slate-200 bg-white shadow-sm md:shadow-xl">
+        <div class="card-body p-4 md:p-8">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div class="text-xs font-semibold uppercase text-slate-500">请求密钥</div>
             <p class="text-sm text-slate-500">允许模型留空表示全部可访问；排除模型优先级更高。</p>
           </div>
-          <div class="flex gap-2">
+          <div class="grid grid-cols-2 gap-2 md:flex">
             <button class="btn btn-sm border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick="addAccessKeyPolicy()">添加密钥</button>
             <button class="btn btn-sm border-0 bg-slate-900 text-white hover:bg-slate-800" onclick="saveAccessKeyPolicies()">保存</button>
           </div>
@@ -133,7 +159,19 @@
         <div id="access-keys-display" class="mt-4 space-y-3"></div>
         </div>
       </div>
-      <div class="card border border-slate-200 bg-white shadow-2xl ">
+      <div class="card mb-4 border border-slate-200 bg-white shadow-sm md:shadow-xl">
+        <div class="card-body p-4 md:p-8">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div class="text-xs font-semibold uppercase text-slate-500">模型系统提示词</div>
+            <p class="text-sm text-slate-500">按客户端可见模型设置，会追加到已有 system/developer 提示词后。</p>
+          </div>
+          <button class="btn btn-sm border-0 bg-slate-900 text-white hover:bg-slate-800" onclick="saveModelSystemPrompts()">保存提示词</button>
+        </div>
+        <div id="model-prompts-display" class="mt-4 space-y-3"></div>
+        </div>
+      </div>
+      <div class="card border border-slate-200 bg-white shadow-sm md:shadow-xl">
         <div class="card-body">
         <div class="text-xs font-semibold uppercase text-slate-500">Admin Key</div>
         <div id="admin-key-display" class="font-mono text-sm"></div>
@@ -141,6 +179,14 @@
       </div>
     </div>
   </main>
+
+  <div class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-2 shadow-2xl backdrop-blur md:hidden">
+    <div class="grid grid-cols-3 gap-2">
+      <button class="nav-item active rounded-2xl px-3 py-2 text-sm font-medium text-slate-700" data-tab="channels" onclick="switchTab('channels')">控制台</button>
+      <button class="nav-item rounded-2xl px-3 py-2 text-sm font-medium text-slate-700" data-tab="stats" onclick="switchTab('stats')">请求流</button>
+      <button class="nav-item rounded-2xl px-3 py-2 text-sm font-medium text-slate-700" data-tab="settings" onclick="switchTab('settings')">凭据</button>
+    </div>
+  </div>
 </div>
 
 <!-- Channel Modal -->
@@ -183,6 +229,13 @@
           <div class="label"><span class="label-text-alt">同一供应商的 Gemini 协议地址</span></div>
         </label>
       </div>
+      <label class="mt-3 flex items-start gap-3 rounded-2xl border border-base-300 bg-base-100 p-3">
+        <input class="checkbox checkbox-primary mt-1" type="checkbox" id="f-supports-responses">
+        <span>
+          <span class="block text-sm font-medium">原生支持 Responses 协议</span>
+          <span class="block text-xs text-base-content/60">勾选后 /v1/responses 直接转发到上游 /responses；不勾选则转换为 Chat Completions。</span>
+        </span>
+      </label>
     </section>
 
     <section class="rounded-box border border-base-300 p-4">
@@ -197,7 +250,7 @@
       <div class="mb-3 text-xs font-semibold uppercase text-base-content/50">模型配置</div>
       <label class="form-control">
         <div class="label"><span class="label-text">上游模型列表</span></div>
-        <div class="join w-full">
+        <div class="join join-vertical w-full sm:join-horizontal">
           <input class="input input-bordered join-item w-full" type="text" id="f-models" placeholder="gpt-4o, gpt-4o-mini (逗号分隔)">
           <button class="btn join-item" onclick="fetchModels()" id="btn-fetch">获取模型</button>
         </div>
@@ -229,7 +282,7 @@
     </section>
     </div>
 
-    <div class="modal-action">
+    <div class="modal-action flex-col gap-2 sm:flex-row">
       <button class="btn" onclick="closeModal('channel-modal')">取消</button>
       <button class="btn btn-primary" onclick="saveChannel()">保存</button>
     </div>
@@ -247,7 +300,7 @@
       <span class="ml-auto text-xs text-base-content/60" id="picker-count"></span>
     </div>
     <div class="max-h-96 overflow-y-auto rounded-box border border-base-300" id="picker-list"></div>
-    <div class="modal-action">
+    <div class="modal-action flex-col gap-2 sm:flex-row">
       <button class="btn" onclick="closeModal('picker-modal')">取消</button>
       <button class="btn btn-primary" onclick="applyPickerSelection()">确认选择</button>
     </div>
@@ -265,7 +318,7 @@
       <textarea class="textarea textarea-bordered min-h-32 w-full font-mono text-xs" id="key-editor" placeholder="每行一个 Key"></textarea>
       <div class="mt-2 text-xs text-base-content/60">保存会全量替换该 Channel 的上游 Key；空内容不会保存。</div>
     </div>
-    <div class="modal-action">
+    <div class="modal-action flex-col gap-2 sm:flex-row">
       <button class="btn" onclick="closeModal('key-modal')">关闭</button>
       <button class="btn" onclick="probeKeys()">探活</button>
       <button class="btn btn-primary" onclick="saveChannelKeys()">保存 Key</button>
@@ -278,7 +331,7 @@
   <div class="modal-box w-11/12 max-w-6xl">
     <h3 class="mb-4 text-lg font-semibold" id="log-modal-title">请求详情</h3>
     <div id="log-detail"></div>
-    <div class="modal-action">
+    <div class="modal-action flex-col gap-2 sm:flex-row">
       <button class="btn" onclick="closeModal('log-modal')">关闭</button>
     </div>
   </div>
@@ -294,6 +347,8 @@ let channelKeyLoadState = 'idle';
 let channelOriginalKeys = [];
 let accessKeyPolicies = [];
 let accessPolicyModels = [];
+let modelSystemPrompts = {};
+let logAccessKeyOptionsLoaded = false;
 
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -303,16 +358,14 @@ function switchTab(tab) {
   stopStatsAutoRefresh();
   if (tab === 'channels') {
     document.getElementById('tab-channels').style.display = 'block';
-    document.querySelectorAll('.nav-item')[0].classList.add('active');
   } else if (tab === 'stats') {
     document.getElementById('tab-stats').style.display = 'block';
-    document.querySelectorAll('.nav-item')[1].classList.add('active');
     startStatsAutoRefresh();
   } else {
     document.getElementById('tab-settings').style.display = 'block';
-    document.querySelectorAll('.nav-item')[2].classList.add('active');
     loadSettings();
   }
+  document.querySelectorAll(`.nav-item[data-tab="${tab}"]`).forEach(el => el.classList.add('active'));
 }
 
 function doLogin() {
@@ -336,17 +389,111 @@ async function api(path, opts = {}) {
 
 async function loadData() {
   const ch = await api('/admin/channels');
-  renderChannels(ch.channels || []);
+  const channels = ch.channels || [];
+  renderChannels(channels);
+  renderLogRouteFilters(channels);
 }
 
 async function loadSettings() {
   const data = await api('/admin/settings');
   accessPolicyModels = collectPolicyModels(data.models || []);
   accessKeyPolicies = normalizeAccessKeyPolicies(data.access_keys || []);
+  modelSystemPrompts = data.model_system_prompts || {};
   renderAccessKeyPolicies();
+  renderModelSystemPrompts();
   const adminKey = data.admin_key || '';
   const maskedAdmin = adminKey.length > 8 ? adminKey.slice(0,4) + '****' + adminKey.slice(-4) : adminKey;
   document.getElementById('admin-key-display').innerHTML = `<span class="badge badge-ghost font-mono">${esc(maskedAdmin)}</span>`;
+  renderLogAccessKeyFilter(data);
+}
+
+async function loadLogAccessKeyOptions(force = false) {
+  if (logAccessKeyOptionsLoaded && !force) return;
+  const data = await api('/admin/settings');
+  renderLogAccessKeyFilter(data);
+  logAccessKeyOptionsLoaded = true;
+}
+
+function renderLogAccessKeyFilter(data) {
+  const el = document.getElementById('log-filter-access-key');
+  if (!el) return;
+  const current = el.value;
+  const options = [];
+  for (const item of normalizeAccessKeyPolicies(data.access_keys || [])) {
+    if (!item.key) continue;
+    const masked = maskKeyLocal(item.key);
+    options.push({ label: masked, value: masked });
+  }
+  const seen = new Set();
+  el.innerHTML = '<option value="">全部请求密钥</option>' + options.filter(opt => {
+    if (seen.has(opt.value)) return false;
+    seen.add(opt.value);
+    return true;
+  }).map(opt => `<option value="${esc(opt.value)}">${esc(opt.label)}</option>`).join('');
+  if ([...el.options].some(opt => opt.value === current)) {
+    el.value = current;
+  }
+}
+
+function renderLogRouteFilters(channels) {
+  const models = new Set();
+  const channelNames = new Set();
+  for (const ch of channels) {
+    if (ch.name) channelNames.add(ch.name);
+    const mapping = ch.model_mapping || {};
+    const mappedUpstreamModels = new Set(Object.values(mapping));
+    for (const model of ch.models || []) {
+      if (!mappedUpstreamModels.has(model)) models.add(model);
+    }
+    for (const alias of Object.keys(mapping)) models.add(alias);
+  }
+  replaceSelectOptions('log-filter-model', '全部模型', Array.from(models).sort((a, b) => a.localeCompare(b)));
+  replaceSelectOptions('log-filter-channel', '全部 Channel', Array.from(channelNames).sort((a, b) => a.localeCompare(b)));
+}
+
+function replaceSelectOptions(id, placeholder, values) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const current = el.value;
+  el.innerHTML = `<option value="">${esc(placeholder)}</option>` + values.map(value =>
+    `<option value="${esc(value)}">${esc(value)}</option>`
+  ).join('');
+  if (values.includes(current)) el.value = current;
+}
+
+function renderModelSystemPrompts() {
+  const el = document.getElementById('model-prompts-display');
+  if (!accessPolicyModels.length) {
+    el.innerHTML = '<div class="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">暂无可配置模型，先在 Channel 中配置模型。</div>';
+    return;
+  }
+  el.innerHTML = accessPolicyModels.map(model => {
+    const value = modelSystemPrompts[model] || '';
+    const active = value.trim() ? 'border-cyan-200 bg-cyan-50/40' : 'border-slate-200 bg-white';
+    return `<div class="rounded-2xl border ${active} p-3">
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <div class="min-w-0 truncate font-mono text-sm font-semibold text-slate-800">${esc(model)}</div>
+        ${value.trim() ? '<span class="rounded-full bg-cyan-100 px-2 py-1 text-xs text-cyan-700">已设置</span>' : '<span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">默认</span>'}
+      </div>
+      <textarea class="textarea textarea-bordered min-h-24 w-full bg-white text-sm" placeholder="这个模型的系统提示词，留空表示不注入" oninput="modelSystemPrompts['${escAttr(model)}']=this.value">${esc(value)}</textarea>
+    </div>`;
+  }).join('');
+}
+
+async function saveModelSystemPrompts() {
+  const prompts = {};
+  for (const [model, prompt] of Object.entries(modelSystemPrompts)) {
+    const clean = (prompt || '').trim();
+    if (clean) prompts[model] = clean;
+  }
+  try {
+    const data = await api('/admin/model-system-prompts', { method: 'PUT', body: JSON.stringify({ model_system_prompts: prompts }) });
+    modelSystemPrompts = data.model_system_prompts || {};
+    renderModelSystemPrompts();
+    toast('模型系统提示词已保存');
+  } catch(e) {
+    toast('保存提示词失败: ' + e.message, true);
+  }
 }
 
 function collectPolicyModels(models) {
@@ -389,7 +536,7 @@ function renderAccessKeyPolicies() {
       </div>
       <label class="form-control">
         <div class="label"><span class="label-text">请求密钥</span></div>
-        <div class="join w-full">
+        <div class="join join-vertical w-full sm:join-horizontal">
           <input class="input input-bordered join-item w-full font-mono text-sm" value="${esc(item.key || '')}" oninput="accessKeyPolicies[${idx}].key=this.value">
           <button type="button" class="btn join-item border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100" onclick="generateAccessKey(${idx})">生成</button>
         </div>
@@ -489,6 +636,8 @@ async function saveAccessKeyPolicies() {
     const data = await api('/admin/access-keys', { method: 'PUT', body: JSON.stringify({ access_keys: keys }) });
     accessKeyPolicies = normalizeAccessKeyPolicies(data.access_keys || []);
     renderAccessKeyPolicies();
+    logAccessKeyOptionsLoaded = false;
+    loadLogAccessKeyOptions(true).catch(() => {});
     toast('请求密钥已保存');
   } catch(e) {
     toast('保存请求密钥失败: ' + e.message, true);
@@ -527,43 +676,44 @@ function renderChannels(channels) {
         `<span class="rounded-full bg-cyan-50 px-2 py-1 font-mono text-[11px] text-cyan-700">${esc(alias)} → ${esc(mm[alias])}</span>`
       ).join('') + '</div></div>';
     }
-    html += `<section class="group flex h-[32rem] flex-col overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm transition hover:border-cyan-200">
-      <div class="shrink-0 border-b border-slate-200 bg-slate-50 p-5">
-        <div class="flex items-start justify-between gap-4">
+    html += `<section class="group flex h-[25rem] flex-col overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm transition hover:border-cyan-200 sm:h-[28rem] md:h-[32rem] md:rounded-[1.5rem]">
+      <div class="shrink-0 border-b border-slate-200 bg-slate-50 p-3.5 md:p-5">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div class="min-w-0">
             <div class="mb-2 flex items-center gap-2">
               <span class="rounded-full border px-2 py-0.5 text-xs ${sc}">${st}</span>
               <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">${esc(ch.type)}</span>
+              ${ch.supports_responses ? '<span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">Responses</span>' : ''}
             </div>
-            <h3 class="truncate text-2xl font-semibold text-slate-950">${esc(ch.name)}</h3>
+            <h3 class="truncate text-lg font-semibold text-slate-950 md:text-2xl">${esc(ch.name)}</h3>
             <p class="mt-1 truncate font-mono text-xs text-slate-500">${esc(ch.base_url)}</p>
           </div>
-          <div class="grid grid-cols-2 gap-2 text-right">
-            <div class="rounded-2xl bg-slate-100 px-3 py-2"><div class="text-lg font-semibold text-slate-950">${keyCount}</div><div class="text-[10px] uppercase text-slate-500">keys</div></div>
-            <div class="rounded-2xl bg-slate-100 px-3 py-2"><div class="text-lg font-semibold text-slate-950">${(ch.models||[]).length}</div><div class="text-[10px] uppercase text-slate-500">models</div></div>
+          <div class="grid grid-cols-2 gap-2 text-left sm:text-right">
+            <div class="rounded-xl bg-slate-100 px-3 py-2 md:rounded-2xl"><div class="text-base font-semibold text-slate-950 md:text-lg">${keyCount}</div><div class="text-[10px] uppercase text-slate-500">keys</div></div>
+            <div class="rounded-xl bg-slate-100 px-3 py-2 md:rounded-2xl"><div class="text-base font-semibold text-slate-950 md:text-lg">${(ch.models||[]).length}</div><div class="text-[10px] uppercase text-slate-500">models</div></div>
           </div>
         </div>
       </div>
-      <div class="grid min-h-0 flex-1 gap-4 p-5 lg:grid-cols-[1fr_1.2fr]">
+      <div class="grid min-h-0 flex-1 gap-3 p-3.5 md:gap-4 md:p-5 lg:grid-cols-[1fr_1.2fr]">
         <div class="flex min-h-0 flex-col">
           <div class="mb-2 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
             <span>Key health</span>
             ${keyCount > 4 ? '<span class="text-[10px] font-medium normal-case tracking-normal text-slate-400">滚动查看全部</span>' : ''}
           </div>
-          <div class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">${keyPreview || '<div class="text-sm text-slate-500">暂无 Key</div>'}</div>
+          <div class="scroll-fade min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">${keyPreview || '<div class="text-sm text-slate-500">暂无 Key</div>'}</div>
         </div>
-        <div class="min-h-0">
+        <div class="hidden min-h-0 sm:block">
           <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Models & aliases</div>
-          <div class="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto pr-1">${models || '<span class="text-sm text-slate-500">暂无模型</span>'}</div>
+          <div class="scroll-fade flex max-h-36 flex-wrap gap-1.5 overflow-y-auto pr-1">${models || '<span class="text-sm text-slate-500">暂无模型</span>'}</div>
           ${mappingHtml}
         </div>
       </div>
-      <div class="mt-auto flex shrink-0 items-center justify-between border-t border-slate-200 px-5 py-4">
+      <div class="mt-auto flex shrink-0 flex-col gap-3 border-t border-slate-200 px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5 md:py-4">
         <div class="text-xs text-slate-500">priority ${ch.priority} · weight ${ch.weight}</div>
-        <div class="flex gap-2">
-          <button class="btn btn-sm border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick='openKeyManager(${JSON.stringify(ch)})'>Keys</button>
-          <button class="btn btn-sm border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick='openEditChannel(${JSON.stringify(ch)})'>编辑</button>
-          <button class="btn btn-sm btn-error btn-outline" onclick="deleteChannel('${esc(ch.name)}')">删除</button>
+        <div class="grid w-full grid-cols-3 gap-2 sm:w-auto sm:flex">
+          <button class="btn btn-sm touch-target border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick='openKeyManager(${JSON.stringify(ch)})'>Keys</button>
+          <button class="btn btn-sm touch-target border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick='openEditChannel(${JSON.stringify(ch)})'>编辑</button>
+          <button class="btn btn-sm touch-target btn-error btn-outline" onclick="deleteChannel('${esc(ch.name)}')">删除</button>
         </div>
       </div>
     </section>`;
@@ -622,13 +772,14 @@ function renderKeyRows(probeResults = null) {
     document.getElementById('key-list').innerHTML = '<div class="p-8 text-center text-sm text-base-content/60">暂无 Key</div>';
     return;
   }
-  let html = '<div class="overflow-x-auto rounded-box border border-base-300"><table class="table table-sm"><thead><tr><th>#</th><th>Key</th><th>状态</th><th>统计</th><th>操作</th></tr></thead><tbody>';
+  let tableHtml = '<div class="desktop-only mobile-table-scroll overflow-x-auto rounded-box border border-base-300"><table class="table table-sm min-w-[42rem]"><thead><tr><th>#</th><th>Key</th><th>状态</th><th>统计</th><th>操作</th></tr></thead><tbody>';
+  let cardHtml = '<div class="mobile-only space-y-3">';
   for (const row of activeKeyRows) {
     const stat = row.stat || {};
     const probe = probeByIndex[row.index];
     const health = row.disabled ? '<span class="badge badge-neutral">已禁用</span>' : (stat.healthy === false ? '<span class="badge badge-error">异常</span>' : '<span class="badge badge-success">启用</span>');
     const probeHtml = probe ? `<br><span class="text-xs ${probe.ok?'text-success':'text-error'}">探活 ${probe.status || 'ERR'} · ${probe.latency_ms || 0}ms</span>` : '';
-    html += `<tr>
+    tableHtml += `<tr>
       <td>${row.index}</td>
       <td class="max-w-xl break-all font-mono text-xs">${esc(row.key)}</td>
       <td>${health}${probeHtml}</td>
@@ -638,9 +789,25 @@ function renderKeyRows(probeResults = null) {
         <button class="btn btn-sm" onclick="probeKeys(${row.index})">探活</button>
       </div></td>
     </tr>`;
+    cardHtml += `<section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">#${row.index}</span>
+        ${health}
+      </div>
+      <div class="break-all rounded-xl bg-slate-50 p-3 font-mono text-xs text-slate-700">${esc(row.key)}</div>
+      <div class="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-500">
+        <div class="rounded-xl bg-slate-50 p-2">成功 <span class="font-semibold text-slate-800">${stat.success_requests||0}</span></div>
+        <div class="rounded-xl bg-slate-50 p-2">失败 <span class="font-semibold text-slate-800">${stat.failure_requests||0}</span>${probeHtml}</div>
+      </div>
+      <div class="mt-3 grid grid-cols-2 gap-2">
+        <button class="btn btn-sm touch-target" onclick="setKeyDisabled(${row.index}, ${!row.disabled})">${row.disabled ? '启用' : '禁用'}</button>
+        <button class="btn btn-sm touch-target" onclick="probeKeys(${row.index})">探活</button>
+      </div>
+    </section>`;
   }
-  html += '</tbody></table></div>';
-  document.getElementById('key-list').innerHTML = html;
+  tableHtml += '</tbody></table></div>';
+  cardHtml += '</div>';
+  document.getElementById('key-list').innerHTML = tableHtml + cardHtml;
 }
 
 async function setKeyDisabled(index, disabled) {
@@ -699,6 +866,7 @@ function openAddChannel() {
   document.getElementById('f-baseurl').value = '';
   document.getElementById('f-baseurl-claude').value = '';
   document.getElementById('f-baseurl-gemini').value = '';
+  document.getElementById('f-supports-responses').checked = false;
   document.getElementById('f-keys').value = '';
   document.getElementById('f-keys').placeholder = 'sk-key1\nsk-key2';
   document.getElementById('keys-hint').textContent = '每行一个 Key，请求时自动轮询';
@@ -723,6 +891,7 @@ async function openEditChannel(ch) {
   document.getElementById('f-baseurl').value = ch.base_url;
   document.getElementById('f-baseurl-claude').value = ch.base_url_claude || '';
   document.getElementById('f-baseurl-gemini').value = ch.base_url_gemini || '';
+  document.getElementById('f-supports-responses').checked = !!ch.supports_responses;
   document.getElementById('f-keys').value = '';
   document.getElementById('f-keys').placeholder = '正在读取现有 Key...';
   document.getElementById('keys-hint').textContent = `正在读取已配置的 ${ch.key_count || 0} 个 Key`;
@@ -768,13 +937,13 @@ function renderMappingEditor() {
   for (const [alias, upstream] of Object.entries(fetchedMapping)) {
     reverse[upstream] = alias;
   }
-  let html = '<div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 rounded-t-box bg-base-200 px-3 py-2 text-xs font-semibold text-base-content/60"><span>上游模型 ID</span><span></span><span>客户端别名（留空 = 直通）</span></div>';
+  let html = '<div class="hidden grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 rounded-t-box bg-base-200 px-3 py-2 text-xs font-semibold text-base-content/60 md:grid"><span>上游模型 ID</span><span></span><span>客户端别名（留空 = 直通）</span></div>';
   for (const m of currentModels) {
     const alias = reverse[m] || '';
     html += `<div class="mapping-row border-t border-base-300">
       <div class="truncate bg-base-200/60 px-3 py-2 font-mono text-xs">${esc(m)}</div>
-      <div class="px-2 text-base-content/40">→</div>
-      <input type="text" class="mapping-alias input input-sm rounded-none border-0 font-mono" data-upstream="${esc(m)}" value="${esc(alias)}" placeholder="${esc(m)}">
+      <div class="hidden px-2 text-base-content/40 md:block">→</div>
+      <input type="text" class="mapping-alias input input-sm rounded-none border-0 font-mono" data-upstream="${esc(m)}" value="${esc(alias)}" placeholder="别名：${esc(m)}">
     </div>`;
   }
   document.getElementById('mapping-editor').innerHTML = `<div class="overflow-hidden rounded-box border border-base-300">${html}</div>`;
@@ -887,6 +1056,7 @@ async function saveChannel() {
   const baseURL = document.getElementById('f-baseurl').value.trim();
   const baseURLClaude = document.getElementById('f-baseurl-claude').value.trim();
   const baseURLGemini = document.getElementById('f-baseurl-gemini').value.trim();
+  const supportsResponses = document.getElementById('f-supports-responses').checked;
   const keysRaw = document.getElementById('f-keys').value.trim();
   const modelsRaw = document.getElementById('f-models').value.trim();
   const priority = parseInt(document.getElementById('f-priority').value) || 10;
@@ -914,7 +1084,7 @@ async function saveChannel() {
     return;
   }
 
-  const body = { name, type, base_url: baseURL, base_url_claude: baseURLClaude, base_url_gemini: baseURLGemini, keys, models, model_mapping, priority, weight, enabled };
+  const body = { name, type, base_url: baseURL, base_url_claude: baseURLClaude, base_url_gemini: baseURLGemini, supports_responses: supportsResponses, keys, models, model_mapping, priority, weight, enabled };
   try {
     if (editName) {
       await api('/admin/channels/'+encodeURIComponent(editName), { method:'PUT', body:JSON.stringify(body) });
@@ -955,9 +1125,9 @@ async function loadStats() {
   try {
     const params = new URLSearchParams({limit: String(logLimit), page: String(logPage)});
     const protocol = document.getElementById('log-filter-protocol')?.value || '';
-    const model = document.getElementById('log-filter-model')?.value.trim() || '';
-    const channel = document.getElementById('log-filter-channel')?.value.trim() || '';
-    const accessKey = document.getElementById('log-filter-access-key')?.value.trim() || '';
+    const model = document.getElementById('log-filter-model')?.value || '';
+    const channel = document.getElementById('log-filter-channel')?.value || '';
+    const accessKey = document.getElementById('log-filter-access-key')?.value || '';
     const status = document.getElementById('log-filter-status')?.value || '';
     const q = document.getElementById('log-filter-q')?.value.trim() || '';
     if (protocol) params.set('protocol', protocol);
@@ -998,7 +1168,8 @@ function renderLogs(logs) {
     document.getElementById('logs-table').innerHTML = '<div class="rounded-[1.5rem] border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">暂无请求记录</div>';
     return;
   }
-  let html = '<div class="overflow-x-auto rounded-[1.5rem] border border-slate-200 bg-white"><table class="table table-sm"><thead class="text-slate-500"><tr><th>时间</th><th>请求密钥</th><th>协议</th><th>模式</th><th>模型</th><th>Channel / Key</th><th>状态</th><th>耗时</th><th>尝试</th><th>错误</th><th>操作</th></tr></thead><tbody>';
+  let tableHtml = '<div class="desktop-only mobile-table-scroll overflow-x-auto rounded-[1.5rem] border border-slate-200 bg-white"><table class="table table-sm min-w-[68rem]"><thead class="text-slate-500"><tr><th>时间</th><th>请求密钥</th><th>协议</th><th>模式</th><th>模型</th><th>Channel / Key</th><th>状态</th><th>耗时</th><th>尝试</th><th>错误</th><th>操作</th></tr></thead><tbody>';
+  let cardHtml = '<div class="mobile-only space-y-3">';
   for (const l of logs) {
     const ok = l.status >= 200 && l.status < 400;
     const statusHtml = ok
@@ -1015,7 +1186,8 @@ function renderLogs(logs) {
       const aok = a.status >= 200 && a.status < 400;
       return `<span class="rounded-full border ${aok?'border-emerald-200 bg-emerald-50 text-emerald-700':'border-rose-200 bg-rose-50 text-rose-700'} px-2 py-0.5 text-[11px]">${esc(a.channel)} #${a.key_index} ${a.status||'ERR'}</span>`;
     }).join(' ') : '-';
-    html += `<tr class="border-white/5 hover:bg-slate-50">
+    const modeLabel = l.mode === 'converted' ? '转换' : '透穿';
+    tableHtml += `<tr class="border-white/5 hover:bg-slate-50">
       <td class="text-xs text-slate-500">${esc(l.timestamp)}</td>
       <td><span class="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700">${esc(l.access_key || '-')}</span></td>
       <td><span class="rounded-full bg-cyan-50 px-2 py-1 text-xs text-cyan-700">${proto}</span></td>
@@ -1028,9 +1200,32 @@ function renderLogs(logs) {
       <td class="max-w-xs truncate text-xs text-error">${esc(l.error||'-')}</td>
       <td><button class="btn btn-sm border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick="openLogDetail(${l.id})">详情</button></td>
     </tr>`;
+    cardHtml += `<section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div class="mb-3 flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="mb-1 flex flex-wrap items-center gap-1.5">
+            <span class="rounded-full bg-cyan-50 px-2 py-1 text-xs text-cyan-700">${proto}</span>
+            ${mode}
+            <span class="rounded-full ${ok?'bg-emerald-50 text-emerald-700':'bg-rose-50 text-rose-700'} px-2 py-1 text-xs">${l.status || 'ERR'}</span>
+          </div>
+          <div class="truncate font-mono text-sm text-slate-900">${esc(l.model || '-')}</div>
+          ${l.resolved_model && l.resolved_model !== l.model ? `<div class="truncate font-mono text-xs text-slate-500">→ ${esc(l.resolved_model)}</div>` : ''}
+        </div>
+        <button class="btn btn-sm touch-target shrink-0 border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick="openLogDetail(${l.id})">详情</button>
+      </div>
+      <div class="grid grid-cols-2 gap-2 text-xs text-slate-500">
+        <div class="rounded-xl bg-slate-50 p-2"><div>耗时</div><div class="mt-1 font-semibold text-slate-900">${l.duration}ms</div></div>
+        <div class="rounded-xl bg-slate-50 p-2"><div>Channel</div><div class="mt-1 truncate font-semibold text-slate-900">${esc(l.channel || (lastAttempt && lastAttempt.channel) || '-')}</div></div>
+        <div class="rounded-xl bg-slate-50 p-2"><div>请求密钥</div><div class="mt-1 truncate font-mono text-slate-900">${esc(l.access_key || '-')}</div></div>
+        <div class="rounded-xl bg-slate-50 p-2"><div>时间</div><div class="mt-1 text-slate-900">${esc((l.timestamp || '').replace('T', ' '))}</div></div>
+      </div>
+      ${attempts.length ? `<div class="scroll-fade mt-3 flex gap-1.5 overflow-x-auto pb-1">${attemptHtml}</div>` : ''}
+      ${l.error ? `<div class="mt-3 rounded-xl bg-rose-50 p-2 text-xs text-rose-700">${esc(l.error)}</div>` : ''}
+    </section>`;
   }
-  html += '</tbody></table></div>';
-  document.getElementById('logs-table').innerHTML = html;
+  tableHtml += '</tbody></table></div>';
+  cardHtml += '</div>';
+  document.getElementById('logs-table').innerHTML = tableHtml + cardHtml;
 }
 
 function changeLogPage(delta) {
@@ -1087,7 +1282,7 @@ function renderLogDetail(l) {
     </div>
     <div class="mb-4">
       <div class="mb-2 text-xs font-semibold uppercase text-base-content/50">重试过程</div>
-      <div class="overflow-x-auto rounded-box border border-base-300"><table class="table table-sm"><thead><tr><th>#</th><th>Channel</th><th>Key</th><th>Masked</th><th>模型</th><th>状态</th><th>耗时</th><th>错误</th></tr></thead><tbody>${attemptRows}</tbody></table></div>
+      <div class="mobile-table-scroll overflow-x-auto rounded-box border border-base-300"><table class="table table-sm min-w-[48rem]"><thead><tr><th>#</th><th>Channel</th><th>Key</th><th>Masked</th><th>模型</th><th>状态</th><th>耗时</th><th>错误</th></tr></thead><tbody>${attemptRows}</tbody></table></div>
     </div>
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div>
@@ -1103,6 +1298,7 @@ function renderLogDetail(l) {
 }
 
 function startStatsAutoRefresh() {
+  loadLogAccessKeyOptions().catch(() => {});
   loadStats();
   if (!autoRefreshTimer) {
     autoRefreshTimer = setInterval(loadStats, 3000);

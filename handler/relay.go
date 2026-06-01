@@ -80,6 +80,8 @@ func (h *Relay) ChatCompletions(c *gin.Context) {
 		return
 	}
 
+	rawBody = h.applyRawOpenAISystemPrompt(rawBody, &req)
+
 	start := time.Now()
 	result, err := h.engine.DoRaw(c.Request.Context(), "openai", req.Model, req.Stream, rawBody, c.Request.Header)
 	if err != nil {
@@ -126,6 +128,25 @@ func (h *Relay) ChatCompletions(c *gin.Context) {
 	})
 
 	h.writeRawResponse(c, result.Response)
+}
+
+func (h *Relay) applyRawOpenAISystemPrompt(rawBody []byte, req *model.ChatCompletionRequest) []byte {
+	ch, resolved, err := h.engine.PeekRoute(req.Model)
+	if err != nil || ch == nil {
+		return rawBody
+	}
+	prompt := systemPromptForModel(req.Model, resolved)
+	if prompt == "" {
+		return rawBody
+	}
+	reqCopy := *req
+	reqCopy.Messages = append([]model.Message(nil), req.Messages...)
+	applyModelSystemPrompt(&reqCopy, prompt)
+	data, err := json.Marshal(reqCopy)
+	if err != nil {
+		return rawBody
+	}
+	return data
 }
 
 func requestAccessKey(c *gin.Context) string {

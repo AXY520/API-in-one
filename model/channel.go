@@ -8,19 +8,20 @@ import (
 
 // Channel represents a configured upstream API provider.
 type Channel struct {
-	Name          string
-	Type          string // openai | claude | gemini
-	BaseURL       string
-	BaseURLClaude string // optional: Claude protocol URL
-	BaseURLGemini string // optional: Gemini protocol URL
-	Keys          []string
-	DisabledKeys  map[string]bool
-	Models        []string
-	ModelMapping  map[string]string // alias → upstream model id
-	Priority      int
-	Weight        int
-	Enabled       bool
-	KeyStats      []KeyStats
+	Name              string
+	Type              string // openai | claude | gemini
+	BaseURL           string
+	BaseURLClaude     string // optional: Claude protocol URL
+	BaseURLGemini     string // optional: Gemini protocol URL
+	SupportsResponses bool   // whether upstream accepts /v1/responses natively
+	Keys              []string
+	DisabledKeys      map[string]bool
+	Models            []string
+	ModelMapping      map[string]string // alias → upstream model id
+	Priority          int
+	Weight            int
+	Enabled           bool
+	KeyStats          []KeyStats
 
 	keyIndex  atomic.Uint64
 	failCount atomic.Int32
@@ -42,22 +43,23 @@ type KeyStats struct {
 }
 
 // NewChannel creates a Channel from config.
-func NewChannel(name, typ, baseURL, baseURLClaude, baseURLGemini string, keys, models []string, modelMapping map[string]string, priority, weight int) *Channel {
+func NewChannel(name, typ, baseURL, baseURLClaude, baseURLGemini string, supportsResponses bool, keys, models []string, modelMapping map[string]string, priority, weight int) *Channel {
 	if modelMapping == nil {
 		modelMapping = make(map[string]string)
 	}
 	ch := &Channel{
-		Name:          name,
-		Type:          typ,
-		BaseURL:       baseURL,
-		BaseURLClaude: baseURLClaude,
-		BaseURLGemini: baseURLGemini,
-		Keys:          keys,
-		Models:        models,
-		ModelMapping:  modelMapping,
-		Priority:      priority,
-		Weight:        weight,
-		Enabled:       true,
+		Name:              name,
+		Type:              typ,
+		BaseURL:           baseURL,
+		BaseURLClaude:     baseURLClaude,
+		BaseURLGemini:     baseURLGemini,
+		SupportsResponses: supportsResponses,
+		Keys:              keys,
+		Models:            models,
+		ModelMapping:      modelMapping,
+		Priority:          priority,
+		Weight:            weight,
+		Enabled:           true,
 	}
 	ch.initKeyStats()
 	return ch

@@ -6,8 +6,8 @@ import (
 )
 
 func TestSelectChannelUsesLowestPriority(t *testing.T) {
-	high := model.NewChannel("high", "openai", "https://high.example", "", "", []string{"k"}, []string{"m"}, nil, 20, 100)
-	low := model.NewChannel("low", "openai", "https://low.example", "", "", []string{"k"}, []string{"m"}, nil, 10, 100)
+	high := model.NewChannel("high", "openai", "https://high.example", "", "", false, []string{"k"}, []string{"m"}, nil, 20, 100)
+	low := model.NewChannel("low", "openai", "https://low.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
 	pool := NewPool([]*model.Channel{high, low})
 
 	for i := 0; i < 5; i++ {
@@ -22,8 +22,8 @@ func TestSelectChannelUsesLowestPriority(t *testing.T) {
 }
 
 func TestSelectChannelUsesWeightWithinSamePriority(t *testing.T) {
-	one := model.NewChannel("one", "openai", "https://one.example", "", "", []string{"k"}, []string{"m"}, nil, 10, 1)
-	three := model.NewChannel("three", "openai", "https://three.example", "", "", []string{"k"}, []string{"m"}, nil, 10, 3)
+	one := model.NewChannel("one", "openai", "https://one.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 1)
+	three := model.NewChannel("three", "openai", "https://three.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 3)
 	pool := NewPool([]*model.Channel{one, three})
 
 	counts := map[string]int{}
@@ -40,6 +40,28 @@ func TestSelectChannelUsesWeightWithinSamePriority(t *testing.T) {
 	}
 }
 
+func TestSelectChannelAlternatesEqualWeightChannels(t *testing.T) {
+	a := model.NewChannel("a", "openai", "https://a.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	b := model.NewChannel("b", "openai", "https://b.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	pool := NewPool([]*model.Channel{a, b})
+
+	var got []string
+	for i := 0; i < 4; i++ {
+		ch, _, err := pool.SelectChannel("m")
+		if err != nil {
+			t.Fatalf("select channel: %v", err)
+		}
+		got = append(got, ch.Name)
+	}
+
+	want := []string{"a", "b", "a", "b"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected smooth equal-weight rotation %v, got %v", want, got)
+		}
+	}
+}
+
 func TestGetAvailableModelsHidesMappedUpstreamIDs(t *testing.T) {
 	ch := model.NewChannel(
 		"mapped",
@@ -47,6 +69,7 @@ func TestGetAvailableModelsHidesMappedUpstreamIDs(t *testing.T) {
 		"https://mapped.example",
 		"",
 		"",
+		false,
 		[]string{"k"},
 		[]string{"upstream-model", "direct-model"},
 		map[string]string{"public-model": "upstream-model"},
@@ -70,8 +93,8 @@ func TestGetAvailableModelsHidesMappedUpstreamIDs(t *testing.T) {
 }
 
 func TestSelectChannelForProtocolRequiresChannelType(t *testing.T) {
-	openai := model.NewChannel("openai", "openai", "https://openai.example", "", "", []string{"k"}, []string{"m"}, nil, 10, 100)
-	claude := model.NewChannel("claude", "claude", "https://claude.example", "", "", []string{"k"}, []string{"m"}, nil, 10, 100)
+	openai := model.NewChannel("openai", "openai", "https://openai.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	claude := model.NewChannel("claude", "claude", "https://claude.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
 	pool := NewPool([]*model.Channel{openai, claude})
 
 	ch, _, err := pool.SelectChannelForProtocol("m", "claude")
@@ -85,5 +108,41 @@ func TestSelectChannelForProtocolRequiresChannelType(t *testing.T) {
 	_, _, err = NewPool([]*model.Channel{openai}).SelectChannelForProtocol("m", "claude")
 	if err != ErrNoAvailableChannel {
 		t.Fatalf("expected no channel for missing protocol, got %v", err)
+	}
+}
+
+func TestPeekChannelResolvesMappingWithoutAdvancingRoundRobin(t *testing.T) {
+	xiaomi := model.NewChannel("小米", "openai", "https://xiaomi.example", "", "", false, []string{"k"}, []string{"mimo-v2.5-pro"}, map[string]string{"codex-alias": "mimo-v2.5-pro"}, 10, 100)
+	other := model.NewChannel("other", "openai", "https://other.example", "", "", false, []string{"k"}, []string{"codex-alias"}, nil, 10, 100)
+	pool := NewPool([]*model.Channel{xiaomi, other})
+
+	ch, resolved, err := pool.PeekChannel("codex-alias")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Name != "小米" || resolved != "mimo-v2.5-pro" {
+		t.Fatalf("unexpected peek route: %s %s", ch.Name, resolved)
+	}
+
+	first, _, err := pool.SelectChannel("codex-alias")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Name != "小米" {
+		t.Fatalf("peek should not advance route state, got first select %s", first.Name)
+	}
+}
+
+func TestSelectResponsesChannelRequiresSupportFlag(t *testing.T) {
+	chatOnly := model.NewChannel("chat-only", "openai", "https://chat.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	native := model.NewChannel("native", "openai", "https://native.example", "", "", true, []string{"k"}, []string{"m"}, nil, 10, 100)
+	pool := NewPool([]*model.Channel{chatOnly, native})
+
+	ch, _, err := pool.SelectResponsesChannel("m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Name != "native" {
+		t.Fatalf("expected native responses channel, got %s", ch.Name)
 	}
 }

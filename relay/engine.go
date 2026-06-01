@@ -38,6 +38,10 @@ func NewEngine(pool *Pool) *Engine {
 	}
 }
 
+func (e *Engine) PeekRoute(requestedModel string) (*model.Channel, string, error) {
+	return e.pool.PeekChannel(requestedModel)
+}
+
 // RelayResult holds the outcome of a relay attempt.
 type RelayResult struct {
 	Response *model.ChatCompletionResponse
@@ -106,6 +110,12 @@ func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, proto
 
 		reqCopy := *req
 		reqCopy.Model = resolvedModel
+		if len(req.Messages) > 0 {
+			reqCopy.Messages = append([]model.Message(nil), req.Messages...)
+		}
+		if len(req.Tools) > 0 {
+			reqCopy.Tools = append([]model.Tool(nil), req.Tools...)
+		}
 
 		key := ch.NextKey()
 		if key == "" {
@@ -293,6 +303,99 @@ func (e *Engine) DoRaw(ctx context.Context, protocol, requestedModel string, str
 	}
 }
 
+func (e *Engine) DoRawResponses(ctx context.Context, requestedModel string, stream bool, rawBody []byte, inboundHeader http.Header) (*RawRelayResult, error) {
+	var lastErr error
+	var attempts []AttemptLog
+
+	for attempt := 0; attempt < e.maxRetries; attempt++ {
+		ch, resolvedModel, err := e.pool.SelectResponsesChannel(requestedModel)
+		if err != nil {
+			return nil, err
+		}
+		key := ch.NextKey()
+		if key == "" {
+			lastErr = fmt.Errorf("channel %s: no key available", ch.Name)
+			attempts = append(attempts, AttemptLog{
+				Attempt:  attempt + 1,
+				Channel:  ch.Name,
+				Model:    resolvedModel,
+				Status:   0,
+				Error:    lastErr.Error(),
+				Protocol: "responses",
+			})
+			continue
+		}
+
+		body, err := replaceRawModel(rawBody, resolvedModel)
+		if err != nil {
+			return nil, err
+		}
+		req, err := buildRawHTTPRequest(ctx, ch, "responses", key, body, inboundHeader)
+		if err != nil {
+			return nil, err
+		}
+
+		attemptStart := time.Now()
+		resp, err := e.httpClient.Do(req)
+		attemptDuration := time.Since(attemptStart)
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		ch.RecordKeyResult(key, status, attemptDuration, err)
+		attemptLog := AttemptLog{
+			Attempt:     attempt + 1,
+			Channel:     ch.Name,
+			KeyIndex:    ch.KeyIndex(key),
+			MaskedKey:   maskKey(key),
+			Model:       resolvedModel,
+			Status:      status,
+			DurationMs:  attemptDuration.Milliseconds(),
+			Error:       errStr(err),
+			Retryable:   isRetryableStatus(status),
+			Protocol:    "responses",
+			AdaptorName: "responses",
+		}
+		attempts = append(attempts, attemptLog)
+		if err != nil || status < 200 || status >= 400 {
+			if resp != nil {
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+				resp.Body.Close()
+				if err == nil {
+					err = fmt.Errorf("upstream error (status %d): %s", status, string(body))
+				}
+			}
+			if status == 0 || status >= 500 {
+				ch.RecordFailure()
+			}
+			lastErr = err
+			if isRetryableStatus(status) && attempt < e.maxRetries-1 {
+				delay := backoffDelay(attempt)
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(delay):
+				}
+			}
+			continue
+		}
+
+		ch.RecordSuccess()
+		return &RawRelayResult{
+			Response: resp,
+			IsStream: stream,
+			Channel:  ch.Name,
+			Model:    resolvedModel,
+			Attempts: attempts,
+		}, nil
+	}
+
+	return nil, &RelayError{
+		Err:      fmt.Errorf("%w: %v", ErrAllRetriesFailed, lastErr),
+		Attempts: attempts,
+	}
+}
+
 func replaceRawModel(rawBody []byte, modelName string) ([]byte, error) {
 	var body map[string]interface{}
 	if err := json.Unmarshal(rawBody, &body); err != nil {
@@ -308,6 +411,8 @@ func buildRawHTTPRequest(ctx context.Context, ch *model.Channel, protocol, key s
 	switch protocol {
 	case "claude":
 		url = buildRawClaudeURL(baseURL)
+	case "responses":
+		url = buildRawResponsesURL(baseURL)
 	default:
 		url = strings.TrimRight(baseURL, "/") + "/chat/completions"
 	}
@@ -332,6 +437,14 @@ func buildRawHTTPRequest(ctx context.Context, ch *model.Channel, protocol, key s
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
 	return req, nil
+}
+
+func buildRawResponsesURL(baseURL string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(baseURL, "/v1/responses") || strings.HasSuffix(baseURL, "/responses") {
+		return baseURL
+	}
+	return baseURL + "/responses"
 }
 
 func buildRawClaudeURL(baseURL string) string {

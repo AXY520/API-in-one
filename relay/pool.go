@@ -5,8 +5,9 @@ import (
 	"api-in-one/model"
 	"api-in-one/relay/adaptor"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
-	"sync/atomic"
 )
 
 // Channel is an alias for model.Channel for convenience.
@@ -14,7 +15,7 @@ type Channel = model.Channel
 
 // NewChannelFromConfig creates a Channel from a config.ChannelConfig.
 func NewChannelFromConfig(cc config.ChannelConfig) *Channel {
-	ch := model.NewChannel(cc.Name, cc.Type, cc.BaseURL, cc.BaseURLClaude, cc.BaseURLGemini, cc.Keys, cc.Models, cc.ModelMapping, cc.Priority, cc.Weight)
+	ch := model.NewChannel(cc.Name, cc.Type, cc.BaseURL, cc.BaseURLClaude, cc.BaseURLGemini, cc.SupportsResponses, cc.Keys, cc.Models, cc.ModelMapping, cc.Priority, cc.Weight)
 	if cc.Enabled != nil {
 		ch.Enabled = *cc.Enabled
 	}
@@ -24,16 +25,23 @@ func NewChannelFromConfig(cc config.ChannelConfig) *Channel {
 
 // Pool manages channels and provides model-based routing with round-robin.
 type Pool struct {
-	channels []*model.Channel
-	adaptors map[string]adaptor.Adaptor // type -> adaptor
-	mu       sync.RWMutex
-	rrIndex  atomic.Uint64
+	channels    []*model.Channel
+	adaptors    map[string]adaptor.Adaptor // type -> adaptor
+	mu          sync.RWMutex
+	routeStates map[string]map[string]int
+}
+
+type routeCandidate struct {
+	channel *model.Channel
+	model   string // resolved upstream model id
+	weight  int
 }
 
 // NewPool creates a Pool from config channels.
 func NewPool(channels []*model.Channel) *Pool {
 	return &Pool{
-		channels: channels,
+		channels:    channels,
+		routeStates: make(map[string]map[string]int),
 		adaptors: map[string]adaptor.Adaptor{
 			"openai": &adaptor.OpenAIAdaptor{},
 			"claude": &adaptor.ClaudeAdaptor{},
@@ -55,35 +63,87 @@ func (p *Pool) SelectChannel(requestedModel string) (*model.Channel, string, err
 	return p.selectChannel(requestedModel, "")
 }
 
+func (p *Pool) PeekChannel(requestedModel string) (*model.Channel, string, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.bestCandidateLocked(requestedModel, "")
+}
+
 func (p *Pool) SelectChannelForProtocol(requestedModel string, protocol string) (*model.Channel, string, error) {
 	return p.selectChannel(requestedModel, protocol)
 }
 
-func (p *Pool) selectChannel(requestedModel string, protocol string) (*model.Channel, string, error) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+func (p *Pool) SelectResponsesChannel(requestedModel string) (*model.Channel, string, error) {
+	return p.selectChannel(requestedModel, "responses")
+}
 
-	type candidate struct {
-		channel *model.Channel
-		model   string // resolved upstream model id
+func (p *Pool) selectChannel(requestedModel string, protocol string) (*model.Channel, string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	weighted, err := p.weightedCandidatesLocked(requestedModel, protocol)
+	if err != nil {
+		return nil, "", err
 	}
-	var candidates []candidate
+	totalWeight := 0
+	for i := range weighted {
+		weight := weighted[i].channel.Weight
+		if weight <= 0 {
+			weight = 1
+		}
+		weighted[i].weight = weight
+		totalWeight += weight
+	}
+	stateKey := routeStateKey(requestedModel, protocol, weighted)
+	state := p.routeStates[stateKey]
+	if state == nil {
+		state = make(map[string]int, len(weighted))
+		p.routeStates[stateKey] = state
+	}
+	selected := weighted[0]
+	bestScore := 0
+	for i, c := range weighted {
+		state[c.channel.Name] += c.weight
+		score := state[c.channel.Name]
+		if i == 0 || score > bestScore {
+			selected = c
+			bestScore = score
+		}
+	}
+	state[selected.channel.Name] -= totalWeight
+	return selected.channel, selected.model, nil
+}
+
+func (p *Pool) bestCandidateLocked(requestedModel string, protocol string) (*model.Channel, string, error) {
+	weighted, err := p.weightedCandidatesLocked(requestedModel, protocol)
+	if err != nil {
+		return nil, "", err
+	}
+	return weighted[0].channel, weighted[0].model, nil
+}
+
+func (p *Pool) weightedCandidatesLocked(requestedModel string, protocol string) ([]routeCandidate, error) {
+	var candidates []routeCandidate
 
 	for _, ch := range p.channels {
 		if !ch.IsHealthy() {
 			continue
 		}
-		if protocol != "" && ch.Type != protocol {
+		if protocol == "responses" {
+			if ch.Type != "openai" || !ch.SupportsResponses {
+				continue
+			}
+		} else if protocol != "" && ch.Type != protocol {
 			continue
 		}
 		if ch.HasModel(requestedModel) {
 			resolved := ch.ResolveModel(requestedModel)
-			candidates = append(candidates, candidate{ch, resolved})
+			candidates = append(candidates, routeCandidate{channel: ch, model: resolved})
 		}
 	}
 
 	if len(candidates) == 0 {
-		return nil, "", ErrNoAvailableChannel
+		return nil, ErrNoAvailableChannel
 	}
 
 	lowestPriority := candidates[0].channel.Priority
@@ -93,39 +153,27 @@ func (p *Pool) selectChannel(requestedModel string, protocol string) (*model.Cha
 		}
 	}
 
-	var weighted []candidate
+	var weighted []routeCandidate
 	for _, c := range candidates {
 		if c.channel.Priority == lowestPriority {
 			weighted = append(weighted, c)
 		}
 	}
+	return weighted, nil
+}
 
-	totalWeight := 0
-	for _, c := range weighted {
-		weight := c.channel.Weight
-		if weight <= 0 {
-			weight = 1
-		}
-		totalWeight += weight
+func routeStateKey(requestedModel string, protocol string, candidates []routeCandidate) string {
+	var b strings.Builder
+	b.WriteString(protocol)
+	b.WriteByte('|')
+	b.WriteString(requestedModel)
+	for _, c := range candidates {
+		b.WriteByte('|')
+		b.WriteString(c.channel.Name)
+		b.WriteByte(':')
+		b.WriteString(strconv.Itoa(c.weight))
 	}
-	if totalWeight <= 0 {
-		totalWeight = len(weighted)
-	}
-
-	idx := int((p.rrIndex.Add(1) - 1) % uint64(totalWeight))
-	selected := weighted[0]
-	for _, c := range weighted {
-		weight := c.channel.Weight
-		if weight <= 0 {
-			weight = 1
-		}
-		if idx < weight {
-			selected = c
-			break
-		}
-		idx -= weight
-	}
-	return selected.channel, selected.model, nil
+	return b.String()
 }
 
 // UpdateChannels replaces the channel list (for hot reload).
@@ -137,6 +185,7 @@ func (p *Pool) UpdateChannels(channels []*model.Channel) {
 		ch.ResetHealth()
 	}
 	p.channels = channels
+	p.routeStates = make(map[string]map[string]int)
 	slog.Info("pool updated", "channels", len(channels))
 }
 

@@ -76,3 +76,97 @@ func TestChatCompletionToResponsesDoesNotParseFakeToolCallForNormalModels(t *tes
 		t.Fatalf("expected original text to be preserved, got %#v", content)
 	}
 }
+
+func TestChatCompletionToResponsesIncludesNormalText(t *testing.T) {
+	resp := &model.ChatCompletionResponse{
+		ID:      "text",
+		Created: 1,
+		Choices: []model.Choice{{
+			Message: &model.Message{
+				Role:    "assistant",
+				Content: "这是实际回复内容",
+			},
+		}},
+	}
+
+	out := chatCompletionToResponses(resp, "gpt-compatible", false)
+	items := out["output"].([]map[string]interface{})
+	if len(items) != 1 || items[0]["type"] != "message" {
+		t.Fatalf("expected message output, got %#v", items)
+	}
+	content := items[0]["content"].([]map[string]interface{})
+	if content[0]["text"] != "这是实际回复内容" {
+		t.Fatalf("missing response text: %#v", content)
+	}
+}
+
+func TestResponsesToChatCompletionDropsReasoningForNormalModels(t *testing.T) {
+	req := &responsesInboundRequest{
+		Model: "gpt-compatible",
+		Input: []interface{}{
+			map[string]interface{}{
+				"type":              "reasoning",
+				"encrypted_content": "mimo-only reasoning",
+			},
+			map[string]interface{}{
+				"type": "message",
+				"role": "assistant",
+				"content": []interface{}{
+					map[string]interface{}{"type": "output_text", "text": "previous answer"},
+				},
+			},
+			map[string]interface{}{
+				"type":    "function_call_output",
+				"call_id": "call_1",
+				"output":  "result",
+			},
+		},
+	}
+
+	out := responsesToChatCompletion(req, false)
+	for _, msg := range out.Messages {
+		if strings.Contains(msg.ReasoningContent, "mimo-only") {
+			t.Fatalf("normal model should not receive MiMo reasoning: %#v", out.Messages)
+		}
+	}
+}
+
+func TestResponsesToChatCompletionMapsLocalShellForMiMo(t *testing.T) {
+	req := &responsesInboundRequest{
+		Model: "mimo-v2.5-pro",
+		Input: "hi",
+		Tools: []interface{}{
+			map[string]interface{}{"type": "local_shell"},
+			map[string]interface{}{"type": "file_search"},
+		},
+	}
+
+	out := responsesToChatCompletion(req, true)
+	if len(out.Tools) != 1 {
+		t.Fatalf("expected one converted tool, got %#v", out.Tools)
+	}
+	if out.Tools[0].Type != "function" || out.Tools[0].Function.Name != "shell" {
+		t.Fatalf("expected local_shell to map to shell function, got %#v", out.Tools[0])
+	}
+}
+
+func TestResponsesToChatCompletionMapsToolSearch(t *testing.T) {
+	req := &responsesInboundRequest{
+		Model: "mimo-v2.5-pro",
+		Input: "hi",
+		Tools: []interface{}{
+			map[string]interface{}{
+				"type":        "tool_search",
+				"description": "Search deferred tool metadata.",
+				"parameters": map[string]interface{}{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	out := responsesToChatCompletion(req, true)
+	if len(out.Tools) != 1 || out.Tools[0].Function.Name != "tool_search" {
+		t.Fatalf("expected tool_search function, got %#v", out.Tools)
+	}
+}

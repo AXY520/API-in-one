@@ -39,20 +39,21 @@ func NewAdmin(pool *relay.Pool) *Admin {
 
 // ChannelStatus is the JSON representation of a channel for admin API.
 type ChannelStatus struct {
-	Name          string            `json:"name"`
-	Type          string            `json:"type"`
-	BaseURL       string            `json:"base_url"`
-	BaseURLClaude string            `json:"base_url_claude,omitempty"`
-	BaseURLGemini string            `json:"base_url_gemini,omitempty"`
-	KeyCount      int               `json:"key_count"`
-	MaskedKeys    []string          `json:"masked_keys"`
-	KeyStats      []KeyStatus       `json:"key_stats"`
-	Models        []string          `json:"models"`
-	ModelMapping  map[string]string `json:"model_mapping"`
-	Priority      int               `json:"priority"`
-	Weight        int               `json:"weight"`
-	Enabled       bool              `json:"enabled"`
-	Healthy       bool              `json:"healthy"`
+	Name              string            `json:"name"`
+	Type              string            `json:"type"`
+	BaseURL           string            `json:"base_url"`
+	BaseURLClaude     string            `json:"base_url_claude,omitempty"`
+	BaseURLGemini     string            `json:"base_url_gemini,omitempty"`
+	SupportsResponses bool              `json:"supports_responses"`
+	KeyCount          int               `json:"key_count"`
+	MaskedKeys        []string          `json:"masked_keys"`
+	KeyStats          []KeyStatus       `json:"key_stats"`
+	Models            []string          `json:"models"`
+	ModelMapping      map[string]string `json:"model_mapping"`
+	Priority          int               `json:"priority"`
+	Weight            int               `json:"weight"`
+	Enabled           bool              `json:"enabled"`
+	Healthy           bool              `json:"healthy"`
 }
 
 type KeyStatus struct {
@@ -76,20 +77,21 @@ func (h *Admin) ListChannels(c *gin.Context) {
 	var result []ChannelStatus
 	for _, ch := range channels {
 		result = append(result, ChannelStatus{
-			Name:          ch.Name,
-			Type:          ch.Type,
-			BaseURL:       ch.BaseURL,
-			BaseURLClaude: ch.BaseURLClaude,
-			BaseURLGemini: ch.BaseURLGemini,
-			KeyCount:      len(ch.Keys),
-			MaskedKeys:    maskKeys(ch.Keys),
-			KeyStats:      buildKeyStatus(ch.GetKeyStats()),
-			Models:        ch.Models,
-			ModelMapping:  ch.ModelMapping,
-			Priority:      ch.Priority,
-			Weight:        ch.Weight,
-			Enabled:       ch.Enabled,
-			Healthy:       ch.IsHealthy(),
+			Name:              ch.Name,
+			Type:              ch.Type,
+			BaseURL:           ch.BaseURL,
+			BaseURLClaude:     ch.BaseURLClaude,
+			BaseURLGemini:     ch.BaseURLGemini,
+			SupportsResponses: ch.SupportsResponses,
+			KeyCount:          len(ch.Keys),
+			MaskedKeys:        maskKeys(ch.Keys),
+			KeyStats:          buildKeyStatus(ch.GetKeyStats()),
+			Models:            ch.Models,
+			ModelMapping:      ch.ModelMapping,
+			Priority:          ch.Priority,
+			Weight:            ch.Weight,
+			Enabled:           ch.Enabled,
+			Healthy:           ch.IsHealthy(),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -485,10 +487,11 @@ func (h *Admin) ReloadConfig(c *gin.Context) {
 func (h *Admin) GetSettings(c *gin.Context) {
 	cfg := config.Get()
 	c.JSON(http.StatusOK, gin.H{
-		"port":        cfg.Server.Port,
-		"admin_key":   cfg.Server.AdminKey,
-		"access_keys": cfg.Server.AccessKeys,
-		"models":      h.pool.GetAvailableModels(),
+		"port":                 cfg.Server.Port,
+		"admin_key":            cfg.Server.AdminKey,
+		"access_keys":          cfg.Server.AccessKeys,
+		"models":               h.pool.GetAvailableModels(),
+		"model_system_prompts": cfg.Server.ModelSystemPrompts,
 	})
 }
 
@@ -507,6 +510,39 @@ func (h *Admin) UpdateAccessKeys(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "access_keys": config.GetAccessKeyConfigs()})
+}
+
+func (h *Admin) UpdateModelSystemPrompts(c *gin.Context) {
+	var req struct {
+		Prompts map[string]string `json:"model_system_prompts"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		return
+	}
+	req.Prompts = h.normalizeModelSystemPrompts(req.Prompts)
+	if err := config.UpdateModelSystemPrompts(req.Prompts); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update model system prompts: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "model_system_prompts": config.GetModelSystemPrompts()})
+}
+
+func (h *Admin) normalizeModelSystemPrompts(prompts map[string]string) map[string]string {
+	visible := make(map[string]bool)
+	for _, m := range h.pool.GetAvailableModels() {
+		visible[m.ID] = true
+	}
+	result := make(map[string]string, len(prompts))
+	for modelName, prompt := range prompts {
+		modelName = strings.TrimSpace(modelName)
+		prompt = strings.TrimSpace(prompt)
+		if modelName == "" || prompt == "" || !visible[modelName] {
+			continue
+		}
+		result[modelName] = prompt
+	}
+	return result
 }
 
 func (h *Admin) normalizeAccessKeyModelPolicies(keys []config.AccessKeyConfig) []config.AccessKeyConfig {

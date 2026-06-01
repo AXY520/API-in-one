@@ -7,7 +7,7 @@ import (
 )
 
 func TestNextKeySkipsUnhealthyKeys(t *testing.T) {
-	ch := NewChannel("test", "openai", "https://example.com", "", "", []string{"key-a", "key-b"}, []string{"m"}, nil, 10, 100)
+	ch := NewChannel("test", "openai", "https://example.com", "", "", false, []string{"key-a", "key-b"}, []string{"m"}, nil, 10, 100)
 	for i := 0; i < 3; i++ {
 		ch.RecordKeyResult("key-a", 401, time.Millisecond, errors.New("invalid key"))
 	}
@@ -20,7 +20,7 @@ func TestNextKeySkipsUnhealthyKeys(t *testing.T) {
 }
 
 func TestNextKeySkipsDisabledKeys(t *testing.T) {
-	ch := NewChannel("test", "openai", "https://example.com", "", "", []string{"key-a", "key-b"}, []string{"m"}, nil, 10, 100)
+	ch := NewChannel("test", "openai", "https://example.com", "", "", false, []string{"key-a", "key-b"}, []string{"m"}, nil, 10, 100)
 	ch.SetDisabledKeys([]string{"key-a"})
 
 	for i := 0; i < 4; i++ {
@@ -31,7 +31,7 @@ func TestNextKeySkipsDisabledKeys(t *testing.T) {
 }
 
 func TestRecordKeyResultResetsConsecutiveFailures(t *testing.T) {
-	ch := NewChannel("test", "openai", "https://example.com", "", "", []string{"key-a"}, []string{"m"}, nil, 10, 100)
+	ch := NewChannel("test", "openai", "https://example.com", "", "", false, []string{"key-a"}, []string{"m"}, nil, 10, 100)
 	ch.RecordKeyResult("key-a", 429, time.Millisecond, errors.New("rate limited"))
 	ch.RecordKeyResult("key-a", 200, time.Millisecond, nil)
 
