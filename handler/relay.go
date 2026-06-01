@@ -83,11 +83,19 @@ func (h *Relay) ChatCompletions(c *gin.Context) {
 	rawBody = h.applyRawOpenAISystemPrompt(rawBody, &req)
 
 	start := time.Now()
+	logID := beginRequestLog(RequestLog{
+		Protocol:  "openai",
+		Model:     req.Model,
+		Status:    102,
+		Stream:    req.Stream,
+		Request:   req,
+		AccessKey: requestAccessKey(c),
+	})
 	result, err := h.engine.DoRaw(c.Request.Context(), "openai", req.Model, req.Stream, rawBody, c.Request.Header)
 	if err != nil {
 		attempts := attemptsFromError(err)
 		slog.Error("relay failed", "model", req.Model, "error", err, "took", time.Since(start))
-		logRequestDetail(RequestLog{
+		finishRequestLog(logID, RequestLog{
 			Protocol:  "openai",
 			Model:     req.Model,
 			Status:    502,
@@ -114,7 +122,7 @@ func (h *Relay) ChatCompletions(c *gin.Context) {
 		"stream", req.Stream,
 		"took", time.Since(start),
 	)
-	logRequestDetail(RequestLog{
+	finishRequestLog(logID, RequestLog{
 		Protocol:      "openai",
 		Model:         req.Model,
 		ResolvedModel: result.Model,

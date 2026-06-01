@@ -51,6 +51,7 @@ type LogFilter struct {
 // metadata only; request bodies are loaded by the detail endpoint.
 type LogStore struct {
 	mu         sync.RWMutex
+	writeMu    sync.Mutex
 	db         *sql.DB
 	path       string
 	inserted   int64
@@ -88,6 +89,38 @@ func logRequestDetail(entry RequestLog) {
 		}
 	}
 	globalLogStore.add(entry)
+}
+
+func beginRequestLog(entry RequestLog) int64 {
+	if entry.Timestamp == "" {
+		entry.Timestamp = time.Now().Format("2006-01-02 15:04:05")
+	}
+	if entry.Mode == "" {
+		if entry.UpstreamRequest != nil {
+			entry.Mode = "converted"
+		} else {
+			entry.Mode = "passthrough"
+		}
+	}
+	if entry.Status == 0 {
+		entry.Status = 102
+	}
+	return globalLogStore.insert(entry)
+}
+
+func finishRequestLog(id int64, entry RequestLog) {
+	if id <= 0 {
+		logRequestDetail(entry)
+		return
+	}
+	if entry.Mode == "" {
+		if entry.UpstreamRequest != nil {
+			entry.Mode = "converted"
+		} else {
+			entry.Mode = "passthrough"
+		}
+	}
+	globalLogStore.update(id, entry)
 }
 
 func errStr(err error) string {
@@ -200,6 +233,38 @@ func (s *LogStore) add(entry RequestLog) {
 	}
 }
 
+func (s *LogStore) insert(entry RequestLog) int64 {
+	s.mu.RLock()
+	db := s.db
+	s.mu.RUnlock()
+	if db == nil {
+		return 0
+	}
+	attemptsJSON := mustJSON(entry.Attempts)
+	requestJSON := mustJSON(entry.Request)
+	upstreamJSON := mustJSON(entry.UpstreamRequest)
+	stream := 0
+	if entry.Stream {
+		stream = 1
+	}
+	s.writeMu.Lock()
+	res, err := db.Exec(`
+	INSERT INTO request_logs
+	(protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		entry.Protocol, entry.Mode, entry.Model, entry.ResolvedModel, entry.Channel, entry.AccessKey, entry.Status, entry.Duration,
+		stream, entry.Error, attemptsJSON, requestJSON, upstreamJSON, entry.Timestamp,
+	)
+	s.writeMu.Unlock()
+	if err != nil {
+		slog.Warn("failed to insert request log", "error", err)
+		return 0
+	}
+	id, _ := res.LastInsertId()
+	s.afterInsert()
+	return id
+}
+
 func (s *LogStore) save(entry RequestLog) {
 	s.mu.RLock()
 	db := s.db
@@ -214,16 +279,23 @@ func (s *LogStore) save(entry RequestLog) {
 	if entry.Stream {
 		stream = 1
 	}
+	s.writeMu.Lock()
 	if _, err := db.Exec(`
-INSERT INTO request_logs
-(protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp)
+	INSERT INTO request_logs
+	(protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		entry.Protocol, entry.Mode, entry.Model, entry.ResolvedModel, entry.Channel, entry.AccessKey, entry.Status, entry.Duration,
 		stream, entry.Error, attemptsJSON, requestJSON, upstreamJSON, entry.Timestamp,
 	); err != nil {
+		s.writeMu.Unlock()
 		slog.Warn("failed to insert request log", "error", err)
 		return
 	}
+	s.writeMu.Unlock()
+	s.afterInsert()
+}
+
+func (s *LogStore) afterInsert() {
 	s.mu.Lock()
 	s.inserted++
 	shouldPrune := s.maxEntries > 0 && s.inserted%pruneEveryRows == 0
@@ -233,11 +305,40 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	}
 }
 
+func (s *LogStore) update(id int64, entry RequestLog) {
+	s.mu.RLock()
+	db := s.db
+	s.mu.RUnlock()
+	if db == nil {
+		return
+	}
+	attemptsJSON := mustJSON(entry.Attempts)
+	requestJSON := mustJSON(entry.Request)
+	upstreamJSON := mustJSON(entry.UpstreamRequest)
+	stream := 0
+	if entry.Stream {
+		stream = 1
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if _, err := db.Exec(`
+	UPDATE request_logs
+	SET protocol = ?, mode = ?, model = ?, resolved_model = ?, channel = ?, access_key = ?, status = ?, duration = ?, stream = ?, error = ?, attempts_json = ?, request_json = ?, upstream_request_json = ?
+WHERE id = ?`,
+		entry.Protocol, entry.Mode, entry.Model, entry.ResolvedModel, entry.Channel, entry.AccessKey, entry.Status, entry.Duration,
+		stream, entry.Error, attemptsJSON, requestJSON, upstreamJSON, id,
+	); err != nil {
+		slog.Warn("failed to update request log", "id", id, "error", err)
+	}
+}
+
 func (s *LogStore) clear() error {
 	db := s.database()
 	if db == nil {
 		return nil
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	if _, err := db.Exec(`DELETE FROM request_logs`); err != nil {
 		return err
 	}
@@ -261,6 +362,8 @@ func (s *LogStore) prune() {
 	if maxEntries <= 0 {
 		return
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	if _, err := db.Exec(`DELETE FROM request_logs WHERE id NOT IN (SELECT id FROM request_logs ORDER BY id DESC LIMIT ?)`, maxEntries); err != nil {
 		slog.Warn("failed to prune request logs", "max_entries", maxEntries, "error", err)
 	}

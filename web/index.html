@@ -796,6 +796,10 @@
     // Filter properties for Logs
     let logPage = 1;
     let logLimit = 30;
+    let logRefreshTimer = null;
+    let logsLoading = false;
+    let activeLogDetailId = null;
+    let activeLogDetailTimer = null;
 
     // Charts references
     let trafficTrendChart = null;
@@ -923,13 +927,17 @@
       }
 
       if (tab === 'dashboard') {
+        stopLogAutoRefresh();
         loadDashboardStats();
       } else if (tab === 'channels') {
+        stopLogAutoRefresh();
         loadData();
       } else if (tab === 'stats') {
         loadLogFilterOptions();
         resetLogPageAndLoad();
+        startLogAutoRefresh();
       } else if (tab === 'settings') {
+        stopLogAutoRefresh();
         loadSettings();
       }
     }
@@ -946,6 +954,9 @@
       const el = document.getElementById(id);
       if (el) {
         el.classList.remove('active');
+      }
+      if (id === 'log-modal') {
+        stopLogDetailAutoRefresh();
       }
       if (!document.querySelector('.modal-overlay.active')) {
         document.body.classList.remove('modal-open');
@@ -1640,7 +1651,7 @@
       loadLogs();
     }
 
-    async function loadLogs() {
+    function buildLogQuery() {
       const proto = document.getElementById('log-filter-protocol').value;
       const model = document.getElementById('log-filter-model').value;
       const channel = document.getElementById('log-filter-channel').value;
@@ -1655,9 +1666,54 @@
       if (key) query += `&access_key=${encodeURIComponent(key)}`;
       if (status) query += `&status=${encodeURIComponent(status)}`;
       if (q) query += `&q=${encodeURIComponent(q)}`;
+      return query;
+    }
+
+    function startLogAutoRefresh() {
+      if (logRefreshTimer) return;
+      logRefreshTimer = setInterval(() => {
+        if (!document.getElementById('tab-stats')?.classList.contains('hidden')) {
+          loadLogs({ silent: true });
+        }
+      }, 1000);
+    }
+
+    function stopLogAutoRefresh() {
+      if (logRefreshTimer) {
+        clearInterval(logRefreshTimer);
+        logRefreshTimer = null;
+      }
+      stopLogDetailAutoRefresh();
+    }
+
+    function startLogDetailAutoRefresh(id) {
+      stopLogDetailAutoRefresh();
+      activeLogDetailId = id;
+      activeLogDetailTimer = setInterval(() => {
+        if (document.getElementById('log-modal')?.classList.contains('active')) {
+          refreshLogDetail(id);
+        }
+      }, 1000);
+    }
+
+    function stopLogDetailAutoRefresh() {
+      if (activeLogDetailTimer) {
+        clearInterval(activeLogDetailTimer);
+        activeLogDetailTimer = null;
+      }
+      activeLogDetailId = null;
+    }
+
+    async function loadLogs(options = {}) {
+      if (logsLoading) return;
+      logsLoading = true;
+      const silent = !!options.silent;
+      const query = buildLogQuery();
 
       const body = document.getElementById('logs-table-body');
-      body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-550">正在检索流水日志...</td></tr>`;
+      if (!silent) {
+        body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-550">正在检索流水日志...</td></tr>`;
+      }
 
       try {
         const data = await api(`/admin/logs${query}`);
@@ -1675,8 +1731,11 @@
         }
 
         body.innerHTML = list.map(log => {
+          const isPending = log.status === 102 || log.status === 0;
           const isOK = log.status >= 200 && log.status < 400;
-          const statusCls = isOK ? 'text-emerald-700 bg-emerald-100/60 dark:text-emerald-400 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-900/30' : 'text-rose-700 bg-rose-100/60 dark:text-rose-400 dark:bg-rose-950/50 border-rose-300 dark:border-rose-900/30';
+          const statusCls = isPending
+            ? 'text-amber-700 bg-amber-100/60 dark:text-amber-400 dark:bg-amber-950/50 border-amber-300 dark:border-amber-900/30'
+            : (isOK ? 'text-emerald-700 bg-emerald-100/60 dark:text-emerald-400 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-900/30' : 'text-rose-700 bg-rose-100/60 dark:text-rose-400 dark:bg-rose-950/50 border-rose-300 dark:border-rose-900/30');
           const protoBadge = `<span class="badge badge-sm font-mono bg-slate-200 dark:bg-white/5 border-none text-[10px] text-slate-600 dark:text-slate-400">${esc(log.protocol)}</span>`;
           const modeText = log.mode === 'converted' ? '转换' : '透穿';
           const modeCls = log.mode === 'converted'
@@ -1684,7 +1743,7 @@
             : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400';
           
           return `
-            <tr class="border-b border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors" onclick="loadLogDetail(${log.id}, this)">
+            <tr data-log-id="${log.id}" class="border-b border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors ${activeLogDetailId === log.id ? 'bg-cyan-500/10 dark:bg-cyan-500/20' : ''}" onclick="loadLogDetail(${log.id}, this)">
               <td class="font-mono text-[10px] text-slate-500">${esc(log.timestamp)}</td>
               <td><span class="badge badge-sm bg-slate-200 dark:bg-white/5 border-none font-mono text-[10px] text-slate-700 dark:text-slate-300">${esc(log.access_key || 'N/A')}</span></td>
               <td>
@@ -1697,8 +1756,8 @@
               <td class="font-bold text-slate-800 dark:text-slate-300 text-sm font-mono truncate max-w-[220px]">${esc(log.model)}</td>
               <td class="font-mono text-xs text-slate-600 dark:text-slate-400">${esc(log.channel || 'N/A')}</td>
               <td>
-                <span class="badge ${statusCls} font-mono text-[10px] py-1 border">${log.status}</span>
-                <span class="block text-[10px] text-slate-500 font-mono mt-1">${log.duration}ms</span>
+                <span class="badge ${statusCls} font-mono text-[10px] py-1 border">${isPending ? '处理中' : log.status}</span>
+                <span class="block text-[10px] text-slate-500 font-mono mt-1">${isPending ? '...' : `${log.duration}ms`}</span>
               </td>
               <td>
                 <button class="btn btn-ghost btn-xs text-cyan-600 dark:text-cyan-500 hover:underline">查看</button>
@@ -1708,7 +1767,11 @@
         }).join('');
         lucide.createIcons();
       } catch(e) {
-        body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-rose-450">流水拉取失败: ${esc(e.message)}</td></tr>`;
+        if (!silent) {
+          body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-rose-450">流水拉取失败: ${esc(e.message)}</td></tr>`;
+        }
+      } finally {
+        logsLoading = false;
       }
     }
 
@@ -1727,7 +1790,13 @@
       const content = document.getElementById('log-detail-content');
       content.classList.add('opacity-50');
       openModal('log-modal');
+      startLogDetailAutoRefresh(id);
 
+      await refreshLogDetail(id, { closeOnError: true });
+    }
+
+    async function refreshLogDetail(id, options = {}) {
+      const content = document.getElementById('log-detail-content');
       try {
         const data = await api(`/admin/logs/${id}`);
         const log = data.log || {};
@@ -1769,7 +1838,9 @@
         content.classList.remove('opacity-50');
         lucide.createIcons();
       } catch(e) {
-        closeModal('log-modal');
+        if (options.closeOnError) {
+          closeModal('log-modal');
+        }
         showToast('获取日志详情失败: ' + e.message, true);
       }
     }

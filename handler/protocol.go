@@ -54,7 +54,15 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 	}
 	rawBody = h.applyRawClaudeSystemPrompt(rawBody, &claudeReq)
 
-	if rawResult, ok := h.tryClaudePassthrough(c, &claudeReq, rawBody); ok {
+	logID := beginRequestLog(RequestLog{
+		Protocol:  "claude-inbound",
+		Model:     claudeReq.Model,
+		Status:    102,
+		Stream:    claudeReq.Stream,
+		Request:   claudeReq,
+		AccessKey: requestAccessKey(c),
+	})
+	if rawResult, ok := h.tryClaudePassthrough(c, &claudeReq, rawBody, logID); ok {
 		relayHandler := Relay{engine: h.engine}
 		relayHandler.writeRawResponse(c, rawResult.Response)
 		return
@@ -71,7 +79,7 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 			"message": fmt.Sprintf("relay error: %v", err),
 			"type":    "upstream_error",
 		}})
-		logRequestDetail(RequestLog{
+		finishRequestLog(logID, RequestLog{
 			Protocol:        "claude-inbound",
 			Model:           claudeReq.Model,
 			Status:          502,
@@ -86,7 +94,7 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 		return
 	}
 
-	logRequestDetail(RequestLog{
+	finishRequestLog(logID, RequestLog{
 		Protocol:        "claude-inbound",
 		Model:           claudeReq.Model,
 		ResolvedModel:   result.Model,
@@ -116,7 +124,7 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 	c.JSON(http.StatusOK, claudeResp)
 }
 
-func (h *Protocol) tryClaudePassthrough(c *gin.Context, claudeReq *claudeInboundRequest, rawBody []byte) (*relay.RawRelayResult, bool) {
+func (h *Protocol) tryClaudePassthrough(c *gin.Context, claudeReq *claudeInboundRequest, rawBody []byte, logID int64) (*relay.RawRelayResult, bool) {
 	start := time.Now()
 	result, err := h.engine.DoRaw(c.Request.Context(), "claude", claudeReq.Model, claudeReq.Stream, rawBody, c.Request.Header)
 	if err != nil {
@@ -127,7 +135,7 @@ func (h *Protocol) tryClaudePassthrough(c *gin.Context, claudeReq *claudeInbound
 			"message": fmt.Sprintf("relay error: %v", err),
 			"type":    "upstream_error",
 		}})
-		logRequestDetail(RequestLog{
+		finishRequestLog(logID, RequestLog{
 			Protocol:  "claude-inbound",
 			Model:     claudeReq.Model,
 			Status:    502,
@@ -140,7 +148,7 @@ func (h *Protocol) tryClaudePassthrough(c *gin.Context, claudeReq *claudeInbound
 		})
 		return nil, true
 	}
-	logRequestDetail(RequestLog{
+	finishRequestLog(logID, RequestLog{
 		Protocol:      "claude-inbound",
 		Model:         claudeReq.Model,
 		ResolvedModel: result.Model,
@@ -377,17 +385,27 @@ func (h *Protocol) GeminiGenerate(c *gin.Context) {
 	applyModelSystemPrompt(oaiReq, h.modelSystemPrompt(modelName))
 
 	start := time.Now()
+	isStream := strings.Contains(c.Request.URL.Path, "streamGenerateContent")
+	logID := beginRequestLog(RequestLog{
+		Protocol:        "gemini-inbound",
+		Model:           modelName,
+		Status:          102,
+		Stream:          isStream,
+		Request:         geminiReq,
+		UpstreamRequest: oaiReq,
+		AccessKey:       requestAccessKey(c),
+	})
 	result, err := h.engine.Do(c.Request.Context(), oaiReq, "gemini")
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": map[string]interface{}{
 			"message": fmt.Sprintf("relay error: %v", err),
 		}})
-		logRequestDetail(RequestLog{
+		finishRequestLog(logID, RequestLog{
 			Protocol:        "gemini-inbound",
 			Model:           modelName,
 			Status:          502,
 			Duration:        time.Since(start).Milliseconds(),
-			Stream:          strings.Contains(c.Request.URL.Path, "streamGenerateContent"),
+			Stream:          isStream,
 			Error:           err.Error(),
 			Attempts:        attemptsFromError(err),
 			Request:         geminiReq,
@@ -397,21 +415,20 @@ func (h *Protocol) GeminiGenerate(c *gin.Context) {
 		return
 	}
 
-	logRequestDetail(RequestLog{
+	finishRequestLog(logID, RequestLog{
 		Protocol:        "gemini-inbound",
 		Model:           modelName,
 		ResolvedModel:   result.Model,
 		Channel:         result.Channel,
 		Status:          200,
 		Duration:        time.Since(start).Milliseconds(),
-		Stream:          strings.Contains(c.Request.URL.Path, "streamGenerateContent"),
+		Stream:          isStream,
 		Attempts:        result.Attempts,
 		Request:         geminiReq,
 		UpstreamRequest: oaiReq,
 		AccessKey:       requestAccessKey(c),
 	})
 
-	isStream := strings.Contains(c.Request.URL.Path, "streamGenerateContent")
 	if isStream {
 		h.handleGeminiStream(c, result)
 		return
@@ -954,7 +971,15 @@ func (h *Protocol) Responses(c *gin.Context) {
 	}
 	rawBody = h.applyRawResponsesSystemPrompt(rawBody, &req)
 
-	if rawResult, ok := h.tryResponsesPassthrough(c, &req, rawBody); ok {
+	logID := beginRequestLog(RequestLog{
+		Protocol:  "responses",
+		Model:     req.Model,
+		Status:    102,
+		Stream:    req.Stream,
+		Request:   req,
+		AccessKey: requestAccessKey(c),
+	})
+	if rawResult, ok := h.tryResponsesPassthrough(c, &req, rawBody, logID); ok {
 		relayHandler := Relay{engine: h.engine}
 		relayHandler.writeRawResponse(c, rawResult.Response)
 		return
@@ -967,7 +992,7 @@ func (h *Protocol) Responses(c *gin.Context) {
 	start := time.Now()
 	result, err := h.engine.Do(c.Request.Context(), oaiReq, "responses")
 	if err != nil {
-		logRequestDetail(RequestLog{
+		finishRequestLog(logID, RequestLog{
 			Protocol:        "responses",
 			Mode:            "converted",
 			Model:           req.Model,
@@ -987,7 +1012,7 @@ func (h *Protocol) Responses(c *gin.Context) {
 		return
 	}
 
-	logRequestDetail(RequestLog{
+	finishRequestLog(logID, RequestLog{
 		Protocol:        "responses",
 		Mode:            "converted",
 		Model:           req.Model,
@@ -1012,7 +1037,7 @@ func (h *Protocol) Responses(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func (h *Protocol) tryResponsesPassthrough(c *gin.Context, req *responsesInboundRequest, rawBody []byte) (*relay.RawRelayResult, bool) {
+func (h *Protocol) tryResponsesPassthrough(c *gin.Context, req *responsesInboundRequest, rawBody []byte, logID int64) (*relay.RawRelayResult, bool) {
 	start := time.Now()
 	result, err := h.engine.DoRawResponses(c.Request.Context(), req.Model, req.Stream, rawBody, c.Request.Header)
 	if err != nil {
@@ -1023,7 +1048,7 @@ func (h *Protocol) tryResponsesPassthrough(c *gin.Context, req *responsesInbound
 			"message": fmt.Sprintf("relay error: %v", err),
 			"type":    "upstream_error",
 		}})
-		logRequestDetail(RequestLog{
+		finishRequestLog(logID, RequestLog{
 			Protocol:  "responses",
 			Mode:      "passthrough",
 			Model:     req.Model,
@@ -1037,7 +1062,7 @@ func (h *Protocol) tryResponsesPassthrough(c *gin.Context, req *responsesInbound
 		})
 		return nil, true
 	}
-	logRequestDetail(RequestLog{
+	finishRequestLog(logID, RequestLog{
 		Protocol:      "responses",
 		Mode:          "passthrough",
 		Model:         req.Model,
