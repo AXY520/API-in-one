@@ -877,6 +877,7 @@
       } else if (tab === 'channels') {
         loadData();
       } else if (tab === 'stats') {
+        loadLogFilterOptions();
         resetLogPageAndLoad();
       } else if (tab === 'settings') {
         loadSettings();
@@ -1153,13 +1154,15 @@
           `;
         }).join('') : '';
 
-        const modelsPills = ch.models ? ch.models.map(m => 
-          `<span class="badge bg-slate-200/60 dark:bg-white/5 border-none text-[10px] text-slate-600 dark:text-slate-400 font-mono py-1.5 h-auto">${esc(m)}</span>`
-        ).join(' ') : '无模型配置';
+        const modelsPills = !isEnabled
+          ? '<span class="text-xs text-slate-400 dark:text-slate-600 italic">渠道已禁用，模型不对外显示</span>'
+          : (ch.models ? ch.models.map(m => 
+              `<span class="badge bg-slate-200/60 dark:bg-white/5 border-none text-[10px] text-slate-600 dark:text-slate-400 font-mono py-1.5 h-auto">${esc(m)}</span>`
+            ).join(' ') : '无模型配置');
 
         const aliases = Object.keys(ch.model_mapping || {});
         let mappingBadge = '';
-        if (aliases.length > 0) {
+        if (isEnabled && aliases.length > 0) {
           mappingBadge = `<span class="badge bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400 border-none text-[10px]">有映射 (${aliases.length})</span>`;
         }
 
@@ -1764,6 +1767,16 @@
       }
     }
 
+    async function loadLogFilterOptions() {
+      try {
+        const data = await api('/admin/settings');
+        renderLogAccessKeyFilter(data);
+        renderLogRouteFilters(data.models || []);
+      } catch(e) {
+        showToast('日志筛选项加载失败: ' + e.message, true);
+      }
+    }
+
     function renderLogAccessKeyFilter(data) {
       const el = document.getElementById('log-filter-access-key');
       if (!el) return;
@@ -1772,7 +1785,7 @@
       
       el.innerHTML = '<option value="">全部令牌</option>' + keys.map(k => {
         const masked = maskKeyLocal(k.key);
-        return `<option value="${esc(k.key)}">${esc(masked)}</option>`;
+        return `<option value="${esc(masked)}">${esc(masked)}</option>`;
       }).join('');
       
       el.value = current;
