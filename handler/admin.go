@@ -307,6 +307,28 @@ func (h *Admin) UpdateChannelKeyState(c *gin.Context) {
 	})
 }
 
+// UpdateChannelState enables or disables a whole channel.
+func (h *Admin) UpdateChannelState(c *gin.Context) {
+	name := c.Param("name")
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		return
+	}
+	if err := config.UpdateChannelEnabled(name, req.Enabled); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	h.rebuildPool()
+	c.JSON(http.StatusOK, gin.H{
+		"message": "channel state updated",
+		"name":    name,
+		"enabled": req.Enabled,
+	})
+}
+
 // ProbeChannelKeys sends a tiny non-stream request with every key in a channel.
 func (h *Admin) ProbeChannelKeys(c *gin.Context) {
 	name := c.Param("name")

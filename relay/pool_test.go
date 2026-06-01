@@ -21,6 +21,34 @@ func TestSelectChannelUsesLowestPriority(t *testing.T) {
 	}
 }
 
+func TestSelectChannelSkipsDisabledChannels(t *testing.T) {
+	disabled := model.NewChannel("disabled", "openai", "https://disabled.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	disabled.Enabled = false
+	enabled := model.NewChannel("enabled", "openai", "https://enabled.example", "", "", false, []string{"k"}, []string{"m"}, nil, 20, 100)
+	pool := NewPool([]*model.Channel{disabled, enabled})
+
+	for i := 0; i < 5; i++ {
+		ch, _, err := pool.SelectChannel("m")
+		if err != nil {
+			t.Fatalf("select channel: %v", err)
+		}
+		if ch.Name != "enabled" {
+			t.Fatalf("expected enabled channel, got %s", ch.Name)
+		}
+	}
+}
+
+func TestSelectChannelReturnsNoAvailableChannelWhenOnlyDisabledChannelMatches(t *testing.T) {
+	ch := model.NewChannel("disabled", "openai", "https://disabled.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	ch.Enabled = false
+	pool := NewPool([]*model.Channel{ch})
+
+	_, _, err := pool.SelectChannel("m")
+	if err != ErrNoAvailableChannel {
+		t.Fatalf("expected ErrNoAvailableChannel, got %v", err)
+	}
+}
+
 func TestSelectChannelUsesWeightWithinSamePriority(t *testing.T) {
 	one := model.NewChannel("one", "openai", "https://one.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 1)
 	three := model.NewChannel("three", "openai", "https://three.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 3)
@@ -89,6 +117,38 @@ func TestGetAvailableModelsHidesMappedUpstreamIDs(t *testing.T) {
 	}
 	if !seen["public-model"] || !seen["direct-model"] {
 		t.Fatalf("expected alias and unmapped direct model to be visible: %#v", seen)
+	}
+}
+
+func TestGetAvailableModelsSkipsDisabledChannels(t *testing.T) {
+	disabled := model.NewChannel(
+		"disabled",
+		"openai",
+		"https://disabled.example",
+		"",
+		"",
+		false,
+		[]string{"k"},
+		[]string{"hidden-upstream", "hidden-direct"},
+		map[string]string{"hidden-alias": "hidden-upstream"},
+		10,
+		100,
+	)
+	disabled.Enabled = false
+	enabled := model.NewChannel("enabled", "openai", "https://enabled.example", "", "", false, []string{"k"}, []string{"visible"}, nil, 10, 100)
+	pool := NewPool([]*model.Channel{disabled, enabled})
+
+	models := pool.GetAvailableModels()
+	seen := map[string]bool{}
+	for _, m := range models {
+		seen[m.ID] = true
+	}
+
+	if !seen["visible"] {
+		t.Fatalf("expected enabled model to be visible: %#v", seen)
+	}
+	if seen["hidden-direct"] || seen["hidden-alias"] || seen["hidden-upstream"] {
+		t.Fatalf("disabled channel models should not be visible: %#v", seen)
 	}
 }
 

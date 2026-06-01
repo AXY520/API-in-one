@@ -440,6 +440,7 @@ function renderLogRouteFilters(channels) {
   const channelNames = new Set();
   for (const ch of channels) {
     if (ch.name) channelNames.add(ch.name);
+    if (ch.enabled === false) continue;
     const mapping = ch.model_mapping || {};
     const mappedUpstreamModels = new Set(Object.values(mapping));
     for (const model of ch.models || []) {
@@ -652,8 +653,9 @@ function renderChannels(channels) {
   }
   let html = '<div class="grid grid-cols-1 gap-4 xl:grid-cols-2">';
   for (const ch of channels) {
-    const sc = ch.healthy ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700';
-    const st = ch.healthy ? '正常' : '异常';
+    const disabled = ch.enabled === false;
+    const sc = disabled ? 'border-slate-200 bg-slate-100 text-slate-500' : (ch.healthy ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700');
+    const st = disabled ? '已禁用' : (ch.healthy ? '正常' : '异常');
     const keyStats = ch.key_stats || [];
     const keyCount = ch.key_count || (ch.masked_keys || []).length || keyStats.length;
     const keyPreview = keyStats.length ? keyStats.map(k => {
@@ -667,11 +669,11 @@ function renderChannels(channels) {
         <span class="h-2.5 w-2.5 shrink-0 rounded-full ${cls}"></span>
       </div>`;
     }).join('') : (ch.masked_keys||[]).map(k => `<div class="rounded-2xl bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700">${esc(k)}</div>`).join('');
-    const models = (ch.models||[]).map(m => `<span class="rounded-full border border-slate-200 bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700">${esc(m)}</span>`).join(' ');
+    const models = disabled ? '' : (ch.models||[]).map(m => `<span class="rounded-full border border-slate-200 bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700">${esc(m)}</span>`).join(' ');
     let mappingHtml = '';
     const mm = ch.model_mapping || {};
     const mmKeys = Object.keys(mm);
-    if (mmKeys.length) {
+    if (!disabled && mmKeys.length) {
       mappingHtml = '<div class="mt-3 max-h-20 overflow-y-auto pr-1"><div class="flex flex-wrap gap-1.5">' + mmKeys.map(alias =>
         `<span class="rounded-full bg-cyan-50 px-2 py-1 font-mono text-[11px] text-cyan-700">${esc(alias)} → ${esc(mm[alias])}</span>`
       ).join('') + '</div></div>';
@@ -710,7 +712,8 @@ function renderChannels(channels) {
       </div>
       <div class="mt-auto flex shrink-0 flex-col gap-3 border-t border-slate-200 px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5 md:py-4">
         <div class="text-xs text-slate-500">priority ${ch.priority} · weight ${ch.weight}</div>
-        <div class="grid w-full grid-cols-3 gap-2 sm:w-auto sm:flex">
+        <div class="grid w-full grid-cols-4 gap-2 sm:w-auto sm:flex">
+          <button class="btn btn-sm touch-target ${disabled ? 'btn-success text-white' : 'border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100'}" onclick="setChannelEnabled('${escAttr(ch.name)}', ${disabled})">${disabled ? '启用' : '禁用'}</button>
           <button class="btn btn-sm touch-target border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick='openKeyManager(${JSON.stringify(ch)})'>Keys</button>
           <button class="btn btn-sm touch-target border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick='openEditChannel(${JSON.stringify(ch)})'>编辑</button>
           <button class="btn btn-sm touch-target btn-error btn-outline" onclick="deleteChannel('${esc(ch.name)}')">删除</button>
@@ -724,16 +727,17 @@ function renderChannels(channels) {
 
 function renderChannelOverview(channels) {
   const total = channels.length;
-  const healthy = channels.filter(ch => ch.healthy).length;
+  const enabled = channels.filter(ch => ch.enabled !== false).length;
   const keyCount = channels.reduce((sum, ch) => sum + (ch.key_count || (ch.masked_keys || []).length || 0), 0);
   const modelCount = channels.reduce((set, ch) => {
+    if (ch.enabled === false) return set;
     (ch.models || []).forEach(m => set.add(m));
     Object.keys(ch.model_mapping || {}).forEach(m => set.add(m));
     return set;
   }, new Set()).size;
   document.getElementById('channel-overview').innerHTML = [
     ['Channels', total, 'text-cyan-700'],
-    ['Healthy', healthy, 'text-emerald-700'],
+    ['Enabled', enabled, 'text-emerald-700'],
     ['Keys', keyCount, 'text-blue-700'],
     ['Models', modelCount, 'text-violet-700'],
   ].map(([label, value, color]) => `
@@ -851,6 +855,17 @@ async function saveChannelKeys() {
     closeModal('key-modal');
     loadData();
   } catch(e) { toast('保存 Key 失败: '+e.message, true); }
+}
+
+async function setChannelEnabled(name, enabled) {
+  try {
+    await api('/admin/channels/'+encodeURIComponent(name)+'/state', { method:'PUT', body:JSON.stringify({enabled}) });
+    toast(enabled ? 'Channel 已启用' : 'Channel 已禁用');
+    await loadData();
+    if (document.getElementById('tab-stats').style.display !== 'none') loadStats();
+  } catch(e) {
+    toast('更新 Channel 状态失败: '+e.message, true);
+  }
 }
 
 // ---- Channel Modal ----
