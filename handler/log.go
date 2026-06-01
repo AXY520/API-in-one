@@ -97,6 +97,21 @@ func errStr(err error) string {
 	return ""
 }
 
+var (
+	logChan   = make(chan RequestLog, 4096)
+	startOnce sync.Once
+)
+
+func startLogProcessor() {
+	startOnce.Do(func() {
+		go func() {
+			for entry := range logChan {
+				globalLogStore.save(entry)
+			}
+		}()
+	})
+}
+
 func InitLogStore(path string) {
 	if path == "" {
 		path = defaultLogPath
@@ -109,6 +124,7 @@ func InitLogStore(path string) {
 		slog.Warn("failed to initialize request log database", "path", path, "error", err)
 		return
 	}
+	startLogProcessor()
 	if err := globalLogStore.importLegacyJSON(legacyPath); err != nil {
 		slog.Warn("failed to import legacy request logs", "error", err)
 	}
@@ -177,6 +193,14 @@ func legacyPathFor(path string) string {
 }
 
 func (s *LogStore) add(entry RequestLog) {
+	select {
+	case logChan <- entry:
+	default:
+		slog.Warn("request log queue is full, dropping log entry", "model", entry.Model)
+	}
+}
+
+func (s *LogStore) save(entry RequestLog) {
 	s.mu.RLock()
 	db := s.db
 	s.mu.RUnlock()

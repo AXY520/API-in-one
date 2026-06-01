@@ -4,12 +4,13 @@ import (
 	"api-in-one/handler"
 	"api-in-one/middleware"
 	"api-in-one/relay"
+	"os"
 
 	"github.com/gin-gonic/gin"
 )
 
 // Setup configures all routes.
-func Setup(engine *relay.Engine, pool *relay.Pool) *gin.Engine {
+func Setup(engine *relay.Engine, pool *relay.Pool, indexHTML []byte) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(middleware.CORS())
@@ -20,8 +21,15 @@ func Setup(engine *relay.Engine, pool *relay.Pool) *gin.Engine {
 	protocolHandler := handler.NewProtocol(engine)
 
 	// Public: serve static admin page
-	r.StaticFile("/", "./web/index.html")
-	r.StaticFile("/admin", "./web/index.html")
+	serveIndex := func(c *gin.Context) {
+		if data, err := os.ReadFile("./web/index.html"); err == nil {
+			c.Data(200, "text/html; charset=utf-8", data)
+			return
+		}
+		c.Data(200, "text/html; charset=utf-8", indexHTML)
+	}
+	r.GET("/", serveIndex)
+	r.GET("/admin", serveIndex)
 
 	// API v1 - OpenAI format (requires a client access key)
 	v1 := r.Group("/v1", middleware.APIAuth())

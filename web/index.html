@@ -1,1346 +1,2046 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="light">
+<html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>API-in-one 管理面板</title>
-<link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" type="text/css" />
-<script src="https://cdn.tailwindcss.com"></script>
-<style>
-  .modal-overlay { position: fixed; inset: 0; display: none; align-items: flex-start; justify-content: center; z-index: 50; padding: 2rem 1rem; overflow-y: auto; background: rgba(15, 23, 42, 0.45); }
-  .modal-overlay.active { display: flex; }
-  .mapping-row { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; }
-  .json-box { max-height: 24rem; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-  .log-status { display: inline-block; width: .5rem; height: .5rem; border-radius: 9999px; margin-right: .375rem; }
-  .log-status.ok { background: oklch(var(--su)); }
-  .log-status.err { background: oklch(var(--er)); }
-  .nav-item.active { background: rgba(103, 232, 249, .22); color: rgb(14, 116, 144); }
-  .desktop-only { display: block; }
-  .mobile-only { display: none; }
-  .scroll-fade { scrollbar-width: thin; scrollbar-color: rgb(203 213 225) transparent; }
-  .touch-target { min-height: 2.75rem; }
-  @media (max-width: 767px) {
-    body { background: rgb(248 250 252); }
-    .desktop-only { display: none; }
-    .mobile-only { display: block; }
-    .modal-overlay { padding: 0; align-items: stretch; background: rgba(15, 23, 42, 0.38); }
-    .modal-overlay .modal-box { width: 100%; max-width: none; min-height: 100dvh; max-height: 100dvh; overflow-y: auto; border-radius: 0; padding: 1rem; padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
-    .modal-action { position: sticky; bottom: 0; z-index: 2; margin: 1rem -1rem calc(-5rem - env(safe-area-inset-bottom)); padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom)); background: rgba(255,255,255,.96); border-top: 1px solid rgb(226 232 240); backdrop-filter: blur(12px); }
-    .modal-action .btn { width: 100%; min-height: 2.75rem; }
-    .mapping-row { grid-template-columns: minmax(0,1fr); gap: .5rem; }
-    .mobile-table-scroll { margin-left: -1rem; margin-right: -1rem; border-left: 0; border-right: 0; border-radius: 0; }
-    .json-box { max-height: 18rem; }
-    .toast { left: .75rem; right: .75rem; }
-    .toast .alert { width: 100%; }
-  }
-</style>
-</head>
-<body class="min-h-screen overflow-x-hidden bg-slate-50 text-slate-900">
-
-<div id="login-overlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-100 p-4">
-  <div class="card w-full max-w-sm border border-slate-200 bg-white shadow-2xl ">
-    <div class="card-body">
-      <div class="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-100 text-xl text-cyan-700">AI</div>
-      <h2 class="card-title text-2xl text-slate-950">API-in-one Console</h2>
-      <p class="text-sm text-slate-500">输入 Admin Key 进入你的模型路由控制台</p>
-      <input class="input input-bordered w-full border-slate-200 bg-white text-slate-900" type="password" id="key-input" placeholder="Admin Key" onkeydown="if(event.key==='Enter')doLogin()">
-      <button class="btn border-0 bg-slate-900 text-white hover:bg-slate-800" onclick="doLogin()">登录</button>
-    </div>
-  </div>
-</div>
-
-<div class="hidden min-h-screen bg-slate-100 pb-24 md:pb-0" id="app">
-  <div class="fixed inset-y-0 left-0 hidden w-72 border-r border-slate-200 bg-white p-5 md:block">
-    <div class="mb-6">
-      <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-300 text-sm font-black text-slate-950">API</div>
-      <h1 class="text-xl font-semibold text-slate-950">API-in-one</h1>
-      <p class="text-xs text-slate-500">Model routing command center</p>
-    </div>
-    <ul class="menu gap-2 p-0">
-      <li><a class="nav-item active rounded-2xl text-slate-700" data-tab="channels" onclick="switchTab('channels')">控制台</a></li>
-      <li><a class="nav-item rounded-2xl text-slate-700" data-tab="stats" onclick="switchTab('stats')">请求流</a></li>
-      <li><a class="nav-item rounded-2xl text-slate-700" data-tab="settings" onclick="switchTab('settings')">凭据</a></li>
-    </ul>
-    <div class="absolute bottom-5 left-5 right-5 rounded-3xl border border-slate-200 bg-slate-100 p-4">
-      <div class="text-xs uppercase tracking-wide text-slate-500">Endpoint</div>
-      <div class="mt-1 truncate font-mono text-xs text-cyan-700">cli.aixinyin.asia</div>
-    </div>
-  </div>
-
-  <main class="min-h-screen p-3 pb-28 sm:p-4 md:ml-72 md:p-7">
-    <div id="tab-channels">
-      <div class="mb-4 rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm md:mb-6 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
-      <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div class="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-cyan-700/70 md:tracking-[0.35em]">Live Router</div>
-          <h2 class="text-2xl font-semibold tracking-tight text-slate-950 md:text-4xl">模型路由指挥台</h2>
-          <p class="mt-2 text-sm leading-6 text-slate-500">用健康度、Key 状态和模型映射组织你的所有上游能力。</p>
-        </div>
-        <div class="grid grid-cols-2 gap-2 md:flex">
-          <button class="btn touch-target border-0 bg-slate-900 text-white hover:bg-slate-800" onclick="openAddChannel()">添加</button>
-          <button class="btn touch-target border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100" onclick="loadData()">刷新</button>
-        </div>
-      </div>
-      </div>
-      <div id="channel-overview" class="mb-5 grid grid-cols-1 gap-3 md:grid-cols-4"></div>
-      <div id="channels-table"></div>
-    </div>
-
-    <div id="tab-stats" style="display:none">
-      <div class="mb-4 rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm md:mb-6 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
-        <div class="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-blue-700/70 md:tracking-[0.35em]">Traffic Stream</div>
-        <h2 class="text-2xl font-semibold tracking-tight text-slate-950 md:text-4xl">请求流工作台</h2>
-        <p class="mt-2 text-sm leading-6 text-slate-500">查看每一次路由、重试、Key 命中和协议转换。</p>
-      </div>
-      <div id="stats-cards" class="mb-5 grid grid-cols-1 gap-3 md:grid-cols-4"></div>
-      <div class="card border border-slate-200 bg-white shadow-sm md:shadow-xl">
-        <div class="card-body gap-4 p-3 sm:p-4 md:p-8">
-        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <h3 class="font-semibold text-slate-950">请求日志</h3>
-          <div class="flex items-center justify-between gap-3 md:justify-end">
-            <span class="text-xs text-slate-500" id="log-count"></span>
-            <button class="btn btn-sm touch-target btn-error btn-outline" onclick="clearRequestLogs()">清空历史</button>
-          </div>
-        </div>
-        <div class="grid grid-cols-1 gap-2 md:grid-cols-3 xl:grid-cols-6">
-          <select class="select select-bordered select-sm" id="log-filter-protocol" onchange="resetLogPageAndLoad()">
-            <option value="">全部协议</option>
-            <option value="openai">OpenAI</option>
-            <option value="claude-inbound">Claude</option>
-            <option value="gemini-inbound">Gemini</option>
-            <option value="responses">Responses</option>
-          </select>
-          <select class="select select-bordered select-sm" id="log-filter-model" onchange="resetLogPageAndLoad()">
-            <option value="">全部模型</option>
-          </select>
-          <select class="select select-bordered select-sm" id="log-filter-channel" onchange="resetLogPageAndLoad()">
-            <option value="">全部 Channel</option>
-          </select>
-          <select class="select select-bordered select-sm" id="log-filter-access-key" onchange="resetLogPageAndLoad()">
-            <option value="">全部请求密钥</option>
-          </select>
-          <select class="select select-bordered select-sm" id="log-filter-status" onchange="resetLogPageAndLoad()">
-            <option value="">全部状态</option>
-            <option value="success">成功</option>
-            <option value="error">失败</option>
-            <option value="429">429</option>
-            <option value="500">500</option>
-            <option value="502">502</option>
-          </select>
-          <input class="input input-bordered input-sm" id="log-filter-q" placeholder="搜索 ID / 错误" onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
-        </div>
-        <div id="logs-table"></div>
-        <div class="join grid grid-cols-[1fr_auto_1fr] justify-end md:flex">
-          <button class="btn btn-sm touch-target join-item" onclick="changeLogPage(-1)">上一页</button>
-          <span class="btn btn-sm touch-target join-item no-animation cursor-default" id="log-page-info"></span>
-          <button class="btn btn-sm touch-target join-item" onclick="changeLogPage(1)">下一页</button>
-        </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="tab-settings" style="display:none">
-      <div class="mb-4 rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm md:mb-6 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
-        <div class="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-violet-700/70 md:tracking-[0.35em]">Vault</div>
-        <h2 class="text-2xl font-semibold tracking-tight text-slate-950 md:text-4xl">凭据保险库</h2>
-      </div>
-      <div class="card mb-4 border border-slate-200 bg-white shadow-sm md:shadow-xl">
-        <div class="card-body p-4 md:p-8">
-        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div class="text-xs font-semibold uppercase text-slate-500">请求密钥</div>
-            <p class="text-sm text-slate-500">允许模型留空表示全部可访问；排除模型优先级更高。</p>
-          </div>
-          <div class="grid grid-cols-2 gap-2 md:flex">
-            <button class="btn btn-sm border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick="addAccessKeyPolicy()">添加密钥</button>
-            <button class="btn btn-sm border-0 bg-slate-900 text-white hover:bg-slate-800" onclick="saveAccessKeyPolicies()">保存</button>
-          </div>
-        </div>
-        <div id="access-keys-display" class="mt-4 space-y-3"></div>
-        </div>
-      </div>
-      <div class="card mb-4 border border-slate-200 bg-white shadow-sm md:shadow-xl">
-        <div class="card-body p-4 md:p-8">
-        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div class="text-xs font-semibold uppercase text-slate-500">模型系统提示词</div>
-            <p class="text-sm text-slate-500">按客户端可见模型设置，会追加到已有 system/developer 提示词后。</p>
-          </div>
-          <button class="btn btn-sm border-0 bg-slate-900 text-white hover:bg-slate-800" onclick="saveModelSystemPrompts()">保存提示词</button>
-        </div>
-        <div id="model-prompts-display" class="mt-4 space-y-3"></div>
-        </div>
-      </div>
-      <div class="card border border-slate-200 bg-white shadow-sm md:shadow-xl">
-        <div class="card-body">
-        <div class="text-xs font-semibold uppercase text-slate-500">Admin Key</div>
-        <div id="admin-key-display" class="font-mono text-sm"></div>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <div class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-2 shadow-2xl backdrop-blur md:hidden">
-    <div class="grid grid-cols-3 gap-2">
-      <button class="nav-item active rounded-2xl px-3 py-2 text-sm font-medium text-slate-700" data-tab="channels" onclick="switchTab('channels')">控制台</button>
-      <button class="nav-item rounded-2xl px-3 py-2 text-sm font-medium text-slate-700" data-tab="stats" onclick="switchTab('stats')">请求流</button>
-      <button class="nav-item rounded-2xl px-3 py-2 text-sm font-medium text-slate-700" data-tab="settings" onclick="switchTab('settings')">凭据</button>
-    </div>
-  </div>
-</div>
-
-<!-- Channel Modal -->
-<div class="modal-overlay" id="channel-modal">
-  <div class="modal-box w-11/12 max-w-4xl">
-    <h3 class="mb-4 text-lg font-semibold" id="modal-title">添加 Channel</h3>
-    <input type="hidden" id="edit-name" value="">
-
-    <div class="space-y-5">
-    <section class="rounded-box border border-base-300 p-4">
-      <div class="mb-3 text-xs font-semibold uppercase text-base-content/50">基本信息</div>
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <label class="form-control">
-          <div class="label"><span class="label-text">名称 *</span></div>
-          <input class="input input-bordered" type="text" id="f-name" placeholder="例如: my-openai">
-        </label>
-        <label class="form-control">
-          <div class="label"><span class="label-text">类型 *</span></div>
-          <select class="select select-bordered" id="f-type">
-            <option value="openai">OpenAI 兼容</option>
-            <option value="claude">Claude (Anthropic)</option>
-            <option value="gemini">Gemini (Google)</option>
-          </select>
-        </label>
-      </div>
-      <label class="form-control mt-3">
-        <div class="label"><span class="label-text">Base URL *</span></div>
-        <input class="input input-bordered" type="text" id="f-baseurl" placeholder="https://api.openai.com/v1">
-        <div class="label"><span class="label-text-alt">默认 URL（OpenAI 格式）</span></div>
-      </label>
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <label class="form-control">
-          <div class="label"><span class="label-text">Claude URL（可选）</span></div>
-          <input class="input input-bordered" type="text" id="f-baseurl-claude" placeholder="https://api.anthropic.com">
-          <div class="label"><span class="label-text-alt">同一供应商的 Claude 协议地址</span></div>
-        </label>
-        <label class="form-control">
-          <div class="label"><span class="label-text">Gemini URL（可选）</span></div>
-          <input class="input input-bordered" type="text" id="f-baseurl-gemini" placeholder="https://generativelanguage.googleapis.com">
-          <div class="label"><span class="label-text-alt">同一供应商的 Gemini 协议地址</span></div>
-        </label>
-      </div>
-      <label class="mt-3 flex items-start gap-3 rounded-2xl border border-base-300 bg-base-100 p-3">
-        <input class="checkbox checkbox-primary mt-1" type="checkbox" id="f-supports-responses">
-        <span>
-          <span class="block text-sm font-medium">原生支持 Responses 协议</span>
-          <span class="block text-xs text-base-content/60">勾选后 /v1/responses 直接转发到上游 /responses；不勾选则转换为 Chat Completions。</span>
-        </span>
-      </label>
-    </section>
-
-    <section class="rounded-box border border-base-300 p-4">
-      <div class="mb-3 text-xs font-semibold uppercase text-base-content/50">上游 API Keys</div>
-      <label class="form-control">
-        <textarea class="textarea textarea-bordered min-h-28 font-mono text-xs" id="f-keys" placeholder="sk-key1&#10;sk-key2"></textarea>
-        <div class="label"><span class="label-text-alt" id="keys-hint">每行一个 Key，请求时自动轮询</span></div>
-      </label>
-    </section>
-
-    <section class="rounded-box border border-base-300 p-4">
-      <div class="mb-3 text-xs font-semibold uppercase text-base-content/50">模型配置</div>
-      <label class="form-control">
-        <div class="label"><span class="label-text">上游模型列表</span></div>
-        <div class="join join-vertical w-full sm:join-horizontal">
-          <input class="input input-bordered join-item w-full" type="text" id="f-models" placeholder="gpt-4o, gpt-4o-mini (逗号分隔)">
-          <button class="btn join-item" onclick="fetchModels()" id="btn-fetch">获取模型</button>
-        </div>
-        <div class="label"><span class="label-text-alt">逗号分隔；或点「获取模型」自动拉取后勾选</span></div>
-      </label>
-      <div class="mt-3" id="mapping-editor-wrap" style="display:none">
-        <div class="mb-2 text-sm font-medium">模型映射（别名 → 上游模型 ID）</div>
-        <div class="mapping-editor" id="mapping-editor"></div>
-        <div class="mt-2 text-xs text-base-content/60">左边是上游模型 ID（只读），右边填写客户端请求时用的别名，留空表示不映射</div>
-      </div>
-    </section>
-
-    <section class="rounded-box border border-base-300 p-4">
-      <div class="mb-3 text-xs font-semibold uppercase text-base-content/50">高级</div>
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <label class="form-control">
-          <div class="label"><span class="label-text">优先级</span></div>
-          <input class="input input-bordered" type="number" id="f-priority" value="10" min="1">
-        </label>
-        <label class="form-control">
-          <div class="label"><span class="label-text">权重</span></div>
-          <input class="input input-bordered" type="number" id="f-weight" value="100" min="1">
-        </label>
-        <label class="flex items-end gap-3 pb-3">
-          <input class="toggle toggle-success" type="checkbox" id="f-enabled" checked>
-          <span class="text-sm">启用</span>
-        </label>
-      </div>
-    </section>
-    </div>
-
-    <div class="modal-action flex-col gap-2 sm:flex-row">
-      <button class="btn" onclick="closeModal('channel-modal')">取消</button>
-      <button class="btn btn-primary" onclick="saveChannel()">保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- Model Picker Modal -->
-<div class="modal-overlay" id="picker-modal">
-  <div class="modal-box w-11/12 max-w-2xl">
-    <h3 class="mb-4 text-lg font-semibold">选择模型</h3>
-    <input type="text" class="input input-bordered mb-3 w-full" id="picker-search" placeholder="搜索模型..." oninput="filterPicker()">
-    <div class="mb-3 flex items-center gap-2">
-      <button class="btn btn-sm" onclick="pickerSelectAll()">全选</button>
-      <button class="btn btn-sm" onclick="pickerDeselectAll()">全不选</button>
-      <span class="ml-auto text-xs text-base-content/60" id="picker-count"></span>
-    </div>
-    <div class="max-h-96 overflow-y-auto rounded-box border border-base-300" id="picker-list"></div>
-    <div class="modal-action flex-col gap-2 sm:flex-row">
-      <button class="btn" onclick="closeModal('picker-modal')">取消</button>
-      <button class="btn btn-primary" onclick="applyPickerSelection()">确认选择</button>
-    </div>
-  </div>
-</div>
-
-<!-- Key Manager Modal -->
-<div class="modal-overlay" id="key-modal">
-  <div class="modal-box w-11/12 max-w-5xl">
-    <h3 class="mb-4 text-lg font-semibold" id="key-modal-title">Key 管理</h3>
-    <input type="hidden" id="key-channel-name" value="">
-    <div id="key-list"></div>
-    <div class="mt-4 rounded-box border border-base-300 p-4">
-      <div class="mb-2 text-xs font-semibold uppercase text-base-content/50">批量替换</div>
-      <textarea class="textarea textarea-bordered min-h-32 w-full font-mono text-xs" id="key-editor" placeholder="每行一个 Key"></textarea>
-      <div class="mt-2 text-xs text-base-content/60">保存会全量替换该 Channel 的上游 Key；空内容不会保存。</div>
-    </div>
-    <div class="modal-action flex-col gap-2 sm:flex-row">
-      <button class="btn" onclick="closeModal('key-modal')">关闭</button>
-      <button class="btn" onclick="probeKeys()">探活</button>
-      <button class="btn btn-primary" onclick="saveChannelKeys()">保存 Key</button>
-    </div>
-  </div>
-</div>
-
-<!-- Log Detail Modal -->
-<div class="modal-overlay" id="log-modal">
-  <div class="modal-box w-11/12 max-w-6xl">
-    <h3 class="mb-4 text-lg font-semibold" id="log-modal-title">请求详情</h3>
-    <div id="log-detail"></div>
-    <div class="modal-action flex-col gap-2 sm:flex-row">
-      <button class="btn" onclick="closeModal('log-modal')">关闭</button>
-    </div>
-  </div>
-</div>
-
-<script>
-let API_KEY = '';
-let currentModels = []; // models currently in the models input (upstream ids)
-let fetchedMapping = {}; // alias → upstream id from edit
-let activeKeyChannel = null;
-let activeKeyRows = [];
-let channelKeyLoadState = 'idle';
-let channelOriginalKeys = [];
-let accessKeyPolicies = [];
-let accessPolicyModels = [];
-let modelSystemPrompts = {};
-let logAccessKeyOptionsLoaded = false;
-
-function switchTab(tab) {
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  document.getElementById('tab-channels').style.display = 'none';
-  document.getElementById('tab-stats').style.display = 'none';
-  document.getElementById('tab-settings').style.display = 'none';
-  stopStatsAutoRefresh();
-  if (tab === 'channels') {
-    document.getElementById('tab-channels').style.display = 'block';
-  } else if (tab === 'stats') {
-    document.getElementById('tab-stats').style.display = 'block';
-    startStatsAutoRefresh();
-  } else {
-    document.getElementById('tab-settings').style.display = 'block';
-    loadSettings();
-  }
-  document.querySelectorAll(`.nav-item[data-tab="${tab}"]`).forEach(el => el.classList.add('active'));
-}
-
-function doLogin() {
-  API_KEY = document.getElementById('key-input').value.trim();
-  if (!API_KEY) return;
-  loadData().then(() => {
-    document.getElementById('login-overlay').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-  }).catch(() => toast('Key 无效或服务器不可达', true));
-}
-
-async function api(path, opts = {}) {
-  const resp = await fetch(path, { ...opts,
-    headers: { 'Authorization': 'Bearer ' + API_KEY, 'Content-Type': 'application/json', ...(opts.headers||{}) }
-  });
-  if (!resp.ok) { throw new Error(`HTTP ${resp.status}`); }
-  return resp.json();
-}
-
-// ---- Data ----
-
-async function loadData() {
-  const ch = await api('/admin/channels');
-  const channels = ch.channels || [];
-  renderChannels(channels);
-  renderLogRouteFilters(channels);
-}
-
-async function loadSettings() {
-  const data = await api('/admin/settings');
-  accessPolicyModels = collectPolicyModels(data.models || []);
-  accessKeyPolicies = normalizeAccessKeyPolicies(data.access_keys || []);
-  modelSystemPrompts = data.model_system_prompts || {};
-  renderAccessKeyPolicies();
-  renderModelSystemPrompts();
-  const adminKey = data.admin_key || '';
-  const maskedAdmin = adminKey.length > 8 ? adminKey.slice(0,4) + '****' + adminKey.slice(-4) : adminKey;
-  document.getElementById('admin-key-display').innerHTML = `<span class="badge badge-ghost font-mono">${esc(maskedAdmin)}</span>`;
-  renderLogAccessKeyFilter(data);
-}
-
-async function loadLogAccessKeyOptions(force = false) {
-  if (logAccessKeyOptionsLoaded && !force) return;
-  const data = await api('/admin/settings');
-  renderLogAccessKeyFilter(data);
-  logAccessKeyOptionsLoaded = true;
-}
-
-function renderLogAccessKeyFilter(data) {
-  const el = document.getElementById('log-filter-access-key');
-  if (!el) return;
-  const current = el.value;
-  const options = [];
-  for (const item of normalizeAccessKeyPolicies(data.access_keys || [])) {
-    if (!item.key) continue;
-    const masked = maskKeyLocal(item.key);
-    options.push({ label: masked, value: masked });
-  }
-  const seen = new Set();
-  el.innerHTML = '<option value="">全部请求密钥</option>' + options.filter(opt => {
-    if (seen.has(opt.value)) return false;
-    seen.add(opt.value);
-    return true;
-  }).map(opt => `<option value="${esc(opt.value)}">${esc(opt.label)}</option>`).join('');
-  if ([...el.options].some(opt => opt.value === current)) {
-    el.value = current;
-  }
-}
-
-function renderLogRouteFilters(channels) {
-  const models = new Set();
-  const channelNames = new Set();
-  for (const ch of channels) {
-    if (ch.name) channelNames.add(ch.name);
-    if (ch.enabled === false) continue;
-    const mapping = ch.model_mapping || {};
-    const mappedUpstreamModels = new Set(Object.values(mapping));
-    for (const model of ch.models || []) {
-      if (!mappedUpstreamModels.has(model)) models.add(model);
-    }
-    for (const alias of Object.keys(mapping)) models.add(alias);
-  }
-  replaceSelectOptions('log-filter-model', '全部模型', Array.from(models).sort((a, b) => a.localeCompare(b)));
-  replaceSelectOptions('log-filter-channel', '全部 Channel', Array.from(channelNames).sort((a, b) => a.localeCompare(b)));
-}
-
-function replaceSelectOptions(id, placeholder, values) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const current = el.value;
-  el.innerHTML = `<option value="">${esc(placeholder)}</option>` + values.map(value =>
-    `<option value="${esc(value)}">${esc(value)}</option>`
-  ).join('');
-  if (values.includes(current)) el.value = current;
-}
-
-function renderModelSystemPrompts() {
-  const el = document.getElementById('model-prompts-display');
-  if (!accessPolicyModels.length) {
-    el.innerHTML = '<div class="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">暂无可配置模型，先在 Channel 中配置模型。</div>';
-    return;
-  }
-  el.innerHTML = accessPolicyModels.map(model => {
-    const value = modelSystemPrompts[model] || '';
-    const active = value.trim() ? 'border-cyan-200 bg-cyan-50/40' : 'border-slate-200 bg-white';
-    return `<div class="rounded-2xl border ${active} p-3">
-      <div class="mb-2 flex items-center justify-between gap-2">
-        <div class="min-w-0 truncate font-mono text-sm font-semibold text-slate-800">${esc(model)}</div>
-        ${value.trim() ? '<span class="rounded-full bg-cyan-100 px-2 py-1 text-xs text-cyan-700">已设置</span>' : '<span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500">默认</span>'}
-      </div>
-      <textarea class="textarea textarea-bordered min-h-24 w-full bg-white text-sm" placeholder="这个模型的系统提示词，留空表示不注入" oninput="modelSystemPrompts['${escAttr(model)}']=this.value">${esc(value)}</textarea>
-    </div>`;
-  }).join('');
-}
-
-async function saveModelSystemPrompts() {
-  const prompts = {};
-  for (const [model, prompt] of Object.entries(modelSystemPrompts)) {
-    const clean = (prompt || '').trim();
-    if (clean) prompts[model] = clean;
-  }
-  try {
-    const data = await api('/admin/model-system-prompts', { method: 'PUT', body: JSON.stringify({ model_system_prompts: prompts }) });
-    modelSystemPrompts = data.model_system_prompts || {};
-    renderModelSystemPrompts();
-    toast('模型系统提示词已保存');
-  } catch(e) {
-    toast('保存提示词失败: ' + e.message, true);
-  }
-}
-
-function collectPolicyModels(models) {
-  const seen = new Set();
-  const result = [];
-  for (const item of models) {
-    const id = typeof item === 'string' ? item : item.id;
-    if (id && !seen.has(id)) {
-      seen.add(id);
-      result.push(id);
-    }
-  }
-  return result.sort((a, b) => a.localeCompare(b));
-}
-
-function normalizeAccessKeyPolicies(keys) {
-  return keys.map(k => {
-    if (typeof k === 'string') {
-      return { key: k, allowed_models: [], excluded_models: [] };
-    }
-    return {
-      key: k.key || '',
-      allowed_models: Array.isArray(k.allowed_models) ? k.allowed_models : [],
-      excluded_models: Array.isArray(k.excluded_models) ? k.excluded_models : [],
-    };
-  });
-}
-
-function renderAccessKeyPolicies() {
-  const el = document.getElementById('access-keys-display');
-  if (!accessKeyPolicies.length) {
-    el.innerHTML = '<div class="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">还没有请求密钥，点击“添加密钥”创建。</div>';
-    return;
-  }
-  el.innerHTML = accessKeyPolicies.map((item, idx) => `
-    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <div class="mb-3 flex items-center justify-between gap-3">
-        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Access Key #${idx + 1}</div>
-        <button class="btn btn-xs btn-error btn-outline" onclick="removeAccessKeyPolicy(${idx})">删除</button>
-      </div>
-      <label class="form-control">
-        <div class="label"><span class="label-text">请求密钥</span></div>
-        <div class="join join-vertical w-full sm:join-horizontal">
-          <input class="input input-bordered join-item w-full font-mono text-sm" value="${esc(item.key || '')}" oninput="accessKeyPolicies[${idx}].key=this.value">
-          <button type="button" class="btn join-item border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100" onclick="generateAccessKey(${idx})">生成</button>
-        </div>
-      </label>
-      <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-        ${renderModelPicker(idx, 'allowed_models', '允许模型', '未选择时默认全部可访问')}
-        ${renderModelPicker(idx, 'excluded_models', '排除模型', '排除优先级最高')}
-      </div>
-    </div>
-  `).join('');
-}
-
-function renderModelPicker(index, field, title, hint) {
-  const selected = new Set(accessKeyPolicies[index][field] || []);
-  const countText = field === 'allowed_models' && selected.size === 0 ? '全部' : `${selected.size} 个`;
-  const chips = accessPolicyModels.length ? accessPolicyModels.map(model => {
-    const active = selected.has(model);
-    const cls = active
-      ? (field === 'allowed_models' ? 'border-cyan-300 bg-cyan-50 text-cyan-800' : 'border-rose-300 bg-rose-50 text-rose-700')
-      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300';
-    return `<button type="button" class="rounded-full border px-2.5 py-1 text-left font-mono text-[11px] ${cls}" onclick="toggleAccessPolicyModel(${index}, '${field}', '${escAttr(model)}')">${esc(model)}</button>`;
-  }).join('') : '<div class="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">暂无可选模型，先在 Channel 中配置模型。</div>';
-  return `
-    <div class="rounded-2xl border border-slate-200 bg-white p-3">
-      <div class="mb-2 flex items-center justify-between gap-2">
-        <div>
-          <div class="text-sm font-semibold text-slate-800">${title}</div>
-          <div class="text-xs text-slate-500">${hint}</div>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">${countText}</span>
-          <button type="button" class="btn btn-xs border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100" onclick="selectAllAccessPolicyModels(${index}, '${field}')">全选</button>
-          <button type="button" class="btn btn-xs border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100" onclick="clearAccessPolicyModels(${index}, '${field}')">清空</button>
-        </div>
-      </div>
-      <div class="max-h-52 overflow-y-auto pr-1">
-        <div class="flex flex-wrap gap-1.5">${chips}</div>
-      </div>
-    </div>
-  `;
-}
-
-function toggleAccessPolicyModel(index, field, model) {
-  const values = new Set(accessKeyPolicies[index][field] || []);
-  if (values.has(model)) values.delete(model);
-  else values.add(model);
-  accessKeyPolicies[index][field] = Array.from(values).sort((a, b) => a.localeCompare(b));
-  renderAccessKeyPolicies();
-}
-
-function clearAccessPolicyModels(index, field) {
-  accessKeyPolicies[index][field] = [];
-  renderAccessKeyPolicies();
-}
-
-function selectAllAccessPolicyModels(index, field) {
-  accessKeyPolicies[index][field] = accessPolicyModels.slice();
-  renderAccessKeyPolicies();
-}
-
-function generateAccessKey(index) {
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  accessKeyPolicies[index].key = 'sk-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-  renderAccessKeyPolicies();
-}
-
-function parseModelList(value) {
-  const seen = new Set();
-  return value.split(/[\n,]+/).map(s => s.trim()).filter(s => {
-    if (!s || seen.has(s)) return false;
-    seen.add(s);
-    return true;
-  });
-}
-
-function addAccessKeyPolicy() {
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  const key = 'sk-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-  accessKeyPolicies.push({ key, allowed_models: [], excluded_models: [] });
-  renderAccessKeyPolicies();
-}
-
-function removeAccessKeyPolicy(index) {
-  accessKeyPolicies.splice(index, 1);
-  renderAccessKeyPolicies();
-}
-
-async function saveAccessKeyPolicies() {
-  const keys = accessKeyPolicies.map(k => ({
-    key: (k.key || '').trim(),
-    allowed_models: k.allowed_models || [],
-    excluded_models: k.excluded_models || [],
-  })).filter(k => k.key);
-  try {
-    const data = await api('/admin/access-keys', { method: 'PUT', body: JSON.stringify({ access_keys: keys }) });
-    accessKeyPolicies = normalizeAccessKeyPolicies(data.access_keys || []);
-    renderAccessKeyPolicies();
-    logAccessKeyOptionsLoaded = false;
-    loadLogAccessKeyOptions(true).catch(() => {});
-    toast('请求密钥已保存');
-  } catch(e) {
-    toast('保存请求密钥失败: ' + e.message, true);
-  }
-}
-
-function renderChannels(channels) {
-  renderChannelOverview(channels);
-  if (!channels.length) {
-    document.getElementById('channels-table').innerHTML = '<div class="rounded-[2rem] border border-slate-200 bg-slate-100 p-12 text-center text-sm text-slate-500">暂无 Channel，点击「添加 Channel」开始</div>';
-    return;
-  }
-  let html = '<div class="grid grid-cols-1 gap-4 xl:grid-cols-2">';
-  for (const ch of channels) {
-    const disabled = ch.enabled === false;
-    const sc = disabled ? 'border-slate-200 bg-slate-100 text-slate-500' : (ch.healthy ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700');
-    const st = disabled ? '已禁用' : (ch.healthy ? '正常' : '异常');
-    const keyStats = ch.key_stats || [];
-    const keyCount = ch.key_count || (ch.masked_keys || []).length || keyStats.length;
-    const keyPreview = keyStats.length ? keyStats.map(k => {
-      const cls = k.healthy ? 'bg-emerald-400' : 'bg-rose-400';
-      const status = k.last_status ? ` · ${k.last_status}` : '';
-      return `<div class="flex items-center justify-between gap-3 rounded-2xl bg-slate-100 px-3 py-2">
-        <div class="min-w-0">
-          <div class="truncate font-mono text-xs text-slate-700">${esc(k.masked_key)}</div>
-          <div class="text-[11px] text-slate-500">成功 ${k.success_requests||0} / 失败 ${k.failure_requests||0}${status}${k.last_latency_ms?` · ${k.last_latency_ms}ms`:''}</div>
-        </div>
-        <span class="h-2.5 w-2.5 shrink-0 rounded-full ${cls}"></span>
-      </div>`;
-    }).join('') : (ch.masked_keys||[]).map(k => `<div class="rounded-2xl bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700">${esc(k)}</div>`).join('');
-    const models = disabled ? '' : (ch.models||[]).map(m => `<span class="rounded-full border border-slate-200 bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700">${esc(m)}</span>`).join(' ');
-    let mappingHtml = '';
-    const mm = ch.model_mapping || {};
-    const mmKeys = Object.keys(mm);
-    if (!disabled && mmKeys.length) {
-      mappingHtml = '<div class="mt-3 max-h-20 overflow-y-auto pr-1"><div class="flex flex-wrap gap-1.5">' + mmKeys.map(alias =>
-        `<span class="rounded-full bg-cyan-50 px-2 py-1 font-mono text-[11px] text-cyan-700">${esc(alias)} → ${esc(mm[alias])}</span>`
-      ).join('') + '</div></div>';
-    }
-    html += `<section class="group flex h-[25rem] flex-col overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white shadow-sm transition hover:border-cyan-200 sm:h-[28rem] md:h-[32rem] md:rounded-[1.5rem]">
-      <div class="shrink-0 border-b border-slate-200 bg-slate-50 p-3.5 md:p-5">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div class="min-w-0">
-            <div class="mb-2 flex items-center gap-2">
-              <span class="rounded-full border px-2 py-0.5 text-xs ${sc}">${st}</span>
-              <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">${esc(ch.type)}</span>
-              ${ch.supports_responses ? '<span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">Responses</span>' : ''}
-            </div>
-            <h3 class="truncate text-lg font-semibold text-slate-950 md:text-2xl">${esc(ch.name)}</h3>
-            <p class="mt-1 truncate font-mono text-xs text-slate-500">${esc(ch.base_url)}</p>
-          </div>
-          <div class="grid grid-cols-2 gap-2 text-left sm:text-right">
-            <div class="rounded-xl bg-slate-100 px-3 py-2 md:rounded-2xl"><div class="text-base font-semibold text-slate-950 md:text-lg">${keyCount}</div><div class="text-[10px] uppercase text-slate-500">keys</div></div>
-            <div class="rounded-xl bg-slate-100 px-3 py-2 md:rounded-2xl"><div class="text-base font-semibold text-slate-950 md:text-lg">${(ch.models||[]).length}</div><div class="text-[10px] uppercase text-slate-500">models</div></div>
-          </div>
-        </div>
-      </div>
-      <div class="grid min-h-0 flex-1 gap-3 p-3.5 md:gap-4 md:p-5 lg:grid-cols-[1fr_1.2fr]">
-        <div class="flex min-h-0 flex-col">
-          <div class="mb-2 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <span>Key health</span>
-            ${keyCount > 4 ? '<span class="text-[10px] font-medium normal-case tracking-normal text-slate-400">滚动查看全部</span>' : ''}
-          </div>
-          <div class="scroll-fade min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">${keyPreview || '<div class="text-sm text-slate-500">暂无 Key</div>'}</div>
-        </div>
-        <div class="hidden min-h-0 sm:block">
-          <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Models & aliases</div>
-          <div class="scroll-fade flex max-h-36 flex-wrap gap-1.5 overflow-y-auto pr-1">${models || '<span class="text-sm text-slate-500">暂无模型</span>'}</div>
-          ${mappingHtml}
-        </div>
-      </div>
-      <div class="mt-auto flex shrink-0 flex-col gap-3 border-t border-slate-200 px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5 md:py-4">
-        <div class="text-xs text-slate-500">priority ${ch.priority} · weight ${ch.weight}</div>
-        <div class="grid w-full grid-cols-4 gap-2 sm:w-auto sm:flex">
-          <button class="btn btn-sm touch-target ${disabled ? 'btn-success text-white' : 'border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100'}" onclick="setChannelEnabled('${escAttr(ch.name)}', ${disabled})">${disabled ? '启用' : '禁用'}</button>
-          <button class="btn btn-sm touch-target border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick='openKeyManager(${JSON.stringify(ch)})'>Keys</button>
-          <button class="btn btn-sm touch-target border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick='openEditChannel(${JSON.stringify(ch)})'>编辑</button>
-          <button class="btn btn-sm touch-target btn-error btn-outline" onclick="deleteChannel('${esc(ch.name)}')">删除</button>
-        </div>
-      </div>
-    </section>`;
-  }
-  html += '</div>';
-  document.getElementById('channels-table').innerHTML = html;
-}
-
-function renderChannelOverview(channels) {
-  const total = channels.length;
-  const enabled = channels.filter(ch => ch.enabled !== false).length;
-  const keyCount = channels.reduce((sum, ch) => sum + (ch.key_count || (ch.masked_keys || []).length || 0), 0);
-  const modelCount = channels.reduce((set, ch) => {
-    if (ch.enabled === false) return set;
-    (ch.models || []).forEach(m => set.add(m));
-    Object.keys(ch.model_mapping || {}).forEach(m => set.add(m));
-    return set;
-  }, new Set()).size;
-  document.getElementById('channel-overview').innerHTML = [
-    ['Channels', total, 'text-cyan-700'],
-    ['Enabled', enabled, 'text-emerald-700'],
-    ['Keys', keyCount, 'text-blue-700'],
-    ['Models', modelCount, 'text-violet-700'],
-  ].map(([label, value, color]) => `
-    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm ">
-      <div class="text-xs uppercase tracking-wide text-slate-500">${label}</div>
-      <div class="mt-2 text-3xl font-semibold ${color}">${value}</div>
-    </div>
-  `).join('');
-}
-
-async function openKeyManager(ch) {
-  activeKeyChannel = ch;
-  document.getElementById('key-channel-name').value = ch.name;
-  document.getElementById('key-modal-title').textContent = 'Key 管理 — ' + ch.name;
-  document.getElementById('key-list').innerHTML = '<div class="p-8 text-center text-sm text-base-content/60">加载中...</div>';
-  document.getElementById('key-editor').value = '';
-  document.getElementById('key-modal').classList.add('active');
-  try {
-    const data = await api('/admin/channels/'+encodeURIComponent(ch.name)+'/keys');
-    activeKeyRows = (data.keys || []).map((key, index) => {
-      const stat = (ch.key_stats || []).find(s => s.index === index) || {};
-      return { index, key, masked_key: (data.masked_keys || [])[index] || maskKeyLocal(key), disabled: !!stat.disabled, stat };
-    });
-    document.getElementById('key-editor').value = (data.keys || []).join('\n');
-    renderKeyRows();
-  } catch(e) {
-    document.getElementById('key-list').innerHTML = '<div class="p-8 text-center text-sm text-error">读取 Key 失败</div>';
-    toast('读取 Key 失败: '+e.message, true);
-  }
-}
-
-function renderKeyRows(probeResults = null) {
-  const probeByIndex = {};
-  (probeResults || []).forEach(r => probeByIndex[r.index] = r);
-  if (!activeKeyRows.length) {
-    document.getElementById('key-list').innerHTML = '<div class="p-8 text-center text-sm text-base-content/60">暂无 Key</div>';
-    return;
-  }
-  let tableHtml = '<div class="desktop-only mobile-table-scroll overflow-x-auto rounded-box border border-base-300"><table class="table table-sm min-w-[42rem]"><thead><tr><th>#</th><th>Key</th><th>状态</th><th>统计</th><th>操作</th></tr></thead><tbody>';
-  let cardHtml = '<div class="mobile-only space-y-3">';
-  for (const row of activeKeyRows) {
-    const stat = row.stat || {};
-    const probe = probeByIndex[row.index];
-    const health = row.disabled ? '<span class="badge badge-neutral">已禁用</span>' : (stat.healthy === false ? '<span class="badge badge-error">异常</span>' : '<span class="badge badge-success">启用</span>');
-    const probeHtml = probe ? `<br><span class="text-xs ${probe.ok?'text-success':'text-error'}">探活 ${probe.status || 'ERR'} · ${probe.latency_ms || 0}ms</span>` : '';
-    tableHtml += `<tr>
-      <td>${row.index}</td>
-      <td class="max-w-xl break-all font-mono text-xs">${esc(row.key)}</td>
-      <td>${health}${probeHtml}</td>
-      <td><span class="text-xs text-base-content/60">成功 ${stat.success_requests||0}<br>失败 ${stat.failure_requests||0}</span></td>
-      <td><div class="flex gap-1">
-        <button class="btn btn-sm" onclick="setKeyDisabled(${row.index}, ${!row.disabled})">${row.disabled ? '启用' : '禁用'}</button>
-        <button class="btn btn-sm" onclick="probeKeys(${row.index})">探活</button>
-      </div></td>
-    </tr>`;
-    cardHtml += `<section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-      <div class="mb-2 flex items-center justify-between gap-2">
-        <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">#${row.index}</span>
-        ${health}
-      </div>
-      <div class="break-all rounded-xl bg-slate-50 p-3 font-mono text-xs text-slate-700">${esc(row.key)}</div>
-      <div class="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-500">
-        <div class="rounded-xl bg-slate-50 p-2">成功 <span class="font-semibold text-slate-800">${stat.success_requests||0}</span></div>
-        <div class="rounded-xl bg-slate-50 p-2">失败 <span class="font-semibold text-slate-800">${stat.failure_requests||0}</span>${probeHtml}</div>
-      </div>
-      <div class="mt-3 grid grid-cols-2 gap-2">
-        <button class="btn btn-sm touch-target" onclick="setKeyDisabled(${row.index}, ${!row.disabled})">${row.disabled ? '启用' : '禁用'}</button>
-        <button class="btn btn-sm touch-target" onclick="probeKeys(${row.index})">探活</button>
-      </div>
-    </section>`;
-  }
-  tableHtml += '</tbody></table></div>';
-  cardHtml += '</div>';
-  document.getElementById('key-list').innerHTML = tableHtml + cardHtml;
-}
-
-async function setKeyDisabled(index, disabled) {
-  const name = document.getElementById('key-channel-name').value;
-  try {
-    await api('/admin/channels/'+encodeURIComponent(name)+'/keys/'+index+'/state', { method:'PUT', body:JSON.stringify({disabled}) });
-    const row = activeKeyRows.find(r => r.index === index);
-    if (row) row.disabled = disabled;
-    renderKeyRows();
-    toast(disabled ? 'Key 已禁用' : 'Key 已启用');
-    loadData();
-  } catch(e) { toast('更新 Key 状态失败: '+e.message, true); }
-}
-
-async function probeKeys(index = null) {
-  const name = document.getElementById('key-channel-name').value;
-  let path = '/admin/channels/'+encodeURIComponent(name)+'/probe';
-  if (index !== null) path += '?index=' + index;
-  try {
-    const data = await api(path, { method:'POST' });
-    renderKeyRows(data.results || []);
-    toast('探活完成');
-  } catch(e) { toast('探活失败: '+e.message, true); }
-}
-
-async function saveChannelKeys() {
-  const name = document.getElementById('key-channel-name').value;
-  const raw = document.getElementById('key-editor').value.trim();
-  if (!raw) { toast('Key 内容不能为空', true); return; }
-  if (!confirm('确定全量替换 "'+name+'" 的 Key？')) return;
-  try {
-    const data = await api('/admin/channels/'+encodeURIComponent(name)+'/keys', { method:'PUT', body:JSON.stringify({keys: raw}) });
-    activeKeyRows = raw.split(/\r?\n|,|;/).map(k => k.trim()).filter(Boolean).map((key, index) => ({
-      index,
-      key,
-      masked_key: (data.masked_keys || [])[index] || maskKeyLocal(key),
-      disabled: false,
-      stat: {},
-    }));
-    toast('Key 已保存');
-    closeModal('key-modal');
-    loadData();
-  } catch(e) { toast('保存 Key 失败: '+e.message, true); }
-}
-
-async function setChannelEnabled(name, enabled) {
-  try {
-    await api('/admin/channels/'+encodeURIComponent(name)+'/state', { method:'PUT', body:JSON.stringify({enabled}) });
-    toast(enabled ? 'Channel 已启用' : 'Channel 已禁用');
-    await loadData();
-    if (document.getElementById('tab-stats').style.display !== 'none') loadStats();
-  } catch(e) {
-    toast('更新 Channel 状态失败: '+e.message, true);
-  }
-}
-
-// ---- Channel Modal ----
-
-function openAddChannel() {
-  channelKeyLoadState = 'ready';
-  channelOriginalKeys = [];
-  document.getElementById('modal-title').textContent = '添加 Channel';
-  document.getElementById('edit-name').value = '';
-  document.getElementById('f-name').value = '';
-  document.getElementById('f-name').disabled = false;
-  document.getElementById('f-type').value = 'openai';
-  document.getElementById('f-baseurl').value = '';
-  document.getElementById('f-baseurl-claude').value = '';
-  document.getElementById('f-baseurl-gemini').value = '';
-  document.getElementById('f-supports-responses').checked = false;
-  document.getElementById('f-keys').value = '';
-  document.getElementById('f-keys').placeholder = 'sk-key1\nsk-key2';
-  document.getElementById('keys-hint').textContent = '每行一个 Key，请求时自动轮询';
-  document.getElementById('f-models').value = '';
-  document.getElementById('f-priority').value = '10';
-  document.getElementById('f-weight').value = '100';
-  document.getElementById('f-enabled').checked = true;
-  currentModels = [];
-  fetchedMapping = {};
-  document.getElementById('mapping-editor-wrap').style.display = 'none';
-  document.getElementById('channel-modal').classList.add('active');
-}
-
-async function openEditChannel(ch) {
-  channelKeyLoadState = 'loading';
-  channelOriginalKeys = [];
-  document.getElementById('modal-title').textContent = '编辑 Channel — ' + ch.name;
-  document.getElementById('edit-name').value = ch.name;
-  document.getElementById('f-name').value = ch.name;
-  document.getElementById('f-name').disabled = true;
-  document.getElementById('f-type').value = ch.type;
-  document.getElementById('f-baseurl').value = ch.base_url;
-  document.getElementById('f-baseurl-claude').value = ch.base_url_claude || '';
-  document.getElementById('f-baseurl-gemini').value = ch.base_url_gemini || '';
-  document.getElementById('f-supports-responses').checked = !!ch.supports_responses;
-  document.getElementById('f-keys').value = '';
-  document.getElementById('f-keys').placeholder = '正在读取现有 Key...';
-  document.getElementById('keys-hint').textContent = `正在读取已配置的 ${ch.key_count || 0} 个 Key`;
-  document.getElementById('f-models').value = (ch.models||[]).join(', ');
-  document.getElementById('f-priority').value = ch.priority;
-  document.getElementById('f-weight').value = ch.weight;
-  document.getElementById('f-enabled').checked = ch.enabled;
-  currentModels = (ch.models||[]).slice();
-  fetchedMapping = Object.assign({}, ch.model_mapping || {});
-  if (currentModels.length) {
-    renderMappingEditor();
-  } else {
-    document.getElementById('mapping-editor-wrap').style.display = 'none';
-  }
-  document.getElementById('channel-modal').classList.add('active');
-  try {
-    const data = await api('/admin/channels/'+encodeURIComponent(ch.name)+'/keys');
-    channelOriginalKeys = data.keys || [];
-    document.getElementById('f-keys').value = channelOriginalKeys.join('\n');
-    document.getElementById('f-keys').placeholder = 'sk-key1\nsk-key2';
-    document.getElementById('keys-hint').textContent = `已加载 ${data.key_count || 0} 个 Key，保存会按文本框内容整体替换`;
-    channelKeyLoadState = 'ready';
-  } catch(e) {
-    channelKeyLoadState = 'error';
-    document.getElementById('keys-hint').textContent = '读取现有 Key 失败，请重新打开编辑窗口';
-    toast('读取现有 Key 失败: '+e.message, true);
-  }
-}
-
-function closeModal(id) {
-  document.getElementById(id).classList.remove('active');
-  if (id === 'channel-modal') {
-    channelKeyLoadState = 'idle';
-    channelOriginalKeys = [];
-  }
-}
-
-function renderMappingEditor() {
-  const wrap = document.getElementById('mapping-editor-wrap');
-  wrap.style.display = 'block';
-  // Build reverse map: upstream → alias
-  const reverse = {};
-  for (const [alias, upstream] of Object.entries(fetchedMapping)) {
-    reverse[upstream] = alias;
-  }
-  let html = '<div class="hidden grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 rounded-t-box bg-base-200 px-3 py-2 text-xs font-semibold text-base-content/60 md:grid"><span>上游模型 ID</span><span></span><span>客户端别名（留空 = 直通）</span></div>';
-  for (const m of currentModels) {
-    const alias = reverse[m] || '';
-    html += `<div class="mapping-row border-t border-base-300">
-      <div class="truncate bg-base-200/60 px-3 py-2 font-mono text-xs">${esc(m)}</div>
-      <div class="hidden px-2 text-base-content/40 md:block">→</div>
-      <input type="text" class="mapping-alias input input-sm rounded-none border-0 font-mono" data-upstream="${esc(m)}" value="${esc(alias)}" placeholder="别名：${esc(m)}">
-    </div>`;
-  }
-  document.getElementById('mapping-editor').innerHTML = `<div class="overflow-hidden rounded-box border border-base-300">${html}</div>`;
-}
-
-let allFetchedModels = []; // all models from upstream
-let pickerSelected = new Set(); // selected model ids
-
-async function fetchModels() {
-  const type = document.getElementById('f-type').value;
-  const baseURL = modelFetchBaseURL(type);
-  const keysRaw = document.getElementById('f-keys').value.trim();
-  const keys = keysRaw.split('\n').map(k=>k.trim()).filter(k=>k);
-  if (channelKeyLoadState === 'loading') { toast('Key 还在加载，稍后再获取模型', true); return; }
-  if (channelKeyLoadState === 'error') { toast('现有 Key 读取失败，请重新打开编辑窗口', true); return; }
-  if (!baseURL) { toast('请先填写 Base URL', true); return; }
-  if (!keys.length) { toast('请先填写 Key', true); return; }
-  const btn = document.getElementById('btn-fetch');
-  btn.disabled = true; btn.textContent = '获取中...';
-  try {
-    const data = await api('/admin/models/fetch', { method:'POST', body: JSON.stringify({type, base_url:baseURL, key:keys[0]}) });
-    const models = data.models || [];
-    if (!models.length) { toast('未获取到模型', true); return; }
-    allFetchedModels = models;
-    // Pre-select models that are already in the input
-    const existing = document.getElementById('f-models').value.split(',').map(s=>s.trim()).filter(s=>s);
-    pickerSelected = new Set(existing.filter(m => models.includes(m)));
-    if (!pickerSelected.size && !existing.length) {
-      // If no existing selection, select all
-      pickerSelected = new Set(models);
-    }
-    renderPicker();
-    document.getElementById('picker-modal').classList.add('active');
-  } catch(e) { toast('获取失败: '+e.message, true); }
-  finally { btn.disabled = false; btn.textContent = '获取模型'; }
-}
-
-function modelFetchBaseURL(type) {
-  if (type === 'claude') {
-    return document.getElementById('f-baseurl-claude').value.trim() || document.getElementById('f-baseurl').value.trim();
-  }
-  if (type === 'gemini') {
-    return document.getElementById('f-baseurl-gemini').value.trim() || document.getElementById('f-baseurl').value.trim();
-  }
-  return document.getElementById('f-baseurl').value.trim();
-}
-
-function renderPicker() {
-  const q = document.getElementById('picker-search').value.toLowerCase();
-  let html = '';
-  let shown = 0;
-  for (const m of allFetchedModels) {
-    if (q && !m.toLowerCase().includes(q)) continue;
-    const checked = pickerSelected.has(m) ? 'checked' : '';
-    html += `<label class="flex cursor-pointer items-center gap-3 border-b border-base-300 px-3 py-2 font-mono text-xs hover:bg-base-200"><input class="checkbox checkbox-sm checkbox-primary" type="checkbox" value="${esc(m)}" ${checked} onchange="togglePick(this)"> <span class="break-all">${esc(m)}</span></label>`;
-    shown++;
-  }
-  document.getElementById('picker-list').innerHTML = html || '<div class="p-8 text-center text-sm text-base-content/60">无匹配模型</div>';
-  updatePickerCount();
-}
-
-function filterPicker() { renderPicker(); }
-
-function togglePick(cb) {
-  if (cb.checked) pickerSelected.add(cb.value);
-  else pickerSelected.delete(cb.value);
-  updatePickerCount();
-}
-
-function pickerSelectAll() {
-  document.querySelectorAll('#picker-list input[type=checkbox]').forEach(cb => {
-    cb.checked = true;
-    pickerSelected.add(cb.value);
-  });
-  updatePickerCount();
-}
-
-function pickerDeselectAll() {
-  document.querySelectorAll('#picker-list input[type=checkbox]').forEach(cb => {
-    cb.checked = false;
-    pickerSelected.delete(cb.value);
-  });
-  updatePickerCount();
-}
-
-function updatePickerCount() {
-  document.getElementById('picker-count').textContent = `已选 ${pickerSelected.size} / ${allFetchedModels.length} 个模型`;
-}
-
-function applyPickerSelection() {
-  const selected = allFetchedModels.filter(m => pickerSelected.has(m));
-  if (!selected.length) { toast('请至少选择一个模型', true); return; }
-  currentModels = selected;
-  document.getElementById('f-models').value = selected.join(', ');
-  // Keep existing mapping entries for selected models, clear others
-  const newMapping = {};
-  for (const [alias, upstream] of Object.entries(fetchedMapping)) {
-    if (pickerSelected.has(upstream)) newMapping[alias] = upstream;
-  }
-  fetchedMapping = newMapping;
-  renderMappingEditor();
-  closeModal('picker-modal');
-  toast('已选择 ' + selected.length + ' 个模型');
-}
-
-async function saveChannel() {
-  const editName = document.getElementById('edit-name').value;
-  const name = document.getElementById('f-name').value.trim();
-  const type = document.getElementById('f-type').value;
-  const baseURL = document.getElementById('f-baseurl').value.trim();
-  const baseURLClaude = document.getElementById('f-baseurl-claude').value.trim();
-  const baseURLGemini = document.getElementById('f-baseurl-gemini').value.trim();
-  const supportsResponses = document.getElementById('f-supports-responses').checked;
-  const keysRaw = document.getElementById('f-keys').value.trim();
-  const modelsRaw = document.getElementById('f-models').value.trim();
-  const priority = parseInt(document.getElementById('f-priority').value) || 10;
-  const weight = parseInt(document.getElementById('f-weight').value) || 100;
-  const enabled = document.getElementById('f-enabled').checked;
-  if (!name) { toast('请输入名称', true); return; }
-  if (!baseURL) { toast('请输入 Base URL', true); return; }
-  if (editName && channelKeyLoadState === 'loading') { toast('Key 还在加载，加载完成后再保存', true); return; }
-  if (editName && channelKeyLoadState === 'error') { toast('现有 Key 读取失败，为避免误覆盖，请重新打开编辑窗口', true); return; }
-  const keys = keysRaw.split('\n').map(k=>k.trim()).filter(k=>k);
-  if (!keys.length) { toast('至少保留一个 Key', true); return; }
-  const models = modelsRaw.split(',').map(m=>m.trim()).filter(m=>m);
-
-  // Collect mapping from editor
-  const model_mapping = {};
-  document.querySelectorAll('.mapping-alias').forEach(input => {
-    const alias = input.value.trim();
-    const upstream = input.dataset.upstream;
-    if (alias && alias !== upstream) {
-      model_mapping[alias] = upstream;
-    }
-  });
-
-  if (editName && keysChanged(channelOriginalKeys, keys) && !confirm('Key 列表已变更，保存会整体替换该 Channel 的上游 Key。确定保存？')) {
-    return;
-  }
-
-  const body = { name, type, base_url: baseURL, base_url_claude: baseURLClaude, base_url_gemini: baseURLGemini, supports_responses: supportsResponses, keys, models, model_mapping, priority, weight, enabled };
-  try {
-    if (editName) {
-      await api('/admin/channels/'+encodeURIComponent(editName), { method:'PUT', body:JSON.stringify(body) });
-      toast('Channel 已更新');
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API-in-one Admin Console</title>
+  
+  <!-- Theme script (runs immediately to prevent flash) -->
+  <script>
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    if (savedTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.documentElement.setAttribute('data-theme', 'dark');
     } else {
-      await api('/admin/channels', { method:'POST', body:JSON.stringify(body) });
-      toast('Channel 已创建');
+      document.documentElement.classList.remove('dark');
+      document.documentElement.setAttribute('data-theme', 'light');
     }
-    closeModal('channel-modal');
-    loadData();
-  } catch(e) { toast('保存失败: '+e.message, true); }
-}
+  </script>
 
-function keysChanged(before, after) {
-  if (before.length !== after.length) return true;
-  for (let i = 0; i < before.length; i++) {
-    if (before[i] !== after[i]) return true;
-  }
-  return false;
-}
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS & DaisyUI -->
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-async function deleteChannel(name) {
-  if (!confirm('确定删除 "'+name+'"？')) return;
-  try {
-    await api('/admin/channels/'+encodeURIComponent(name), { method:'DELETE' });
-    toast('已删除'); loadData();
-  } catch(e) { toast('删除失败: '+e.message, true); }
-}
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
 
-// ---- Stats ----
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Outfit', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          boxShadow: {
+            'glow-cyan': '0 0 15px rgba(6, 182, 212, 0.15)',
+            'glow-violet': '0 0 15px rgba(139, 92, 246, 0.15)',
+          }
+        }
+      }
+    }
+  </script>
 
-let autoRefreshTimer = null;
-let logPage = 1;
-let logLimit = 50;
-let logTotalPages = 1;
+  <style>
+    /* Glassmorphism primitives */
+    .glass-card {
+      background: rgba(255, 255, 255, 0.65);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(15, 23, 42, 0.08);
+    }
+    .dark .glass-card {
+      background: rgba(19, 26, 42, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
 
-async function loadStats() {
-  try {
-    const params = new URLSearchParams({limit: String(logLimit), page: String(logPage)});
-    const protocol = document.getElementById('log-filter-protocol')?.value || '';
-    const model = document.getElementById('log-filter-model')?.value || '';
-    const channel = document.getElementById('log-filter-channel')?.value || '';
-    const accessKey = document.getElementById('log-filter-access-key')?.value || '';
-    const status = document.getElementById('log-filter-status')?.value || '';
-    const q = document.getElementById('log-filter-q')?.value.trim() || '';
-    if (protocol) params.set('protocol', protocol);
-    if (model) params.set('model', model);
-    if (channel) params.set('channel', channel);
-    if (accessKey) params.set('access_key', accessKey);
-    if (status) params.set('status', status);
-    if (q) params.set('q', q);
-    const [stats, logs] = await Promise.all([
-      api('/admin/stats'),
-      api('/admin/logs?'+params.toString())
-    ]);
-    renderStats(stats);
-    renderLogs(logs.logs || []);
-    const filtered = logs.filtered_total ?? logs.total ?? 0;
-    logTotalPages = Math.max(1, Math.ceil(filtered / logLimit));
-    if (logPage > logTotalPages) logPage = logTotalPages;
-    document.getElementById('log-count').textContent = `共 ${logs.total || 0} 条记录，筛选 ${filtered} 条`;
-    document.getElementById('log-page-info').textContent = `第 ${logPage} / ${logTotalPages} 页`;
-  } catch(e) {
-    document.getElementById('stats-cards').innerHTML = '';
-    document.getElementById('logs-table').innerHTML = '<div class="p-10 text-center text-sm text-base-content/60">需要 Admin Key 权限才能查看统计</div>';
-  }
-}
+    .glass-card-hover {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-card-hover:hover {
+      background: rgba(255, 255, 255, 0.95);
+      border-color: rgba(6, 182, 212, 0.3);
+      box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.08), 0 0 20px rgba(6, 182, 212, 0.05);
+      transform: translateY(-2px);
+    }
+    .dark .glass-card-hover:hover {
+      background: rgba(22, 31, 52, 0.85);
+      border-color: rgba(6, 182, 212, 0.25);
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 0 20px rgba(6, 182, 212, 0.05);
+    }
+    
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.05);
+    }
+    .dark ::-webkit-scrollbar-track {
+      background: rgba(11, 15, 26, 0.5);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 9999px;
+    }
+    .dark ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    .dark ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
 
-function renderStats(s) {
-  const rate = s.total > 0 ? ((s.success / s.total) * 100).toFixed(1) : '0.0';
-  document.getElementById('stats-cards').innerHTML = `
-    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm "><div class="text-xs uppercase tracking-wide text-slate-500">总请求</div><div class="mt-2 text-3xl font-semibold text-cyan-700">${s.total||0}</div></div>
-    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm "><div class="text-xs uppercase tracking-wide text-slate-500">成功</div><div class="mt-2 text-3xl font-semibold text-emerald-700">${s.success||0}</div></div>
-    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm "><div class="text-xs uppercase tracking-wide text-slate-500">失败</div><div class="mt-2 text-3xl font-semibold text-rose-700">${s.error||0}</div></div>
-    <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm "><div class="text-xs uppercase tracking-wide text-slate-500">平均耗时</div><div class="mt-2 text-3xl font-semibold text-violet-700">${s.avg_duration_ms||0}ms</div><div class="mt-1 text-xs text-slate-500">成功率 ${rate}%</div></div>
-  `;
-}
+    /* Modal Animation */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.4);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .dark .modal-overlay {
+      background: rgba(3, 7, 18, 0.75);
+    }
+    .modal-overlay.active {
+      display: flex;
+      animation: fadeIn 0.2s ease-out;
+    }
+    .modal-content {
+      transform: scale(0.95);
+      opacity: 0;
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .modal-overlay.active .modal-content {
+      transform: scale(1);
+      opacity: 1;
+    }
 
-function renderLogs(logs) {
-  if (!logs.length) {
-    document.getElementById('logs-table').innerHTML = '<div class="rounded-[1.5rem] border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">暂无请求记录</div>';
-    return;
-  }
-  let tableHtml = '<div class="desktop-only mobile-table-scroll overflow-x-auto rounded-[1.5rem] border border-slate-200 bg-white"><table class="table table-sm min-w-[68rem]"><thead class="text-slate-500"><tr><th>时间</th><th>请求密钥</th><th>协议</th><th>模式</th><th>模型</th><th>Channel / Key</th><th>状态</th><th>耗时</th><th>尝试</th><th>错误</th><th>操作</th></tr></thead><tbody>';
-  let cardHtml = '<div class="mobile-only space-y-3">';
-  for (const l of logs) {
-    const ok = l.status >= 200 && l.status < 400;
-    const statusHtml = ok
-      ? `<span class="log-status ok"></span>${l.status}`
-      : `<span class="log-status err"></span>${l.status || 'ERR'}`;
-    const proto = {'openai':'OpenAI','claude-inbound':'Claude','gemini-inbound':'Gemini'}[l.protocol] || l.protocol;
-    const mode = l.mode === 'converted'
-      ? '<span class="rounded-full bg-violet-50 px-2 py-1 text-xs text-violet-700">转换</span>'
-      : '<span class="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">透穿</span>';
-    const attempts = l.attempts || [];
-    const lastAttempt = attempts.length ? attempts[attempts.length - 1] : null;
-    const channelKey = `${esc(l.channel || (lastAttempt && lastAttempt.channel) || '-')}${lastAttempt ? `<br><span class="badge badge-ghost font-mono">${esc(lastAttempt.masked_key || '-')}</span>` : ''}`;
-    const attemptHtml = attempts.length ? attempts.map(a => {
-      const aok = a.status >= 200 && a.status < 400;
-      return `<span class="rounded-full border ${aok?'border-emerald-200 bg-emerald-50 text-emerald-700':'border-rose-200 bg-rose-50 text-rose-700'} px-2 py-0.5 text-[11px]">${esc(a.channel)} #${a.key_index} ${a.status||'ERR'}</span>`;
-    }).join(' ') : '-';
-    const modeLabel = l.mode === 'converted' ? '转换' : '透穿';
-    tableHtml += `<tr class="border-white/5 hover:bg-slate-50">
-      <td class="text-xs text-slate-500">${esc(l.timestamp)}</td>
-      <td><span class="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700">${esc(l.access_key || '-')}</span></td>
-      <td><span class="rounded-full bg-cyan-50 px-2 py-1 text-xs text-cyan-700">${proto}</span></td>
-      <td>${mode}</td>
-      <td><span class="rounded-full border border-slate-200 bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-700">${esc(l.model)}</span>${l.resolved_model && l.resolved_model !== l.model ? `<br><span class="text-xs text-slate-500">→ ${esc(l.resolved_model)}</span>` : ''}</td>
-      <td>${channelKey}</td>
-      <td>${statusHtml}</td>
-      <td>${l.duration}ms</td>
-      <td class="max-w-xs">${attemptHtml}</td>
-      <td class="max-w-xs truncate text-xs text-error">${esc(l.error||'-')}</td>
-      <td><button class="btn btn-sm border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick="openLogDetail(${l.id})">详情</button></td>
-    </tr>`;
-    cardHtml += `<section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-      <div class="mb-3 flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="mb-1 flex flex-wrap items-center gap-1.5">
-            <span class="rounded-full bg-cyan-50 px-2 py-1 text-xs text-cyan-700">${proto}</span>
-            ${mode}
-            <span class="rounded-full ${ok?'bg-emerald-50 text-emerald-700':'bg-rose-50 text-rose-700'} px-2 py-1 text-xs">${l.status || 'ERR'}</span>
-          </div>
-          <div class="truncate font-mono text-sm text-slate-900">${esc(l.model || '-')}</div>
-          ${l.resolved_model && l.resolved_model !== l.model ? `<div class="truncate font-mono text-xs text-slate-500">→ ${esc(l.resolved_model)}</div>` : ''}
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    mark {
+      background: rgba(6, 182, 212, 0.3);
+      color: inherit;
+      border-radius: 2px;
+      padding: 0 2px;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50 dark:bg-gradient-to-tr dark:from-[#070b13] dark:via-[#0b101c] dark:to-[#0e1629] text-slate-700 dark:text-slate-200 antialiased overflow-x-hidden transition-colors duration-300">
+
+  <!-- Background Decorative Orbs -->
+  <div class="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-500/5 dark:bg-cyan-900/10 blur-[150px] pointer-events-none"></div>
+  <div class="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-500/5 dark:bg-purple-900/10 blur-[150px] pointer-events-none"></div>
+
+  <!-- Login Page -->
+  <div id="login-overlay" class="fixed inset-0 z-[200] flex items-center justify-center bg-[#070b13] p-4">
+    <div class="w-full max-w-md p-8 rounded-3xl glass-card border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] bg-slate-900/90 text-slate-200">
+      <div class="mb-6 text-center">
+        <div class="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-cyan-500 to-violet-600 text-3xl font-black text-white shadow-lg shadow-cyan-500/20 mb-4">
+          A
         </div>
-        <button class="btn btn-sm touch-target shrink-0 border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-100" onclick="openLogDetail(${l.id})">详情</button>
+        <h2 class="text-3xl font-bold tracking-tight text-white">API-in-one</h2>
+        <p class="text-sm text-slate-400 mt-2">模型代理与中转控制中心</p>
       </div>
-      <div class="grid grid-cols-2 gap-2 text-xs text-slate-500">
-        <div class="rounded-xl bg-slate-50 p-2"><div>耗时</div><div class="mt-1 font-semibold text-slate-900">${l.duration}ms</div></div>
-        <div class="rounded-xl bg-slate-50 p-2"><div>Channel</div><div class="mt-1 truncate font-semibold text-slate-900">${esc(l.channel || (lastAttempt && lastAttempt.channel) || '-')}</div></div>
-        <div class="rounded-xl bg-slate-50 p-2"><div>请求密钥</div><div class="mt-1 truncate font-mono text-slate-900">${esc(l.access_key || '-')}</div></div>
-        <div class="rounded-xl bg-slate-50 p-2"><div>时间</div><div class="mt-1 text-slate-900">${esc((l.timestamp || '').replace('T', ' '))}</div></div>
-      </div>
-      ${attempts.length ? `<div class="scroll-fade mt-3 flex gap-1.5 overflow-x-auto pb-1">${attemptHtml}</div>` : ''}
-      ${l.error ? `<div class="mt-3 rounded-xl bg-rose-50 p-2 text-xs text-rose-700">${esc(l.error)}</div>` : ''}
-    </section>`;
-  }
-  tableHtml += '</tbody></table></div>';
-  cardHtml += '</div>';
-  document.getElementById('logs-table').innerHTML = tableHtml + cardHtml;
-}
-
-function changeLogPage(delta) {
-  const next = logPage + delta;
-  if (next < 1 || next > logTotalPages) return;
-  logPage = next;
-  loadStats();
-}
-
-function resetLogPageAndLoad() {
-  logPage = 1;
-  loadStats();
-}
-
-async function clearRequestLogs() {
-  if (!confirm('确定清空所有请求历史？这个操作不可恢复。')) return;
-  try {
-    await api('/admin/logs', { method: 'DELETE' });
-    logPage = 1;
-    toast('请求历史已清空');
-    loadStats();
-  } catch(e) {
-    toast('清空失败: ' + e.message, true);
-  }
-}
-
-async function openLogDetail(id) {
-  document.getElementById('log-modal-title').textContent = '请求详情 #' + id;
-  document.getElementById('log-detail').innerHTML = '<div class="p-8 text-center text-sm text-base-content/60">加载中...</div>';
-  document.getElementById('log-modal').classList.add('active');
-  try {
-    const data = await api('/admin/logs/'+id);
-    renderLogDetail(data.log);
-  } catch(e) {
-    document.getElementById('log-detail').innerHTML = '<div class="p-8 text-center text-sm text-error">读取日志失败</div>';
-    toast('读取日志失败: '+e.message, true);
-  }
-}
-
-function renderLogDetail(l) {
-  const attempts = l.attempts || [];
-  const modeText = l.mode === 'converted' ? '转换' : '透穿';
-  const attemptRows = attempts.length ? attempts.map(a => `
-    <tr>
-      <td>${a.attempt}</td><td>${esc(a.channel)}</td><td>${a.key_index}</td>
-      <td><span class="badge badge-ghost font-mono">${esc(a.masked_key || '-')}</span></td>
-      <td>${esc(a.model || '-')}</td><td>${a.status || 'ERR'}</td><td>${a.duration_ms || 0}ms</td>
-      <td class="max-w-xs break-words text-error">${esc(a.error || '-')}</td>
-    </tr>
-  `).join('') : '<tr><td colspan="8">无尝试记录</td></tr>';
-  document.getElementById('log-detail').innerHTML = `
-    <div class="alert mb-4">
-      <strong>${esc(l.protocol)}</strong> · ${modeText} · ${esc(l.model || '-')} ${l.resolved_model && l.resolved_model !== l.model ? '→ '+esc(l.resolved_model) : ''} · ${l.status || 'ERR'} · ${l.duration || 0}ms · ${esc(l.timestamp || '')}
-    </div>
-    <div class="mb-4">
-      <div class="mb-2 text-xs font-semibold uppercase text-base-content/50">重试过程</div>
-      <div class="mobile-table-scroll overflow-x-auto rounded-box border border-base-300"><table class="table table-sm min-w-[48rem]"><thead><tr><th>#</th><th>Channel</th><th>Key</th><th>Masked</th><th>模型</th><th>状态</th><th>耗时</th><th>错误</th></tr></thead><tbody>${attemptRows}</tbody></table></div>
-    </div>
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <div>
-        <div class="mb-2 text-xs font-semibold uppercase text-base-content/50">入站请求</div>
-        <pre class="json-box rounded-box bg-slate-950 p-3 text-xs text-slate-100">${esc(JSON.stringify(l.request || {}, null, 2))}</pre>
-      </div>
-      <div>
-        <div class="mb-2 text-xs font-semibold uppercase text-base-content/50">转换后的上游请求</div>
-        <pre class="json-box rounded-box bg-slate-950 p-3 text-xs text-slate-100">${esc(JSON.stringify(l.upstream_request || l.request || {}, null, 2))}</pre>
+      <div class="space-y-4">
+        <div class="form-control">
+          <label class="label"><span class="label-text text-slate-300">管理员密钥 Admin Key</span></label>
+          <input class="input input-bordered w-full bg-slate-950/50 border-white/10 focus:border-cyan-500 focus:outline-none text-white font-mono" type="password" id="key-input" placeholder="输入 Admin Key" onkeydown="if(event.key==='Enter')doLogin()">
+        </div>
+        <button class="btn btn-primary w-full bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-600 hover:to-violet-700 text-white border-none rounded-xl mt-2 font-medium" onclick="doLogin()">
+          验证并登入
+        </button>
       </div>
     </div>
-  `;
-}
+  </div>
 
-function startStatsAutoRefresh() {
-  loadLogAccessKeyOptions().catch(() => {});
-  loadStats();
-  if (!autoRefreshTimer) {
-    autoRefreshTimer = setInterval(loadStats, 3000);
-  }
-}
+  <!-- Main Application Wrapper -->
+  <div class="hidden min-h-screen flex flex-col md:flex-row" id="app">
+    
+    <!-- Sidebar / Navigation -->
+    <aside class="w-full md:w-72 shrink-0 md:h-screen sticky top-0 bg-slate-100/90 dark:bg-[#080d19]/80 backdrop-blur-xl border-b md:border-b-0 md:border-r border-slate-200 dark:border-white/5 flex flex-col p-6 z-50 transition-colors duration-300">
+      
+      <div class="flex items-center justify-between mb-8">
+        <div class="flex items-center gap-3">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-cyan-500 to-violet-600 font-extrabold text-white text-lg">
+            API
+          </div>
+          <div>
+            <h1 class="font-bold text-lg text-slate-900 dark:text-white leading-tight">API-in-one</h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400">智能网关网格面盘</p>
+          </div>
+        </div>
+        <!-- Theme Toggle Button -->
+        <button class="btn btn-ghost btn-sm btn-circle hover:bg-slate-200 dark:hover:bg-white/10 text-slate-500 dark:text-slate-400" onclick="toggleTheme()" id="theme-toggle-btn">
+          <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
+          <i data-lucide="moon" class="w-5 h-5 block dark:hidden"></i>
+        </button>
+      </div>
 
-function stopStatsAutoRefresh() {
-  if (autoRefreshTimer) {
-    clearInterval(autoRefreshTimer);
-    autoRefreshTimer = null;
-  }
-}
+      <!-- Nav Links -->
+      <nav class="flex-1 space-y-1.5">
+        <button class="nav-item flex items-center gap-3 w-full px-4 py-3 rounded-xl font-medium transition-all duration-200 text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5 text-left" data-tab="dashboard" onclick="switchTab('dashboard')">
+          <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+          仪表盘
+        </button>
+        <button class="nav-item flex items-center gap-3 w-full px-4 py-3 rounded-xl font-medium transition-all duration-200 text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5 text-left" data-tab="channels" onclick="switchTab('channels')">
+          <i data-lucide="git-merge" class="w-5 h-5"></i>
+          渠道路由
+        </button>
+        <button class="nav-item flex items-center gap-3 w-full px-4 py-3 rounded-xl font-medium transition-all duration-200 text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5 text-left" data-tab="stats" onclick="switchTab('stats')">
+          <i data-lucide="activity" class="w-5 h-5"></i>
+          流量日志
+        </button>
+        <button class="nav-item flex items-center gap-3 w-full px-4 py-3 rounded-xl font-medium transition-all duration-200 text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5 text-left" data-tab="settings" onclick="switchTab('settings')">
+          <i data-lucide="shield-check" class="w-5 h-5"></i>
+          凭据及策略
+        </button>
+      </nav>
 
-function toast(msg, isErr) {
-  const el = document.createElement('div');
-  el.className = 'toast toast-top toast-end z-[80]';
-  el.innerHTML = `<div class="alert ${isErr?'alert-error':'alert-success'} shadow-lg"><span>${esc(msg)}</span></div>`;
-  document.body.appendChild(el);
-  setTimeout(()=>el.remove(), 3000);
-}
-function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
-function escAttr(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, ''); }
-function maskKeyLocal(key) { return key && key.length > 8 ? key.slice(0,4) + '****' + key.slice(-4) : '****'; }
+      <!-- Bottom Panel info -->
+      <div class="mt-auto pt-6 border-t border-slate-200 dark:border-white/5">
+        <div class="rounded-2xl bg-slate-200/50 dark:bg-white/5 p-4 border border-slate-200 dark:border-white/5">
+          <div class="text-[10px] uppercase font-bold tracking-wider text-slate-500">网关状态</div>
+          <div class="flex items-center gap-2 mt-1.5">
+            <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-300" id="gw-version">Running (v1.0.0)</span>
+          </div>
+          <div class="mt-2 text-xs font-mono text-cyan-600 dark:text-cyan-500/80 truncate" id="gw-endpoint">Loading...</div>
+        </div>
+        <button class="btn btn-outline btn-sm w-full border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/5 rounded-xl mt-4" onclick="doLogout()">
+          <i data-lucide="log-out" class="w-4 h-4 mr-2"></i> 退出控制台
+        </button>
+      </div>
+    </aside>
 
-document.querySelectorAll('.modal-overlay').forEach(o => {
-  o.addEventListener('click', e => { if(e.target===o) o.classList.remove('active'); });
-});
-</script>
+    <!-- Main Content Area -->
+    <main class="flex-1 min-w-0 overflow-y-auto p-6 md:p-10">
+
+      <!-- ==================== TAB: DASHBOARD ==================== -->
+      <div id="tab-dashboard" class="tab-panel hidden space-y-8">
+        <div class="flex flex-col gap-2">
+          <div class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-500">System Dashboard</div>
+          <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white md:text-4xl">系统总览</h2>
+        </div>
+
+        <!-- Metric Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5" id="stats-summary-grid">
+          <!-- Total Requests -->
+          <div class="rounded-3xl glass-card p-6 flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-500 dark:text-slate-400">
+              <span class="text-sm font-medium">总计请求数</span>
+              <div class="p-2 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
+            </div>
+            <div class="mt-4">
+              <div class="text-3xl font-bold text-slate-900 dark:text-white font-mono" id="stat-total-reqs">0</div>
+              <span class="text-xs text-slate-500 dark:text-slate-400 mt-1 block">历史吞吐总量</span>
+            </div>
+          </div>
+          <!-- Success Rate -->
+          <div class="rounded-3xl glass-card p-6 flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-500 dark:text-slate-400">
+              <span class="text-sm font-medium">路由成功率</span>
+              <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><i data-lucide="check-circle" class="w-5 h-5"></i></div>
+            </div>
+            <div class="mt-4">
+              <div class="text-3xl font-bold text-slate-900 dark:text-white font-mono" id="stat-success-rate">0%</div>
+              <span class="text-xs text-slate-500 dark:text-slate-400 mt-1 block">有效响应率统计</span>
+            </div>
+          </div>
+          <!-- Avg Latency -->
+          <div class="rounded-3xl glass-card p-6 flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-500 dark:text-slate-400">
+              <span class="text-sm font-medium">平均时延</span>
+              <div class="p-2 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400"><i data-lucide="timer" class="w-5 h-5"></i></div>
+            </div>
+            <div class="mt-4">
+              <div class="text-3xl font-bold text-slate-900 dark:text-white font-mono" id="stat-avg-latency">0 ms</div>
+              <span class="text-xs text-slate-500 dark:text-slate-400 mt-1 block">上游平均延迟时间</span>
+            </div>
+          </div>
+          <!-- Healthy Channels -->
+          <div class="rounded-3xl glass-card p-6 flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-500 dark:text-slate-400">
+              <span class="text-sm font-medium">存活渠道</span>
+              <div class="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400"><i data-lucide="shield" class="w-5 h-5"></i></div>
+            </div>
+            <div class="mt-4">
+              <div class="text-3xl font-bold text-slate-900 dark:text-white font-mono" id="stat-active-ch">0 / 0</div>
+              <span class="text-xs text-slate-500 dark:text-slate-400 mt-1 block">健康运行上游渠道数</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-2 rounded-3xl glass-card p-6 flex flex-col">
+            <h3 class="font-bold text-lg text-slate-900 dark:text-white mb-4">延迟与请求趋势</h3>
+            <div class="relative flex-1 min-h-[300px]">
+              <canvas id="trafficTrendChart"></canvas>
+            </div>
+          </div>
+          <div class="rounded-3xl glass-card p-6 flex flex-col">
+            <h3 class="font-bold text-lg text-slate-900 dark:text-white mb-4">协议分布占比</h3>
+            <div class="relative flex-1 min-h-[250px] flex items-center justify-center">
+              <canvas id="protocolPieChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Hot-operations -->
+        <div class="rounded-3xl glass-card p-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 class="font-bold text-lg text-slate-900 dark:text-white">网关热重载 & 重置</h3>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">即时同步磁盘配置文件变动，或清空不重要的历史审计日志。</p>
+            </div>
+            <div class="flex flex-wrap gap-3">
+              <button class="btn border-none bg-slate-200 dark:bg-white/5 hover:bg-slate-300 dark:hover:bg-white/10 text-slate-900 dark:text-white rounded-xl" onclick="reloadConfig()">
+                <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i> 重载网关配置
+              </button>
+              <button class="btn btn-error btn-outline rounded-xl" onclick="clearLogsPrompt()">
+                <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i> 清除流量审计
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== TAB: CHANNELS ==================== -->
+      <div id="tab-channels" class="tab-panel hidden space-y-8">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div class="flex flex-col gap-1.5">
+            <div class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-500">Routing Upstream Settings</div>
+            <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">渠道路由管理</h2>
+          </div>
+          <button class="btn btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-600 hover:to-violet-700 text-white border-none rounded-xl" onclick="openAddChannel()">
+            <i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i> 添加渠道
+          </button>
+        </div>
+
+        <!-- Channels Container Grid -->
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6" id="channels-list-container">
+          <!-- Dynamic injection -->
+        </div>
+      </div>
+
+      <!-- ==================== TAB: STATS / LOGS ==================== -->
+      <div id="tab-stats" class="tab-panel hidden space-y-8">
+        <div class="flex flex-col gap-1.5">
+          <div class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-500">Traffic Stream Ledger</div>
+          <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white font-sans">流量流水审计</h2>
+        </div>
+
+        <!-- Filter Panel -->
+        <div class="rounded-3xl glass-card p-6 space-y-4">
+          <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">接入协议</span></label>
+              <select class="select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-protocol" onchange="resetLogPageAndLoad()">
+                <option value="">全部</option>
+                <option value="openai">OpenAI</option>
+                <option value="claude-inbound">Claude</option>
+                <option value="gemini-inbound">Gemini</option>
+                <option value="responses">Responses</option>
+              </select>
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">调用模型</span></label>
+              <select class="select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-model" onchange="resetLogPageAndLoad()">
+                <option value="">全部</option>
+              </select>
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">路由渠道</span></label>
+              <select class="select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-channel" onchange="resetLogPageAndLoad()">
+                <option value="">全部</option>
+              </select>
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">访问令牌</span></label>
+              <select class="select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-access-key" onchange="resetLogPageAndLoad()">
+                <option value="">全部</option>
+              </select>
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">响应状态</span></label>
+              <select class="select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-status" onchange="resetLogPageAndLoad()">
+                <option value="">全部</option>
+                <option value="success">成功 (2xx)</option>
+                <option value="error">错误 (非2xx)</option>
+                <option value="429">频率限制 (429)</option>
+                <option value="502">坏网关 (502)</option>
+              </select>
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">关键词搜索</span></label>
+              <input class="input input-bordered input-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-q" placeholder="模糊搜索..." onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
+            </div>
+          </div>
+          <div class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-white/5">
+            <span class="text-xs text-slate-500 dark:text-slate-400" id="log-count">共检索到 0 条审计流水</span>
+            <button class="btn btn-sm btn-ghost hover:bg-slate-200 dark:hover:bg-white/5 text-slate-600 dark:text-slate-300 rounded-xl" onclick="resetLogPageAndLoad()">
+              <i data-lucide="rotate-ccw" class="w-4 h-4 mr-1"></i>重置过滤
+            </button>
+          </div>
+        </div>
+
+        <!-- Logs Table and details pane -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <!-- Table -->
+          <div class="lg:col-span-2 rounded-3xl glass-card overflow-hidden">
+            <div class="overflow-x-auto min-h-[400px]">
+              <table class="table w-full text-slate-700 dark:text-slate-300">
+                <thead>
+                  <tr class="border-b border-slate-200 dark:border-white/5 text-slate-500 dark:text-slate-400 uppercase text-xs">
+                    <th>时间</th>
+                    <th>协议/模型</th>
+                    <th>渠道</th>
+                    <th>延时/状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="logs-table-body">
+                  <!-- Dynamic Injection -->
+                </tbody>
+              </table>
+            </div>
+            <!-- Pagination -->
+            <div class="p-4 border-t border-slate-200 dark:border-white/5 flex items-center justify-between">
+              <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-500 dark:text-slate-400" onclick="changeLogPage(-1)">
+                <i data-lucide="chevron-left" class="w-4 h-4"></i> 上一页
+              </button>
+              <span class="text-sm font-medium text-slate-700 dark:text-slate-300 font-mono" id="log-page-info">1 / 1</span>
+              <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-500 dark:text-slate-400" onclick="changeLogPage(1)">
+                下一页 <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Drawer Detail Panel -->
+          <div class="rounded-3xl glass-card p-6 space-y-5 lg:sticky lg:top-6" id="log-detail-card">
+            <div class="flex items-center justify-between">
+              <h3 class="font-bold text-lg text-slate-900 dark:text-white">流水详情</h3>
+              <span class="text-xs text-slate-500 font-mono" id="log-detail-id">未选择</span>
+            </div>
+            <div id="log-detail-placeholder" class="py-12 text-center text-slate-500 text-sm">
+              <i data-lucide="file-text" class="w-12 h-12 mx-auto text-slate-300 dark:text-slate-700 mb-3"></i>
+              选择左侧一条流水记录查看完整 Payload 链路
+            </div>
+            <div id="log-detail-content" class="hidden space-y-4">
+              <div class="grid grid-cols-2 gap-3 text-xs">
+                <div class="p-3 bg-slate-200/50 dark:bg-white/5 rounded-xl border border-slate-300 dark:border-white/5">
+                  <div class="text-slate-500 mb-0.5">访问令牌 Access Key</div>
+                  <div class="font-mono text-slate-700 dark:text-slate-300 truncate" id="ld-key"></div>
+                </div>
+                <div class="p-3 bg-slate-200/50 dark:bg-white/5 rounded-xl border border-slate-300 dark:border-white/5">
+                  <div class="text-slate-500 mb-0.5">模式 Mode</div>
+                  <div class="font-mono text-slate-700 dark:text-slate-300" id="ld-mode"></div>
+                </div>
+              </div>
+
+              <!-- Retries list -->
+              <div class="space-y-1.5">
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400">重试探测链路 Attempts</div>
+                <div class="space-y-1" id="ld-attempts"></div>
+              </div>
+
+              <!-- Prompt body -->
+              <div class="space-y-1.5">
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                  <span>客户端请求 payload (Request)</span>
+                  <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-req-box')">复制</button>
+                </div>
+                <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-48 border border-white/5 text-emerald-400 scroll-fade" id="ld-req-box"></pre>
+              </div>
+
+              <!-- Upstream request -->
+              <div class="space-y-1.5" id="ld-upreq-container">
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                  <span>最终发出上游 payload (Converted Upstream)</span>
+                  <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-upreq-box')">复制</button>
+                </div>
+                <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-48 border border-white/5 text-purple-400 scroll-fade" id="ld-upreq-box"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== TAB: SETTINGS ==================== -->
+      <div id="tab-settings" class="tab-panel hidden space-y-8">
+        <div class="flex flex-col gap-1.5">
+          <div class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-500">Vault & Custom Prompt Policies</div>
+          <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">凭据及策略库</h2>
+        </div>
+
+        <!-- Token policies -->
+        <div class="rounded-3xl glass-card p-6 space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 class="font-bold text-lg text-slate-900 dark:text-white">用户访问令牌 Access Key 管理</h3>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">定义带有不同调用模型白名单/黑名单权限的访问密钥。</p>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-white rounded-xl" onclick="addAccessKeyPolicy()">
+                <i data-lucide="plus" class="w-4 h-4 mr-1"></i> 添加令牌
+              </button>
+              <button class="btn btn-sm btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveAccessKeyPolicies()">
+                保存所有密钥
+              </button>
+            </div>
+          </div>
+          <div id="access-keys-display" class="space-y-4 pt-2">
+            <!-- Dynamic Injection -->
+          </div>
+        </div>
+
+        <!-- Model prompt injector -->
+        <div class="rounded-3xl glass-card p-6 space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 class="font-bold text-lg text-slate-900 dark:text-white">模型 System Prompt 静态注入</h3>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">在代理转发前，向指定客户端可见模型请求的消息流末尾追加注入固定的开发者提示词。</p>
+            </div>
+            <button class="btn btn-sm btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveModelSystemPrompts()">
+              保存注入参数
+            </button>
+          </div>
+          <div id="model-prompts-display" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Dynamic Injection -->
+          </div>
+        </div>
+
+        <!-- Admin Key display -->
+        <div class="rounded-3xl glass-card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h3 class="font-bold text-lg text-slate-900 dark:text-white">管理端 Admin Key 凭据</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">此密钥由配置文件直接管理，仅支持在配置文件中更换。</p>
+          </div>
+          <div class="flex items-center gap-2 p-3 bg-slate-200/50 dark:bg-white/5 rounded-2xl border border-slate-300 dark:border-white/5 font-mono text-sm font-semibold max-w-sm truncate" id="admin-key-display">
+            <!-- masked admin key -->
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ==================== MODALS ==================== -->
+
+  <!-- Modal: Channel Add/Edit -->
+  <div class="modal-overlay" id="channel-modal">
+    <div class="modal-content w-full max-w-3xl glass-card border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-4">
+        <h3 class="text-xl font-bold text-slate-900 dark:text-white" id="modal-title">添加路由渠道</h3>
+        <button class="btn btn-sm btn-circle btn-ghost" onclick="closeModal('channel-modal')"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <input type="hidden" id="edit-name" value="">
+
+      <div class="space-y-6">
+        <!-- Part 1: Basics -->
+        <div class="space-y-3">
+          <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">基础参数</div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="form-control">
+              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">渠道标识名称 *</span></label>
+              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl text-slate-800 dark:text-white" type="text" id="f-name" placeholder="例如: azure-openai-west">
+            </div>
+            <div class="form-control">
+              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">模型适配协议 *</span></label>
+              <select class="select select-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl text-slate-800 dark:text-white" id="f-type" onchange="adaptDefaultURL()">
+                <option value="openai">OpenAI 兼容协议</option>
+                <option value="claude">Claude (Anthropic) 协议</option>
+                <option value="gemini">Gemini (Google) 协议</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-control">
+            <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">标准 Base URL *</span></label>
+            <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-sm text-slate-800 dark:text-white" type="text" id="f-baseurl" placeholder="https://api.openai.com/v1">
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="form-control">
+              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">Claude 专有 URL（可选）</span></label>
+              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-sm text-slate-800 dark:text-white" type="text" id="f-baseurl-claude" placeholder="https://api.anthropic.com">
+            </div>
+            <div class="form-control">
+              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">Gemini 专有 URL（可选）</span></label>
+              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-sm text-slate-800 dark:text-white" type="text" id="f-baseurl-gemini" placeholder="https://generativelanguage.googleapis.com">
+            </div>
+          </div>
+          <label class="flex items-start gap-3 p-3 bg-slate-100 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 cursor-pointer mt-2">
+            <input class="checkbox checkbox-primary mt-0.5 rounded-lg" type="checkbox" id="f-supports-responses">
+            <div>
+              <span class="block text-sm font-semibold text-slate-700 dark:text-slate-300">原生支持 OpenAI Responses 协议</span>
+              <span class="block text-xs text-slate-500 mt-0.5">如果勾选，/v1/responses 接口会直接透传发给上游；若未勾选，中转器会自动降级翻译为 OpenAI Chat Completions 协议。</span>
+            </div>
+          </label>
+        </div>
+
+        <!-- Part 2: Upstream keys -->
+        <div class="space-y-3">
+          <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">上游 API Keys (轮询轮替)</div>
+          <div class="form-control">
+            <textarea class="textarea textarea-bordered min-h-24 bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-xs text-slate-800 dark:text-white" id="f-keys" placeholder="sk-key1&#10;sk-key2"></textarea>
+            <span class="text-xs text-slate-500 mt-1">每行输入一个 API Key，中转层在选择该渠道时会自动使用轮询负载。</span>
+          </div>
+        </div>
+
+        <!-- Part 3: Model and mapping -->
+        <div class="space-y-3">
+          <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">模型支持及映射</div>
+          <div class="form-control">
+            <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">支持的模型列表 (英文逗号分隔)</span></label>
+            <div class="flex gap-2">
+              <input class="input input-bordered flex-1 bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-sm text-slate-800 dark:text-white" type="text" id="f-models" placeholder="gpt-4o, gpt-4o-mini">
+              <button class="btn bg-slate-200 dark:bg-white/5 hover:bg-slate-300 dark:hover:bg-white/10 text-slate-800 dark:text-white border-slate-300 dark:border-white/10 rounded-xl" id="btn-fetch" onclick="fetchModels()">
+                拉取可用模型
+              </button>
+            </div>
+          </div>
+
+          <!-- Model Mapping wrapper -->
+          <div class="space-y-2" id="mapping-editor-wrap" style="display:none">
+            <div class="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+              <span>模型别名映射（Alias Mapping）</span>
+              <button class="text-xs text-cyan-600 dark:text-cyan-500 hover:underline" onclick="addMappingRow('', '')">+ 别名对</button>
+            </div>
+            <div class="space-y-2" id="mapping-editor">
+              <!-- rows -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Part 4: Advanced settings -->
+        <div class="space-y-3">
+          <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">权重与调度优先级</div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            <div class="form-control">
+              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">优先级 Priority</span></label>
+              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-slate-800 dark:text-white" type="number" id="f-priority" value="10" min="1">
+            </div>
+            <div class="form-control">
+              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">轮询权重 Weight</span></label>
+              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-slate-800 dark:text-white" type="number" id="f-weight" value="100" min="1">
+            </div>
+            <label class="flex items-center gap-3 p-3 bg-slate-100 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 cursor-pointer h-12 mb-0.5">
+              <input class="toggle toggle-primary" type="checkbox" id="f-enabled" checked>
+              <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">激活该渠道</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex justify-end gap-3 border-t border-slate-200 dark:border-white/5 pt-4 mt-6">
+        <button class="btn btn-ghost hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-400" onclick="closeModal('channel-modal')">取消</button>
+        <button class="btn btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveChannel()">保存渠道</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Picker for Allowed/Excluded Models in Settings -->
+  <div class="modal-overlay" id="picker-modal">
+    <div class="modal-content w-full max-w-lg glass-card border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-3">
+        <h3 class="text-lg font-bold text-slate-900 dark:text-white">配置密钥受控模型</h3>
+        <button class="btn btn-sm btn-circle btn-ghost" onclick="closeModal('picker-modal')"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <input type="text" class="input input-bordered w-full bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-white" id="picker-search" placeholder="筛选模型名称..." oninput="filterPicker()">
+      <div class="flex items-center justify-between text-xs text-slate-500">
+        <div class="flex gap-2">
+          <button class="hover:text-slate-900 dark:hover:text-white underline" onclick="pickerSelectAll()">全选</button>
+          <button class="hover:text-slate-900 dark:hover:text-white underline" onclick="pickerDeselectAll()">全不选</button>
+        </div>
+        <span id="picker-count">已选中 0 项</span>
+      </div>
+      <div class="max-h-60 overflow-y-auto border border-slate-200 dark:border-white/5 bg-slate-100 dark:bg-black/20 rounded-2xl p-2 space-y-1 scroll-fade" id="picker-list">
+        <!-- pills -->
+      </div>
+      <div class="flex justify-end gap-2 border-t border-slate-200 dark:border-white/5 pt-3">
+        <button class="btn btn-sm btn-ghost rounded-lg text-slate-400" onclick="closeModal('picker-modal')">取消</button>
+        <button class="btn btn-sm btn-primary rounded-lg text-white" onclick="applyPickerSelection()">确认应用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Key stats & manager -->
+  <div class="modal-overlay" id="key-modal">
+    <div class="modal-content w-full max-w-4xl glass-card border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-4">
+        <h3 class="text-xl font-bold text-slate-900 dark:text-white" id="key-modal-title">API Key 管理</h3>
+        <button class="btn btn-sm btn-circle btn-ghost" onclick="closeModal('key-modal')"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <input type="hidden" id="key-channel-name" value="">
+
+      <!-- Key stats table -->
+      <div class="space-y-2">
+        <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">Key 列表与健康统计</div>
+        <div class="overflow-x-auto border border-slate-200 dark:border-white/5 rounded-2xl max-h-60 overflow-y-auto scroll-fade">
+          <table class="table table-sm w-full text-slate-700 dark:text-slate-300">
+            <thead>
+              <tr class="border-b border-slate-200 dark:border-white/5 bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 uppercase text-[10px]">
+                <th>索引</th>
+                <th>API Key</th>
+                <th>状态/探活</th>
+                <th>请求统计 (成功/失败)</th>
+                <th>时延</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="key-list-body">
+              <!-- keys dynamically loaded -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Bulk key replacement -->
+      <div class="space-y-2">
+        <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">批量全量替换 Key 仓库</div>
+        <textarea class="textarea textarea-bordered min-h-24 w-full bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-xs text-slate-800 dark:text-white" id="key-editor" placeholder="每行一个 Key"></textarea>
+        <span class="text-xs text-slate-500 block">注：点击“更新保存”会以输入框的内容完全替换该渠道目前的 API Keys。空行会被自动过滤。</span>
+      </div>
+
+      <!-- Bottom action bar -->
+      <div class="flex justify-between items-center border-t border-slate-200 dark:border-white/5 pt-4">
+        <button class="btn bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border-none rounded-xl" onclick="probeKeys()">
+          <i data-lucide="zap" class="w-4 h-4 mr-1"></i> 全局一键探活
+        </button>
+        <div class="flex gap-2">
+          <button class="btn btn-ghost hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-400" onclick="closeModal('key-modal')">关闭</button>
+          <button class="btn btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveChannelKeys()">更新保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dynamic Toast Container -->
+  <div id="toast-container" class="toast toast-end toast-bottom z-[300] space-y-2"></div>
+
+  <!-- Global Application Scripts -->
+  <script>
+    let API_KEY = '';
+    let currentModels = [];
+    let fetchedMapping = {};
+    let activeKeyChannel = null;
+    let activeKeyRows = [];
+    let accessKeyPolicies = [];
+    let accessPolicyModels = [];
+    let modelSystemPrompts = {};
+
+    // Filter properties for Logs
+    let logPage = 1;
+    let logLimit = 30;
+
+    // Charts references
+    let trafficTrendChart = null;
+    let protocolPieChart = null;
+
+    // Theme switching logic
+    function toggleTheme() {
+      const html = document.documentElement;
+      const isDark = html.classList.contains('dark');
+      if (isDark) {
+        html.classList.remove('dark');
+        html.setAttribute('data-theme', 'light');
+        localStorage.setItem('theme', 'light');
+      } else {
+        html.classList.add('dark');
+        html.setAttribute('data-theme', 'dark');
+        localStorage.setItem('theme', 'dark');
+      }
+      
+      // Re-render charts to match theme
+      if (trafficTrendChart) {
+        updateChartTheme(trafficTrendChart);
+      }
+      if (protocolPieChart) {
+        updateChartTheme(protocolPieChart);
+      }
+    }
+
+    function updateChartTheme(chart) {
+      const isDark = document.documentElement.classList.contains('dark');
+      const textColor = isDark ? '#94a3b8' : '#64748b';
+      const gridColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.06)';
+      
+      if (chart.options.scales) {
+        if (chart.options.scales.x) {
+          chart.options.scales.x.grid.color = gridColor;
+          chart.options.scales.x.ticks.color = textColor;
+        }
+        if (chart.options.scales.y) {
+          chart.options.scales.y.ticks.color = textColor;
+          chart.options.scales.y.grid.color = gridColor;
+        }
+        if (chart.options.scales.y1) {
+          chart.options.scales.y1.ticks.color = textColor;
+        }
+      }
+      if (chart.options.plugins && chart.options.plugins.legend) {
+        chart.options.plugins.legend.labels.color = textColor;
+      }
+      chart.update();
+    }
+
+    // Auto load API_KEY from localStorage
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedKey = localStorage.getItem('api-in-one-admin-key');
+      if (savedKey) {
+        document.getElementById('key-input').value = savedKey;
+        doLogin();
+      }
+    });
+
+    function doLogin() {
+      const inputVal = document.getElementById('key-input').value.trim();
+      if (!inputVal) return;
+      API_KEY = inputVal;
+      
+      loadData()
+        .then(() => {
+          localStorage.setItem('api-in-one-admin-key', API_KEY);
+          document.getElementById('login-overlay').style.display = 'none';
+          document.getElementById('app').style.display = 'flex';
+          switchTab('dashboard');
+          loadSettings();
+          lucide.createIcons();
+        })
+        .catch((err) => {
+          showToast('连接校验失败: ' + err.message, true);
+        });
+    }
+
+    function doLogout() {
+      localStorage.removeItem('api-in-one-admin-key');
+      API_KEY = '';
+      document.getElementById('login-overlay').style.display = 'flex';
+      document.getElementById('app').style.display = 'none';
+    }
+
+    async function api(path, opts = {}) {
+      const resp = await fetch(path, {
+        ...opts,
+        headers: {
+          'Authorization': 'Bearer ' + API_KEY,
+          'Content-Type': 'application/json',
+          ...(opts.headers || {})
+        }
+      });
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+      return resp.json();
+    }
+
+    // Tab control
+    function switchTab(tab) {
+      document.querySelectorAll('.nav-item').forEach(el => {
+        el.classList.remove('bg-gradient-to-r', 'from-cyan-500/10', 'to-violet-500/10', 'dark:from-cyan-500/20', 'dark:to-violet-500/20', 'text-slate-900', 'dark:text-white', 'border-l-4', 'border-cyan-500');
+        el.classList.add('text-slate-600', 'dark:text-slate-400');
+      });
+      document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
+      
+      const activeEl = document.querySelector(`.nav-item[data-tab="${tab}"]`);
+      if (activeEl) {
+        activeEl.classList.add('bg-gradient-to-r', 'from-cyan-500/10', 'to-violet-500/10', 'dark:from-cyan-500/20', 'dark:to-violet-500/20', 'text-slate-900', 'dark:text-white', 'border-l-4', 'border-cyan-500');
+        activeEl.classList.remove('text-slate-600', 'dark:text-slate-400');
+      }
+      
+      const targetTab = document.getElementById(`tab-${tab}`);
+      if (targetTab) {
+        targetTab.classList.remove('hidden');
+      }
+
+      if (tab === 'dashboard') {
+        loadDashboardStats();
+      } else if (tab === 'channels') {
+        loadData();
+      } else if (tab === 'stats') {
+        resetLogPageAndLoad();
+      } else if (tab === 'settings') {
+        loadSettings();
+      }
+    }
+
+    // Modal helpers
+    function openModal(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.add('active');
+      }
+    }
+    function closeModal(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.remove('active');
+      }
+    }
+
+    // Dynamic toast alerts
+    function showToast(message, isError = false) {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `alert ${isError ? 'alert-error bg-rose-50 dark:bg-rose-950/80 border-rose-200 dark:border-rose-500 text-rose-800 dark:text-rose-200' : 'alert-success bg-emerald-50 dark:bg-emerald-950/80 border-emerald-200 dark:border-emerald-500 text-emerald-800 dark:text-emerald-200'} border backdrop-blur-md rounded-2xl p-4 shadow-xl flex items-center gap-3 transition-all duration-300 transform translate-y-4 opacity-0`;
+      
+      const icon = isError ? 'alert-triangle' : 'check-circle';
+      toast.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5 shrink-0"></i><span class="text-sm font-medium">${esc(message)}</span>`;
+      container.appendChild(toast);
+      
+      lucide.createIcons({ attrs: { class: ['w-5', 'h-5'] } });
+
+      // Trigger transition
+      setTimeout(() => {
+        toast.classList.remove('translate-y-4', 'opacity-0');
+      }, 10);
+
+      setTimeout(() => {
+        toast.classList.add('translate-y-4', 'opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // Escape strings for UI
+    function esc(s) {
+      if (s === null || s === undefined) return '';
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+    function escAttr(s) {
+      return esc(s).replace(/'/g, '&apos;');
+    }
+
+    // ==================== DASHBOARD LOGIC ====================
+    async function loadDashboardStats() {
+      try {
+        const stats = await api('/admin/stats');
+        
+        // Update summary metrics
+        document.getElementById('stat-total-reqs').textContent = stats.total.toLocaleString();
+        
+        const successRate = stats.total > 0 ? ((stats.success / stats.total) * 100).toFixed(1) : '100.0';
+        document.getElementById('stat-success-rate').textContent = successRate + '%';
+        
+        document.getElementById('stat-avg-latency').textContent = stats.avg_duration_ms.toLocaleString() + ' ms';
+        
+        // Load channel counts
+        const channelsData = await api('/admin/channels');
+        const list = channelsData.channels || [];
+        const healthyCount = list.filter(c => c.healthy && c.enabled).length;
+        document.getElementById('stat-active-ch').textContent = `${healthyCount} / ${list.length}`;
+
+        // Build domain/endpoint representation
+        document.getElementById('gw-endpoint').textContent = window.location.host;
+
+        // Render Charts
+        renderProtocolChart(stats.protocols || {});
+        renderLatencyChart(list);
+      } catch(e) {
+        showToast('仪表盘状态更新错误: ' + e.message, true);
+      }
+    }
+
+    function renderProtocolChart(protocols) {
+      const ctx = document.getElementById('protocolPieChart');
+      if (!ctx) return;
+
+      const labels = Object.keys(protocols);
+      const data = Object.values(protocols);
+
+      if (protocolPieChart) {
+        protocolPieChart.destroy();
+      }
+
+      if (labels.length === 0) {
+        labels.push('无流量数据');
+        data.push(1);
+      }
+
+      const isDark = document.documentElement.classList.contains('dark');
+      const textLabelColor = isDark ? '#94a3b8' : '#64748b';
+
+      protocolPieChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: data,
+            backgroundColor: ['#06b6d4', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899'],
+            borderWidth: 0,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                color: textLabelColor,
+                font: { family: 'Outfit', size: 12 }
+              }
+            }
+          },
+          cutout: '70%'
+        }
+      });
+    }
+
+    async function renderLatencyChart(channels) {
+      const ctx = document.getElementById('trafficTrendChart');
+      if (!ctx) return;
+
+      const labels = channels.map(c => c.name);
+      const latencyData = channels.map(c => {
+        if (!c.key_stats || c.key_stats.length === 0) return 0;
+        const sum = c.key_stats.reduce((acc, curr) => acc + curr.last_latency_ms, 0);
+        return Math.round(sum / c.key_stats.length);
+      });
+      const requestsData = channels.map(c => {
+        if (!c.key_stats || c.key_stats.length === 0) return 0;
+        return c.key_stats.reduce((acc, curr) => acc + curr.total_requests, 0);
+      });
+
+      if (trafficTrendChart) {
+        trafficTrendChart.destroy();
+      }
+
+      const isDark = document.documentElement.classList.contains('dark');
+      const textColor = isDark ? '#94a3b8' : '#64748b';
+      const gridColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.06)';
+
+      trafficTrendChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: '平均延迟 (ms)',
+              data: latencyData,
+              backgroundColor: 'rgba(139, 92, 246, 0.4)',
+              borderColor: '#8b5cf6',
+              borderWidth: 2,
+              borderRadius: 8,
+              yAxisID: 'y'
+            },
+            {
+              label: '总调用次数',
+              data: requestsData,
+              backgroundColor: 'rgba(6, 182, 212, 0.4)',
+              borderColor: '#06b6d4',
+              borderWidth: 2,
+              borderRadius: 8,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: textColor, font: { family: 'Outfit' } }
+            },
+            y: {
+              type: 'linear',
+              position: 'left',
+              grid: { color: gridColor },
+              ticks: { color: textColor, font: { family: 'Outfit' } }
+            },
+            y1: {
+              type: 'linear',
+              position: 'right',
+              grid: { drawOnChartArea: false },
+              ticks: { color: textColor, font: { family: 'Outfit' } }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: { color: textColor, font: { family: 'Outfit' } }
+            }
+          }
+        }
+      });
+    }
+
+    async function reloadConfig() {
+      try {
+        await api('/admin/channels/reload', { method: 'POST' });
+        showToast('网关配置文件重载成功！');
+        loadDashboardStats();
+      } catch(e) {
+        showToast('重载配置文件失败: ' + e.message, true);
+      }
+    }
+
+    async function clearLogsPrompt() {
+      if (confirm('确认清空所有历史审计流量日志吗？此操作不可逆。')) {
+        try {
+          await api('/admin/logs', { method: 'DELETE' });
+          showToast('审计日志已完全清除');
+          loadDashboardStats();
+        } catch(e) {
+          showToast('清除日志失败: ' + e.message, true);
+        }
+      }
+    }
+
+    // ==================== CHANNELS LOGIC ====================
+    async function loadData() {
+      const data = await api('/admin/channels');
+      const list = data.channels || [];
+      renderChannelsGrid(list);
+    }
+
+    function renderChannelsGrid(channels) {
+      const container = document.getElementById('channels-list-container');
+      if (channels.length === 0) {
+        container.innerHTML = `
+          <div class="col-span-full py-16 text-center text-slate-500 rounded-3xl border border-dashed border-slate-350 dark:border-white/10 glass-card">
+            <i data-lucide="git-merge" class="w-16 h-16 mx-auto text-slate-400 dark:text-slate-700 mb-3"></i>
+            还没有任何路由渠道，点击右上角「添加渠道」
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = channels.map(ch => {
+        const isEnabled = ch.enabled;
+        const isHealthy = ch.healthy;
+        
+        let statusBadge = '';
+        if (!isEnabled) {
+          statusBadge = `<span class="badge bg-slate-200 dark:bg-slate-800 border-none text-slate-500 dark:text-slate-400">已禁用</span>`;
+        } else if (isHealthy) {
+          statusBadge = `<span class="badge bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-none">运行良好</span>`;
+        } else {
+          statusBadge = `<span class="badge bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border-none">故障熔断</span>`;
+        }
+
+        const statsHtml = ch.key_stats ? ch.key_stats.map(k => {
+          const statusColor = k.disabled ? 'bg-slate-400 dark:bg-slate-600' : (k.healthy ? 'bg-emerald-500' : 'bg-rose-500');
+          return `
+            <div class="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-black/20 text-xs font-mono border border-slate-200/50 dark:border-none">
+              <span class="truncate text-slate-600 dark:text-slate-400">${esc(k.masked_key)}</span>
+              <span class="h-2 w-2 rounded-full ${statusColor}"></span>
+            </div>
+          `;
+        }).join('') : '';
+
+        const modelsPills = ch.models ? ch.models.map(m => 
+          `<span class="badge bg-slate-200/60 dark:bg-white/5 border-none text-[10px] text-slate-600 dark:text-slate-400 font-mono py-1.5 h-auto">${esc(m)}</span>`
+        ).join(' ') : '无模型配置';
+
+        const aliases = Object.keys(ch.model_mapping || {});
+        let mappingBadge = '';
+        if (aliases.length > 0) {
+          mappingBadge = `<span class="badge bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400 border-none text-[10px]">有映射 (${aliases.length})</span>`;
+        }
+
+        return `
+          <div class="glass-card glass-card-hover rounded-3xl p-6 flex flex-col justify-between space-y-5">
+            <div>
+              <div class="flex items-start justify-between">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2">
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">${esc(ch.name)}</h3>
+                    ${statusBadge}
+                  </div>
+                  <div class="text-xs font-semibold text-slate-500 dark:text-slate-500 font-mono truncate max-w-sm">${esc(ch.base_url)}</div>
+                </div>
+                <div class="badge bg-cyan-100 dark:bg-cyan-500/10 border-none text-cyan-800 dark:text-cyan-400 text-xs py-1 font-semibold">${esc(ch.type)}</div>
+              </div>
+
+              <!-- Metrics Summary -->
+              <div class="grid grid-cols-3 gap-2 mt-4 text-center text-xs">
+                <div class="p-2 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl">
+                  <div class="text-slate-500">优先级</div>
+                  <div class="font-bold text-slate-800 dark:text-slate-300 font-mono mt-0.5">${ch.priority}</div>
+                </div>
+                <div class="p-2 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl">
+                  <div class="text-slate-500">权重</div>
+                  <div class="font-bold text-slate-800 dark:text-slate-300 font-mono mt-0.5">${ch.weight}</div>
+                </div>
+                <div class="p-2 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl">
+                  <div class="text-slate-500">总 Keys</div>
+                  <div class="font-bold text-slate-800 dark:text-slate-300 font-mono mt-0.5">${ch.key_count}</div>
+                </div>
+              </div>
+
+              <!-- Keys list mini -->
+              <div class="mt-4 space-y-1.5">
+                <div class="text-[11px] font-bold text-slate-500 uppercase">Keys 运行矩阵</div>
+                <div class="grid grid-cols-2 gap-1.5 max-h-24 overflow-y-auto pr-1 scroll-fade">
+                  ${statsHtml || '<div class="col-span-2 text-xs text-slate-400 italic">无 Key 统计数据</div>'}
+                </div>
+              </div>
+
+              <!-- Models lists -->
+              <div class="mt-4 space-y-1.5">
+                <div class="text-[11px] font-bold text-slate-500 uppercase flex items-center justify-between">
+                  <span>支持的模型及别名</span>
+                  ${mappingBadge}
+                </div>
+                <div class="flex flex-wrap gap-1 max-h-16 overflow-y-auto pr-1 scroll-fade">
+                  ${modelsPills}
+                </div>
+              </div>
+            </div>
+
+            <!-- Card Actions -->
+            <div class="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-white/5">
+              <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-500 dark:text-slate-400">
+                <input class="toggle toggle-xs toggle-primary" type="checkbox" ${ch.enabled ? 'checked' : ''} onchange="setChannelEnabled('${escAttr(ch.name)}', this.checked)">
+                <span>启用渠道</span>
+              </label>
+              <div class="flex gap-1.5">
+                <button class="btn btn-xs btn-outline border-slate-300 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white rounded-lg" onclick='openKeyManager(${JSON.stringify(ch)})'>
+                  <i data-lucide="key-round" class="w-3.5 h-3.5"></i> Keys
+                </button>
+                <button class="btn btn-xs btn-outline border-slate-300 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-cyan-600 dark:hover:text-cyan-400 rounded-lg" onclick='openEditChannel(${JSON.stringify(ch)})'>
+                  编辑
+                </button>
+                <button class="btn btn-xs btn-outline border-slate-300 dark:border-white/10 text-slate-400 hover:bg-rose-100 dark:hover:bg-rose-950/40 text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg" onclick="deleteChannel('${escAttr(ch.name)}')">
+                  删除
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      lucide.createIcons();
+    }
+
+    async function setChannelEnabled(name, enabled) {
+      try {
+        await api(`/admin/channels/${encodeURIComponent(name)}/state`, {
+          method: 'PUT',
+          body: JSON.stringify({ enabled })
+        });
+        showToast(`渠道 ${name} 已${enabled ? '启用' : '禁用'}`);
+        loadData();
+      } catch(e) {
+        showToast('切换渠道状态失败: ' + e.message, true);
+        loadData();
+      }
+    }
+
+    function openAddChannel() {
+      document.getElementById('modal-title').textContent = '添加路由渠道';
+      document.getElementById('edit-name').value = '';
+      document.getElementById('f-name').value = '';
+      document.getElementById('f-name').disabled = false;
+      document.getElementById('f-type').value = 'openai';
+      document.getElementById('f-baseurl').value = '';
+      document.getElementById('f-baseurl-claude').value = '';
+      document.getElementById('f-baseurl-gemini').value = '';
+      document.getElementById('f-supports-responses').checked = false;
+      document.getElementById('f-keys').value = '';
+      document.getElementById('f-keys').placeholder = 'sk-key1\nsk-key2';
+      document.getElementById('f-models').value = '';
+      document.getElementById('f-priority').value = '10';
+      document.getElementById('f-weight').value = '100';
+      document.getElementById('f-enabled').checked = true;
+      
+      document.getElementById('mapping-editor-wrap').style.display = 'block';
+      document.getElementById('mapping-editor').innerHTML = '';
+      
+      adaptDefaultURL();
+      openModal('channel-modal');
+      lucide.createIcons();
+    }
+
+    function openEditChannel(ch) {
+      document.getElementById('modal-title').textContent = '修改渠道 — ' + ch.name;
+      document.getElementById('edit-name').value = ch.name;
+      document.getElementById('f-name').value = ch.name;
+      document.getElementById('f-name').disabled = true;
+      document.getElementById('f-type').value = ch.type;
+      document.getElementById('f-baseurl').value = ch.base_url;
+      document.getElementById('f-baseurl-claude').value = ch.base_url_claude || '';
+      document.getElementById('f-baseurl-gemini').value = ch.base_url_gemini || '';
+      document.getElementById('f-supports-responses').checked = !!ch.supports_responses;
+      document.getElementById('f-keys').value = '';
+      document.getElementById('f-keys').placeholder = '【留空则保持原有 Key 不变】';
+      document.getElementById('f-models').value = (ch.models || []).join(', ');
+      document.getElementById('f-priority').value = ch.priority;
+      document.getElementById('f-weight').value = ch.weight;
+      document.getElementById('f-enabled').checked = ch.enabled !== false;
+
+      document.getElementById('mapping-editor-wrap').style.display = 'block';
+      const mapping = ch.model_mapping || {};
+      const editor = document.getElementById('mapping-editor');
+      editor.innerHTML = '';
+      for (const [alias, upstream] of Object.entries(mapping)) {
+        addMappingRow(upstream, alias);
+      }
+
+      openModal('channel-modal');
+      lucide.createIcons();
+    }
+
+    function addMappingRow(upstream = '', alias = '') {
+      const container = document.getElementById('mapping-editor');
+      const div = document.createElement('div');
+      div.className = 'flex items-center gap-2 mt-2';
+      div.innerHTML = `
+        <input class="input input-bordered input-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-lg flex-1 text-slate-800 dark:text-slate-300 font-mono text-xs" type="text" placeholder="上游模型 ID" value="${escAttr(upstream)}">
+        <span class="text-slate-400 dark:text-slate-500 font-mono">→</span>
+        <input class="input input-bordered input-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-lg flex-1 text-slate-800 dark:text-slate-300 font-mono text-xs" type="text" placeholder="客户端调用别名" value="${escAttr(alias)}">
+        <button class="btn btn-sm btn-ghost hover:bg-rose-100 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg" onclick="this.parentNode.remove()"><i data-lucide="trash" class="w-4 h-4"></i></button>
+      `;
+      container.appendChild(div);
+      lucide.createIcons();
+    }
+
+    function adaptDefaultURL() {
+      const typ = document.getElementById('f-type').value;
+      const baseurl = document.getElementById('f-baseurl');
+      if (baseurl.value.trim() === '' || baseurl.value.includes('openai.com') || baseurl.value.includes('anthropic.com') || baseurl.value.includes('googleapis.com')) {
+        if (typ === 'openai') baseurl.value = 'https://api.openai.com/v1';
+        else if (typ === 'claude') baseurl.value = 'https://api.anthropic.com';
+        else if (typ === 'gemini') baseurl.value = 'https://generativelanguage.googleapis.com';
+      }
+    }
+
+    async function fetchModels() {
+      const typ = document.getElementById('f-type').value;
+      const baseurl = document.getElementById('f-baseurl').value.trim();
+      const firstKey = document.getElementById('f-keys').value.split('\n')[0].trim();
+      
+      if (!baseurl) {
+        showToast('必须提供 Base URL 才能获取模型', true);
+        return;
+      }
+      
+      const btn = document.getElementById('btn-fetch');
+      const originalText = btn.textContent;
+      btn.textContent = '获取中...';
+      btn.disabled = true;
+
+      try {
+        let fetchKey = firstKey;
+        if (!fetchKey && document.getElementById('edit-name').value) {
+          const cName = document.getElementById('edit-name').value;
+          const kData = await api(`/admin/channels/${encodeURIComponent(cName)}/keys`);
+          fetchKey = kData.keys && kData.keys[0] ? kData.keys[0] : '';
+        }
+
+        if (!fetchKey) {
+          showToast('获取模型需要至少指定一个上游 API Key', true);
+          btn.textContent = originalText;
+          btn.disabled = false;
+          return;
+        }
+
+        const data = await api('/admin/models/fetch', {
+          method: 'POST',
+          body: JSON.stringify({ type: typ, base_url: baseurl, key: fetchKey })
+        });
+
+        const list = data.models || [];
+        if (list.length > 0) {
+          const modelsInput = document.getElementById('f-models');
+          const current = parseModelList(modelsInput.value);
+          const merged = Array.from(new Set([...current, ...list]));
+          modelsInput.value = merged.join(', ');
+          showToast(`拉取成功，合并注入了 ${list.length} 个模型支持`);
+        } else {
+          showToast('上游返回的模型列表为空', true);
+        }
+      } catch(e) {
+        showToast('拉取模型失败: ' + e.message, true);
+      } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    async function saveChannel() {
+      const editName = document.getElementById('edit-name').value;
+      const name = document.getElementById('f-name').value.trim();
+      const type = document.getElementById('f-type').value;
+      const baseurl = document.getElementById('f-baseurl').value.trim();
+      const baseurlClaude = document.getElementById('f-baseurl-claude').value.trim();
+      const baseurlGemini = document.getElementById('f-baseurl-gemini').value.trim();
+      const supportsResponses = document.getElementById('f-supports-responses').checked;
+      const rawKeys = document.getElementById('f-keys').value;
+      const modelsInput = document.getElementById('f-models').value;
+      const priority = parseInt(document.getElementById('f-priority').value) || 10;
+      const weight = parseInt(document.getElementById('f-weight').value) || 100;
+      const enabled = document.getElementById('f-enabled').checked;
+
+      if (!name || !baseurl) {
+        showToast('名称和 Base URL 必填！', true);
+        return;
+      }
+
+      const keys = parseModelList(rawKeys);
+      const models = parseModelList(modelsInput);
+
+      const modelMapping = {};
+      const rows = document.getElementById('mapping-editor').children;
+      for (const row of rows) {
+        const upstream = row.children[0].value.trim();
+        const alias = row.children[2].value.trim();
+        if (upstream && alias) {
+          modelMapping[alias] = upstream;
+        }
+      }
+
+      const body = {
+        name, type, base_url: baseurl,
+        base_url_claude: baseurlClaude, base_url_gemini: baseurlGemini,
+        supports_responses: supportsResponses,
+        keys, models, model_mapping: modelMapping,
+        priority, weight, enabled
+      };
+
+      try {
+        if (editName) {
+          await api(`/admin/channels/${encodeURIComponent(editName)}`, {
+            method: 'PUT',
+            body: JSON.stringify(body)
+          });
+          showToast('渠道修改已保存');
+        } else {
+          await api('/admin/channels', {
+            method: 'POST',
+            body: JSON.stringify(body)
+          });
+          showToast('渠道添加成功');
+        }
+        closeModal('channel-modal');
+        loadData();
+      } catch(e) {
+        showToast('保存失败: ' + e.message, true);
+      }
+    }
+
+    async function deleteChannel(name) {
+      if (confirm(`确认永久删除路由渠道 ${name} 吗？`)) {
+        try {
+          await api(`/admin/channels/${encodeURIComponent(name)}`, { method: 'DELETE' });
+          showToast(`渠道 ${name} 已被彻底移除`);
+          loadData();
+        } catch(e) {
+          showToast('删除失败: ' + e.message, true);
+        }
+      }
+    }
+
+    // ==================== KEYS LOGIC ====================
+    async function openKeyManager(ch) {
+      activeKeyChannel = ch;
+      document.getElementById('key-channel-name').value = ch.name;
+      document.getElementById('key-modal-title').textContent = 'Key 控制室 — ' + ch.name;
+      
+      const listBody = document.getElementById('key-list-body');
+      listBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-500">正在与后台同步密钥状态...</td></tr>`;
+      document.getElementById('key-editor').value = '';
+      openModal('key-modal');
+
+      try {
+        const data = await api(`/admin/channels/${encodeURIComponent(ch.name)}/keys`);
+        activeKeyRows = (data.keys || []).map((key, index) => {
+          const stat = (ch.key_stats || []).find(s => s.index === index) || {};
+          return {
+            index,
+            key,
+            masked_key: (data.masked_keys || [])[index] || key.slice(0, 8) + '...',
+            disabled: !!stat.disabled,
+            stat
+          };
+        });
+        document.getElementById('key-editor').value = (data.keys || []).join('\n');
+        renderKeyRows();
+      } catch(e) {
+        listBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-rose-400">密钥数据拉取失败: ${esc(e.message)}</td></tr>`;
+      }
+    }
+
+    function renderKeyRows(probeResults = null) {
+      const listBody = document.getElementById('key-list-body');
+      const probeMap = {};
+      if (probeResults) {
+        probeResults.forEach(r => { probeMap[r.index] = r; });
+      }
+
+      listBody.innerHTML = activeKeyRows.map(row => {
+        const stat = row.stat || {};
+        const probe = probeMap[row.index];
+        
+        let statusBadge = '';
+        if (row.disabled) {
+          statusBadge = `<span class="badge bg-slate-200 dark:bg-slate-800 border-none text-slate-500 dark:text-slate-400">已禁用</span>`;
+        } else if (stat.healthy === false || stat.consecutive_failure >= 3) {
+          statusBadge = `<span class="badge bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border-none">挂起熔断</span>`;
+        } else {
+          statusBadge = `<span class="badge bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-none">健康</span>`;
+        }
+
+        let probeText = '';
+        if (probe) {
+          probeText = `<div class="text-[10px] mt-1 ${probe.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'} font-semibold font-mono">
+            探活: ${probe.status || 'ERR'} (${probe.latency_ms}ms)
+          </div>`;
+        }
+
+        return `
+          <tr class="border-b border-slate-200 dark:border-white/5 font-mono text-xs">
+            <td>${row.index}</td>
+            <td class="text-slate-700 dark:text-slate-300">${esc(row.masked_key)}</td>
+            <td>
+              <div>${statusBadge}</div>
+              ${probeText}
+            </td>
+            <td class="text-slate-500 dark:text-slate-400">
+              成功: ${stat.success_requests || 0} / 失败: ${stat.failure_requests || 0}
+              ${stat.last_used_at ? `<span class="block text-[10px] text-slate-450 dark:text-slate-500">最后使用: ${stat.last_used_at}</span>` : ''}
+            </td>
+            <td class="text-slate-800 dark:text-slate-300 font-bold">${stat.last_latency_ms || 0} ms</td>
+            <td>
+              <div class="flex gap-1">
+                <button class="btn btn-xs ${row.disabled ? 'btn-success text-white' : 'btn-ghost hover:bg-slate-100 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400'}" onclick="setKeyDisabled(${row.index}, ${!row.disabled})">
+                  ${row.disabled ? '启用' : '禁用'}
+                </button>
+                <button class="btn btn-xs btn-ghost hover:bg-amber-100 dark:hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400" onclick="probeKeys(${row.index})">
+                  探活
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+      lucide.createIcons();
+    }
+
+    async function setKeyDisabled(index, disabled) {
+      try {
+        const cName = document.getElementById('key-channel-name').value;
+        await api(`/admin/channels/${encodeURIComponent(cName)}/keys/${index}/state`, {
+          method: 'PUT',
+          body: JSON.stringify({ disabled })
+        });
+        showToast(`密钥状态已${disabled ? '禁用' : '启用'}`);
+        activeKeyRows[index].disabled = disabled;
+        renderKeyRows();
+        loadData();
+      } catch(e) {
+        showToast('修改密钥状态失败: ' + e.message, true);
+      }
+    }
+
+    async function probeKeys(indexFilter = null) {
+      const cName = document.getElementById('key-channel-name').value;
+      let path = `/admin/channels/${encodeURIComponent(cName)}/probe`;
+      if (indexFilter !== null) {
+        path += `?index=${indexFilter}`;
+      }
+      
+      showToast(indexFilter !== null ? '正在测试此 Key 延迟...' : '正在对该渠道所有 Key 进行并发探测...');
+      
+      try {
+        const data = await api(path, { method: 'POST' });
+        showToast(indexFilter !== null ? '探测完成' : '全渠道探测已结束');
+        renderKeyRows(data.results || []);
+      } catch(e) {
+        showToast('探测失败: ' + e.message, true);
+      }
+    }
+
+    async function saveChannelKeys() {
+      const cName = document.getElementById('key-channel-name').value;
+      const rawText = document.getElementById('key-editor').value;
+      const keys = parseModelList(rawText);
+
+      if (keys.length === 0) {
+        showToast('必须要输入至少一个有效的 API Key', true);
+        return;
+      }
+
+      try {
+        await api(`/admin/channels/${encodeURIComponent(cName)}/keys`, {
+          method: 'PUT',
+          body: JSON.stringify({ keys })
+        });
+        showToast('密钥库全量更新保存成功！');
+        closeModal('key-modal');
+        loadData();
+      } catch(e) {
+        showToast('更新失败: ' + e.message, true);
+      }
+    }
+
+    // ==================== LOGS/STATS WORKBENCH LOGIC ====================
+    async function resetLogPageAndLoad() {
+      logPage = 1;
+      loadLogs();
+    }
+
+    async function loadLogs() {
+      const proto = document.getElementById('log-filter-protocol').value;
+      const model = document.getElementById('log-filter-model').value;
+      const channel = document.getElementById('log-filter-channel').value;
+      const key = document.getElementById('log-filter-access-key').value;
+      const status = document.getElementById('log-filter-status').value;
+      const q = document.getElementById('log-filter-q').value.trim();
+
+      let query = `?limit=${logLimit}&page=${logPage}`;
+      if (proto) query += `&protocol=${encodeURIComponent(proto)}`;
+      if (model) query += `&model=${encodeURIComponent(model)}`;
+      if (channel) query += `&channel=${encodeURIComponent(channel)}`;
+      if (key) query += `&access_key=${encodeURIComponent(key)}`;
+      if (status) query += `&status=${encodeURIComponent(status)}`;
+      if (q) query += `&q=${encodeURIComponent(q)}`;
+
+      const body = document.getElementById('logs-table-body');
+      body.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-550">正在检索流水日志...</td></tr>`;
+
+      try {
+        const data = await api(`/admin/logs${query}`);
+        const list = data.logs || [];
+        const total = data.filtered_total || 0;
+        
+        document.getElementById('log-count').textContent = `共检索到 ${total.toLocaleString()} 条审计流水`;
+        
+        const totalPages = Math.ceil(total / logLimit) || 1;
+        document.getElementById('log-page-info').textContent = `${logPage} / ${totalPages}`;
+
+        if (list.length === 0) {
+          body.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-slate-500 italic">没有匹配的流量流水记录</td></tr>`;
+          return;
+        }
+
+        body.innerHTML = list.map(log => {
+          const isOK = log.status >= 200 && log.status < 400;
+          const statusCls = isOK ? 'text-emerald-700 bg-emerald-100/60 dark:text-emerald-400 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-900/30' : 'text-rose-700 bg-rose-100/60 dark:text-rose-400 dark:bg-rose-950/50 border-rose-300 dark:border-rose-900/30';
+          const protoBadge = `<span class="badge badge-sm font-mono bg-slate-200 dark:bg-white/5 border-none text-[10px] text-slate-600 dark:text-slate-400">${esc(log.protocol)}</span>`;
+          
+          return `
+            <tr class="border-b border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors" onclick="loadLogDetail(${log.id}, this)">
+              <td class="font-mono text-[10px] text-slate-500">${esc(log.timestamp)}</td>
+              <td>
+                <div class="font-bold text-slate-800 dark:text-slate-300 text-sm font-mono truncate max-w-[180px]">${esc(log.model)}</div>
+                <div class="flex gap-1 items-center mt-1">
+                  ${protoBadge}
+                  <span class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">id: ${log.id}</span>
+                </div>
+              </td>
+              <td class="font-mono text-xs text-slate-600 dark:text-slate-400">${esc(log.channel || 'N/A')}</td>
+              <td>
+                <span class="badge ${statusCls} font-mono text-[10px] py-1 border">${log.status}</span>
+                <span class="block text-[10px] text-slate-500 font-mono mt-1">${log.duration}ms</span>
+              </td>
+              <td>
+                <button class="btn btn-ghost btn-xs text-cyan-600 dark:text-cyan-500 hover:underline">查看</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+        lucide.createIcons();
+      } catch(e) {
+        body.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-rose-450">流水拉取失败: ${esc(e.message)}</td></tr>`;
+      }
+    }
+
+    function changeLogPage(dir) {
+      logPage += dir;
+      if (logPage < 1) logPage = 1;
+      loadLogs();
+    }
+
+    async function loadLogDetail(id, rowEl) {
+      if (rowEl) {
+        document.querySelectorAll('#logs-table-body tr').forEach(r => r.classList.remove('bg-cyan-500/10', 'dark:bg-cyan-500/20'));
+        rowEl.classList.add('bg-cyan-500/10', 'dark:bg-cyan-500/20');
+      }
+
+      document.getElementById('log-detail-placeholder').classList.add('hidden');
+      const content = document.getElementById('log-detail-content');
+      content.classList.add('hidden');
+
+      try {
+        const data = await api(`/admin/logs/${id}`);
+        const log = data.log || {};
+        
+        document.getElementById('log-detail-id').textContent = `Log ID: ${log.id}`;
+        document.getElementById('ld-key').textContent = log.access_key || 'N/A';
+        document.getElementById('ld-mode').textContent = log.mode || 'passthrough';
+        
+        const attempts = log.attempts || [];
+        const attemptsContainer = document.getElementById('ld-attempts');
+        if (attempts.length === 0) {
+          attemptsContainer.innerHTML = `<div class="text-xs text-slate-400 italic">没有尝试探测数据</div>`;
+        } else {
+          attemptsContainer.innerHTML = attempts.map(att => {
+            const attOK = att.status >= 200 && att.status < 400;
+            const clr = attOK ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
+            return `
+              <div class="p-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-[11px] font-mono leading-relaxed">
+                <div class="flex items-center justify-between">
+                  <span class="font-bold text-slate-800 dark:text-slate-300">#${att.attempt} ${esc(att.channel)}</span>
+                  <span class="${clr} font-bold">${att.status || 'ERROR'} (${att.duration_ms}ms)</span>
+                </div>
+                ${att.error ? `<div class="text-[10px] text-rose-600 dark:text-rose-500 mt-1 max-h-12 overflow-y-auto">${esc(att.error)}</div>` : ''}
+              </div>
+            `;
+          }).join('');
+        }
+
+        document.getElementById('ld-req-box').textContent = log.request ? JSON.stringify(log.request, null, 2) : '【空 Payload】';
+        
+        const upReqContainer = document.getElementById('ld-upreq-container');
+        if (log.upstream_request) {
+          upReqContainer.classList.remove('hidden');
+          document.getElementById('ld-upreq-box').textContent = JSON.stringify(log.upstream_request, null, 2);
+        } else {
+          upReqContainer.classList.add('hidden');
+        }
+
+        content.classList.remove('hidden');
+      } catch(e) {
+        showToast('获取日志详情失败: ' + e.message, true);
+      }
+    }
+
+    function copyJSON(id) {
+      const box = document.getElementById(id);
+      if (!box) return;
+      navigator.clipboard.writeText(box.textContent);
+      showToast('Payload 已复制到剪贴板');
+    }
+
+    // ==================== SETTINGS/CREDENTIALS LOGIC ====================
+    async function loadSettings() {
+      try {
+        const data = await api('/admin/settings');
+        accessPolicyModels = (data.models || []).map(m => m.id || m).sort((a,b) => a.localeCompare(b));
+        accessKeyPolicies = normalizeAccessKeyPolicies(data.access_keys || []);
+        modelSystemPrompts = data.model_system_prompts || {};
+        
+        renderAccessKeyPolicies();
+        renderModelSystemPrompts();
+
+        const adminKey = data.admin_key || '';
+        const maskedAdmin = adminKey.length > 8 ? adminKey.slice(0, 4) + '****' + adminKey.slice(-4) : adminKey;
+        document.getElementById('admin-key-display').innerHTML = `
+          <i data-lucide="key" class="w-4 h-4 text-cyan-600 dark:text-cyan-400"></i>
+          <span class="font-mono text-slate-800 dark:text-slate-300">${esc(maskedAdmin)}</span>
+        `;
+        
+        renderLogAccessKeyFilter(data);
+        renderLogRouteFilters(data.models || []);
+
+        lucide.createIcons();
+      } catch(e) {
+        showToast('凭证策略加载失败: ' + e.message, true);
+      }
+    }
+
+    function renderLogAccessKeyFilter(data) {
+      const el = document.getElementById('log-filter-access-key');
+      if (!el) return;
+      const current = el.value;
+      const keys = normalizeAccessKeyPolicies(data.access_keys || []);
+      
+      el.innerHTML = '<option value="">全部令牌</option>' + keys.map(k => {
+        const masked = maskKeyLocal(k.key);
+        return `<option value="${esc(k.key)}">${esc(masked)}</option>`;
+      }).join('');
+      
+      el.value = current;
+    }
+
+    function renderLogRouteFilters(models) {
+      const el = document.getElementById('log-filter-model');
+      if (!el) return;
+      const current = el.value;
+
+      el.innerHTML = '<option value="">全部模型</option>' + models.map(m => {
+        const id = m.id || m;
+        return `<option value="${esc(id)}">${esc(id)}</option>`;
+      }).join('');
+
+      el.value = current;
+    }
+
+    function renderModelSystemPrompts() {
+      const el = document.getElementById('model-prompts-display');
+      if (accessPolicyModels.length === 0) {
+        el.innerHTML = `<div class="col-span-full py-8 text-center text-slate-400 text-sm">暂无可配置注入的公开模型。需先在渠道里添加模型参数。</div>`;
+        return;
+      }
+
+      el.innerHTML = accessPolicyModels.map(model => {
+        const value = modelSystemPrompts[model] || '';
+        const hasPrompt = !!value.trim();
+        const borderCls = hasPrompt ? 'border-cyan-550/30 bg-cyan-100/20 dark:bg-cyan-950/10' : 'border-slate-200 dark:border-white/5 bg-slate-100/50 dark:bg-slate-900/20';
+
+        return `
+          <div class="p-4 rounded-2xl border ${borderCls} flex flex-col justify-between space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="font-mono text-xs font-semibold text-slate-800 dark:text-slate-300 truncate max-w-[200px]">${esc(model)}</span>
+              ${hasPrompt ? '<span class="badge badge-sm bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-400 border-none text-[10px]">已启用注入</span>' : '<span class="badge badge-sm bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-none text-[10px]">默认</span>'}
+            </div>
+            <textarea class="textarea textarea-bordered h-20 bg-white dark:bg-slate-950/40 border-slate-300 dark:border-white/5 focus:border-cyan-500 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-300" 
+              placeholder="留空即不做任何注入修改" 
+              oninput="modelSystemPrompts['${escAttr(model)}']=this.value">${esc(value)}</textarea>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function saveModelSystemPrompts() {
+      try {
+        const prompts = {};
+        for (const [model, p] of Object.entries(modelSystemPrompts)) {
+          if (p.trim()) prompts[model] = p.trim();
+        }
+        await api('/admin/model-system-prompts', {
+          method: 'PUT',
+          body: JSON.stringify({ model_system_prompts: prompts })
+        });
+        showToast('模型自定义系统提示词已成功更新注入！');
+        loadSettings();
+      } catch(e) {
+        showToast('保存提示词配置失败: ' + e.message, true);
+      }
+    }
+
+    function normalizeAccessKeyPolicies(keys) {
+      return keys.map(k => {
+        if (typeof k === 'string') {
+          return { key: k, allowed_models: [], excluded_models: [] };
+        }
+        return {
+          key: k.key || '',
+          allowed_models: Array.isArray(k.allowed_models) ? k.allowed_models : [],
+          excluded_models: Array.isArray(k.excluded_models) ? k.excluded_models : [],
+        };
+      });
+    }
+
+    function renderAccessKeyPolicies() {
+      const el = document.getElementById('access-keys-display');
+      if (accessKeyPolicies.length === 0) {
+        el.innerHTML = `
+          <div class="py-12 text-center text-slate-500 rounded-2xl border border-dashed border-slate-300 dark:border-white/10 bg-slate-100/50 dark:bg-white/5">
+            没有配置任何 Access Key。点击上方“添加令牌”开始。
+          </div>
+        `;
+        return;
+      }
+
+      el.innerHTML = accessKeyPolicies.map((item, index) => {
+        const masked = maskKeyLocal(item.key);
+        const allowedText = item.allowed_models.length === 0 ? '【全部模型均可访问】' : `${item.allowed_models.length} 个受限模型`;
+        const excludedText = item.excluded_models.length === 0 ? '【没有模型被排除】' : `${item.excluded_models.length} 个模型已排除`;
+
+        return `
+          <div class="p-5 rounded-2xl bg-slate-100/50 dark:bg-white/5 border border-slate-200 dark:border-white/5 space-y-4">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase font-mono">令牌 #${index + 1} (${esc(masked)})</span>
+              <button class="btn btn-xs btn-error btn-outline rounded-lg" onclick="removeAccessKeyPolicy(${index})">
+                彻底删除此令牌
+              </button>
+            </div>
+            
+            <div class="form-control">
+              <label class="label"><span class="label-text text-slate-500 dark:text-slate-400 text-xs">令牌 Key 内容 *</span></label>
+              <div class="flex gap-2">
+                <input class="input input-bordered input-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl flex-1 font-mono text-sm text-slate-800 dark:text-white" value="${escAttr(item.key)}" oninput="accessKeyPolicies[${index}].key=this.value">
+                <button class="btn btn-sm bg-slate-200 dark:bg-white/5 hover:bg-slate-300 dark:hover:bg-white/10 border-slate-300 dark:border-white/10 text-slate-800 dark:text-white rounded-xl" onclick="generateToken(${index})">
+                  自动生成
+                </button>
+              </div>
+            </div>
+
+            <!-- Model selectors -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Allowed -->
+              <div class="p-3 bg-white dark:bg-black/20 rounded-2xl border border-slate-250 dark:border-white/5 space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="font-bold text-slate-500 dark:text-slate-400">白名单授权模型</span>
+                  <div class="flex gap-1.5 font-bold">
+                    <span class="text-[10px] text-cyan-600 dark:text-cyan-400">${allowedText}</span>
+                    <button class="text-cyan-600 dark:text-cyan-500 hover:underline" onclick="openPicker(${index}, 'allowed_models')">选择</button>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1 scroll-fade">
+                  ${item.allowed_models.map(m => `<span class="badge badge-sm bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-400 border-none text-[10px]">${esc(m)}</span>`).join('') || '<span class="text-xs text-slate-400 dark:text-slate-600 italic">默认全部可用</span>'}
+                </div>
+              </div>
+
+              <!-- Excluded -->
+              <div class="p-3 bg-white dark:bg-black/20 rounded-2xl border border-slate-250 dark:border-white/5 space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="font-bold text-slate-500 dark:text-slate-400">黑名单排除模型 (排除优先级更高)</span>
+                  <div class="flex gap-1.5 font-bold">
+                    <span class="text-[10px] text-rose-600 dark:text-rose-400">${excludedText}</span>
+                    <button class="text-rose-600 dark:text-rose-500 hover:underline" onclick="openPicker(${index}, 'excluded_models')">选择</button>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1 scroll-fade">
+                  ${item.excluded_models.map(m => `<span class="badge badge-sm bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-400 border-none text-[10px]">${esc(m)}</span>`).join('') || '<span class="text-xs text-slate-400 dark:text-slate-600 italic">未排除任何模型</span>'}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      lucide.createIcons();
+    }
+
+    function addAccessKeyPolicy() {
+      const bytes = new Uint8Array(24);
+      crypto.getRandomValues(bytes);
+      const key = 'sk-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+      accessKeyPolicies.push({ key, allowed_models: [], excluded_models: [] });
+      renderAccessKeyPolicies();
+    }
+
+    function removeAccessKeyPolicy(index) {
+      accessKeyPolicies.splice(index, 1);
+      renderAccessKeyPolicies();
+    }
+
+    // Generate Token
+    function generateToken(index) {
+      const bytes = new Uint8Array(24);
+      crypto.getRandomValues(bytes);
+      accessKeyPolicies[index].key = 'sk-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+      renderAccessKeyPolicies();
+    }
+
+    async function saveAccessKeyPolicies() {
+      const list = accessKeyPolicies.map(k => ({
+        key: k.key.trim(),
+        allowed_models: k.allowed_models,
+        excluded_models: k.excluded_models
+      })).filter(k => k.key);
+
+      try {
+        await api('/admin/access-keys', {
+          method: 'PUT',
+          body: JSON.stringify({ access_keys: list })
+        });
+        showToast('所有用户访问令牌政策已更新保存！');
+        loadSettings();
+      } catch(e) {
+        showToast('保存用户密钥失败: ' + e.message, true);
+      }
+    }
+
+    // ==================== PICKER DIALOG LOGIC ====================
+    let pickerKeyIdx = null;
+    let pickerField = '';
+    let pickerSelected = new Set();
+
+    function openPicker(keyIdx, field) {
+      pickerKeyIdx = keyIdx;
+      pickerField = field;
+      pickerSelected = new Set(accessKeyPolicies[keyIdx][field] || []);
+      
+      document.getElementById('picker-search').value = '';
+      renderPickerList();
+      openModal('picker-modal');
+    }
+
+    function renderPickerList() {
+      const container = document.getElementById('picker-list');
+      const query = document.getElementById('picker-search').value.toLowerCase();
+
+      const filtered = accessPolicyModels.filter(m => m.toLowerCase().includes(query));
+      
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">无模型匹配此过滤</div>`;
+        return;
+      }
+
+      container.innerHTML = filtered.map(model => {
+        const isChecked = pickerSelected.has(model);
+        return `
+          <label class="flex items-center justify-between p-2 hover:bg-slate-200/50 dark:hover:bg-white/5 rounded-xl cursor-pointer text-xs">
+            <span class="font-mono text-slate-700 dark:text-slate-300">${esc(model)}</span>
+            <input class="checkbox checkbox-xs checkbox-primary rounded-md" type="checkbox" ${isChecked ? 'checked' : ''} 
+              onchange="togglePickerModel('${escAttr(model)}', this.checked)">
+          </label>
+        `;
+      }).join('');
+
+      document.getElementById('picker-count').textContent = `已选中 ${pickerSelected.size} 项`;
+    }
+
+    function togglePickerModel(model, checked) {
+      if (checked) {
+        pickerSelected.add(model);
+      } else {
+        pickerSelected.delete(model);
+      }
+      document.getElementById('picker-count').textContent = `已选中 ${pickerSelected.size} 项`;
+    }
+
+    function filterPicker() {
+      renderPickerList();
+    }
+
+    function pickerSelectAll() {
+      accessPolicyModels.forEach(m => pickerSelected.add(m));
+      renderPickerList();
+    }
+    function pickerDeselectAll() {
+      pickerSelected.clear();
+      renderPickerList();
+    }
+
+    function applyPickerSelection() {
+      accessKeyPolicies[pickerKeyIdx][pickerField] = Array.from(pickerSelected).sort((a,b) => a.localeCompare(b));
+      closeModal('picker-modal');
+      renderAccessKeyPolicies();
+    }
+
+    // ==================== SHARED UTILS ====================
+    function maskKeyLocal(key) {
+      if (!key) return '';
+      if (key.length <= 8) return '****';
+      return key.slice(0, 4) + '****' + key.slice(-4);
+    }
+
+    function parseModelList(val) {
+      const seen = new Set();
+      return val.split(/[\n,;]+/).map(s => s.trim()).filter(s => {
+        if (!s || seen.has(s)) return false;
+        seen.add(s);
+        return true;
+      });
+    }
+  </script>
 </body>
 </html>

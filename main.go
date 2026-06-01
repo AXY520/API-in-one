@@ -5,10 +5,14 @@ import (
 	"api-in-one/handler"
 	"api-in-one/relay"
 	"api-in-one/router"
+	_ "embed"
 	"fmt"
 	"log/slog"
 	"os"
 )
+
+//go:embed web/index.html
+var indexHTML []byte
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -36,7 +40,7 @@ func main() {
 
 	pool := relay.NewPool(channels)
 	engine := relay.NewEngine(pool)
-	r := router.Setup(engine, pool)
+	r := router.Setup(engine, pool, indexHTML)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	slog.Info("starting api-in-one", "addr", addr, "channels", len(channels))

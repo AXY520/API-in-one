@@ -3,3 +3,5 @@ config.local.yaml
 1.txt
 api-in-one
 references/
+node_modules/
+data/

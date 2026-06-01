@@ -29,11 +29,17 @@ type Engine struct {
 
 // NewEngine creates a new relay engine.
 func NewEngine(pool *Pool) *Engine {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.MaxIdleConns = 1000
+	tr.MaxIdleConnsPerHost = 100
+	tr.IdleConnTimeout = 90 * time.Second
+
 	return &Engine{
 		pool:       pool,
 		maxRetries: 3,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout:   120 * time.Second,
+			Transport: tr,
 		},
 	}
 }

@@ -30,7 +30,19 @@ type geminiContent struct {
 }
 
 type geminiPart struct {
-	Text string `json:"text,omitempty"`
+	Text             string                  `json:"text,omitempty"`
+	FunctionCall     *geminiFunctionCall     `json:"functionCall,omitempty"`
+	FunctionResponse *geminiFunctionResponse `json:"functionResponse,omitempty"`
+}
+
+type geminiFunctionCall struct {
+	Name string                 `json:"name"`
+	Args map[string]interface{} `json:"args"`
+}
+
+type geminiFunctionResponse struct {
+	Name     string                 `json:"name"`
+	Response map[string]interface{} `json:"response"`
 }
 
 type geminiGenerationConfig struct {
@@ -104,6 +116,51 @@ func (a *GeminiAdaptor) convertRequest(req *model.ChatCompletionRequest) *gemini
 		if role == "assistant" {
 			role = "model"
 		}
+		if role == "model" {
+			var parts []geminiPart
+			text := extractTextContent(msg.Content)
+			if text != "" {
+				parts = append(parts, geminiPart{Text: text})
+			}
+			for _, tc := range msg.ToolCalls {
+				var args map[string]interface{}
+				if tc.Function.Arguments != "" {
+					_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+				}
+				parts = append(parts, geminiPart{
+					FunctionCall: &geminiFunctionCall{
+						Name: tc.Function.Name,
+						Args: args,
+					},
+				})
+			}
+			gr.Contents = append(gr.Contents, geminiContent{
+				Role:  "model",
+				Parts: parts,
+			})
+			continue
+		}
+		if role == "tool" {
+			var respObj map[string]interface{}
+			contentStr := extractTextContent(msg.Content)
+			if err := json.Unmarshal([]byte(contentStr), &respObj); err != nil {
+				respObj = map[string]interface{}{"result": contentStr}
+			}
+			name := msg.Name
+			if name == "" {
+				name = msg.ToolCallID
+			}
+			gr.Contents = append(gr.Contents, geminiContent{
+				Role: "function",
+				Parts: []geminiPart{{
+					FunctionResponse: &geminiFunctionResponse{
+						Name:     name,
+						Response: respObj,
+					},
+				}},
+			})
+			continue
+		}
 		gc := geminiContent{
 			Role:  role,
 			Parts: []geminiPart{{Text: extractTextContent(msg.Content)}},
@@ -162,11 +219,36 @@ func (a *GeminiAdaptor) ParseResponse(resp *http.Response) (*model.ChatCompletio
 func (a *GeminiAdaptor) convertResponse(gr *geminiResponse, modelName string) *model.ChatCompletionResponse {
 	text := ""
 	finishReason := "stop"
+	var toolCalls []model.ToolCall
 	if len(gr.Candidates) > 0 {
 		for _, part := range gr.Candidates[0].Content.Parts {
-			text += part.Text
+			if part.Text != "" {
+				text += part.Text
+			}
+			if part.FunctionCall != nil {
+				argsBytes, _ := json.Marshal(part.FunctionCall.Args)
+				toolCalls = append(toolCalls, model.ToolCall{
+					ID:   fmt.Sprintf("call_%s_%d", part.FunctionCall.Name, time.Now().UnixMilli()),
+					Type: "function",
+					Function: model.FunctionCall{
+						Name:      part.FunctionCall.Name,
+						Arguments: string(argsBytes),
+					},
+				})
+			}
 		}
-		finishReason = mapGeminiStopReason(gr.Candidates[0].FinishReason)
+		if len(toolCalls) > 0 {
+			finishReason = "tool_calls"
+		} else if gr.Candidates[0].FinishReason != "" {
+			finishReason = mapGeminiStopReason(gr.Candidates[0].FinishReason)
+		}
+	}
+	msg := &model.Message{
+		Role:    "assistant",
+		Content: text,
+	}
+	if len(toolCalls) > 0 {
+		msg.ToolCalls = toolCalls
 	}
 	return &model.ChatCompletionResponse{
 		ID:      fmt.Sprintf("gemini-%d", time.Now().UnixMilli()),
@@ -174,11 +256,8 @@ func (a *GeminiAdaptor) convertResponse(gr *geminiResponse, modelName string) *m
 		Created: time.Now().Unix(),
 		Model:   modelName,
 		Choices: []model.Choice{{
-			Index: 0,
-			Message: &model.Message{
-				Role:    "assistant",
-				Content: text,
-			},
+			Index:        0,
+			Message:      msg,
 			FinishReason: &finishReason,
 		}},
 		Usage: model.Usage{
@@ -217,15 +296,37 @@ func (p *geminiSSEProcessor) Next() ([]byte, error) {
 		}
 
 		text := ""
+		var toolCalls []model.ToolCall
 		var finishReason *string
 		if len(geminiResp.Candidates) > 0 {
 			for _, part := range geminiResp.Candidates[0].Content.Parts {
-				text += part.Text
+				if part.Text != "" {
+					text += part.Text
+				}
+				if part.FunctionCall != nil {
+					argsBytes, _ := json.Marshal(part.FunctionCall.Args)
+					toolCalls = append(toolCalls, model.ToolCall{
+						ID:   fmt.Sprintf("call_%s_%d", part.FunctionCall.Name, time.Now().UnixMilli()),
+						Type: "function",
+						Function: model.FunctionCall{
+							Name:      part.FunctionCall.Name,
+							Arguments: string(argsBytes),
+						},
+					})
+				}
 			}
-			if geminiResp.Candidates[0].FinishReason != "" {
+			if len(toolCalls) > 0 {
+				fr := "tool_calls"
+				finishReason = &fr
+			} else if geminiResp.Candidates[0].FinishReason != "" {
 				fr := mapGeminiStopReason(geminiResp.Candidates[0].FinishReason)
 				finishReason = &fr
 			}
+		}
+
+		delta := &model.Message{Content: text}
+		if len(toolCalls) > 0 {
+			delta.ToolCalls = toolCalls
 		}
 
 		chunk := model.ChatCompletionChunk{
@@ -233,7 +334,7 @@ func (p *geminiSSEProcessor) Next() ([]byte, error) {
 			Created: time.Now().Unix(),
 			Choices: []model.ChunkChoice{{
 				Index:        0,
-				Delta:        &model.Message{Content: text},
+				Delta:        delta,
 				FinishReason: finishReason,
 			}},
 		}

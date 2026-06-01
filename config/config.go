@@ -61,10 +61,18 @@ type Config struct {
 }
 
 var (
-	globalConfig Config
-	configMu     sync.RWMutex
-	configPath   string
+	globalConfig   Config
+	configMu       sync.RWMutex
+	configPath     string
+	fastAccessKeys map[string]AccessKeyConfig
 )
+
+func rebuildAccessKeyCacheLocked() {
+	fastAccessKeys = make(map[string]AccessKeyConfig, len(globalConfig.Server.AccessKeys))
+	for _, key := range globalConfig.Server.AccessKeys {
+		fastAccessKeys[key.Key] = key
+	}
+}
 
 func Load(path string) error {
 	configPath = path
@@ -79,6 +87,7 @@ func Load(path string) error {
 	applyDefaults(&cfg)
 	configMu.Lock()
 	globalConfig = cfg
+	rebuildAccessKeyCacheLocked()
 	configMu.Unlock()
 	slog.Info("config loaded", "channels", len(cfg.Channels))
 	return nil
@@ -348,6 +357,7 @@ func UpdateAccessKeys(keys []AccessKeyConfig) error {
 	defer configMu.Unlock()
 	normalizeAccessKeys(&keys)
 	globalConfig.Server.AccessKeys = keys
+	rebuildAccessKeyCacheLocked()
 	return saveToDiskLocked()
 }
 
@@ -375,12 +385,8 @@ func UpdateModelSystemPrompts(prompts map[string]string) error {
 func FindAccessKey(token string) (AccessKeyConfig, bool) {
 	configMu.RLock()
 	defer configMu.RUnlock()
-	for _, key := range globalConfig.Server.AccessKeys {
-		if key.Key == token {
-			return key, true
-		}
-	}
-	return AccessKeyConfig{}, false
+	key, ok := fastAccessKeys[token]
+	return key, ok
 }
 
 func AccessKeyCanUseModel(accessKey AccessKeyConfig, model string) bool {
