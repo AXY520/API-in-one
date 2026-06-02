@@ -120,6 +120,41 @@ func TestGetAvailableModelsHidesMappedUpstreamIDs(t *testing.T) {
 	}
 }
 
+func TestGetAvailableModelsGroupsByModelProvider(t *testing.T) {
+	ch := model.NewChannel(
+		"4da1a93c-c3df-4734-a8d3-624e0f0902ea",
+		"openai",
+		"https://mapped.example",
+		"",
+		"",
+		false,
+		[]string{"k"},
+		[]string{"gpt-4o", "claude-3-5-sonnet", "gemini-2.5-pro", "deepseek-chat"},
+		map[string]string{"my-claude": "claude-3-5-sonnet"},
+		10,
+		100,
+	)
+	pool := NewPool([]*model.Channel{ch})
+
+	owners := map[string]string{}
+	for _, m := range pool.GetAvailableModels() {
+		owners[m.ID] = m.OwnedBy
+	}
+
+	if owners["gpt-4o"] != "OpenAI" {
+		t.Fatalf("expected OpenAI owner, got %#v", owners)
+	}
+	if owners["gemini-2.5-pro"] != "Google" {
+		t.Fatalf("expected Google owner, got %#v", owners)
+	}
+	if owners["deepseek-chat"] != "DeepSeek" {
+		t.Fatalf("expected DeepSeek owner, got %#v", owners)
+	}
+	if owners["my-claude"] != "Anthropic" {
+		t.Fatalf("expected alias owner inferred from upstream model, got %#v", owners)
+	}
+}
+
 func TestGetAvailableModelsSkipsDisabledChannels(t *testing.T) {
 	disabled := model.NewChannel(
 		"disabled",

@@ -80,3 +80,32 @@ func TestSanitizeRequestDowngradesToolMessagesWhenNeeded(t *testing.T) {
 		t.Fatalf("unexpected downgraded content: %#v", req.Messages[0].Content)
 	}
 }
+
+func TestBuildRawClaudeURLAvoidsDuplicateV1(t *testing.T) {
+	cases := map[string]string{
+		"https://example.com":             "https://example.com/v1/messages",
+		"https://example.com/v1":          "https://example.com/v1/messages",
+		"https://example.com/v1/":         "https://example.com/v1/messages",
+		"https://example.com/v1/messages": "https://example.com/v1/messages",
+		"https://example.com/messages":    "https://example.com/messages",
+	}
+	for input, want := range cases {
+		if got := buildRawClaudeURL(input); got != want {
+			t.Fatalf("buildRawClaudeURL(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestBuildRawChatCompletionsURLAvoidsDuplicateV1(t *testing.T) {
+	cases := map[string]string{
+		"https://example.com":                     "https://example.com/v1/chat/completions",
+		"https://example.com/v1":                  "https://example.com/v1/chat/completions",
+		"https://example.com/v1/":                 "https://example.com/v1/chat/completions",
+		"https://example.com/v1/chat/completions": "https://example.com/v1/chat/completions",
+	}
+	for input, want := range cases {
+		if got := buildRawChatCompletionsURL(input); got != want {
+			t.Fatalf("buildRawChatCompletionsURL(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

@@ -420,7 +420,7 @@ func buildRawHTTPRequest(ctx context.Context, ch *model.Channel, protocol, key s
 	case "responses":
 		url = buildRawResponsesURL(baseURL)
 	default:
-		url = strings.TrimRight(baseURL, "/") + "/chat/completions"
+		url = buildRawChatCompletionsURL(baseURL)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -453,10 +453,24 @@ func buildRawResponsesURL(baseURL string) string {
 	return baseURL + "/responses"
 }
 
+func buildRawChatCompletionsURL(baseURL string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(baseURL, "/chat/completions") {
+		return baseURL
+	}
+	if strings.HasSuffix(baseURL, "/v1") {
+		return baseURL + "/chat/completions"
+	}
+	return baseURL + "/v1/chat/completions"
+}
+
 func buildRawClaudeURL(baseURL string) string {
 	baseURL = strings.TrimRight(baseURL, "/")
-	if strings.HasSuffix(baseURL, "/v1/messages") {
+	if strings.HasSuffix(baseURL, "/messages") {
 		return baseURL
+	}
+	if strings.HasSuffix(baseURL, "/v1") {
+		return baseURL + "/messages"
 	}
 	return baseURL + "/v1/messages"
 }

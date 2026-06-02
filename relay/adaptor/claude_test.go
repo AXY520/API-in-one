@@ -116,3 +116,18 @@ func TestExtractTextContentHandlesContentParts(t *testing.T) {
 		t.Fatalf("unexpected text: %q", got)
 	}
 }
+
+func TestBuildClaudeURLAvoidsDuplicateV1(t *testing.T) {
+	cases := map[string]string{
+		"https://example.com":             "https://example.com/v1/messages",
+		"https://example.com/v1":          "https://example.com/v1/messages",
+		"https://example.com/v1/":         "https://example.com/v1/messages",
+		"https://example.com/v1/messages": "https://example.com/v1/messages",
+		"https://example.com/messages":    "https://example.com/messages",
+	}
+	for input, want := range cases {
+		if got := buildClaudeURL(input); got != want {
+			t.Fatalf("buildClaudeURL(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

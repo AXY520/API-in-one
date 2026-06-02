@@ -21,7 +21,7 @@ func (a *OpenAIAdaptor) BuildHTTPRequest(baseURL, key string, req *model.ChatCom
 	if err != nil {
 		return nil, err
 	}
-	url := strings.TrimRight(baseURL, "/") + "/chat/completions"
+	url := buildOpenAIChatCompletionsURL(baseURL)
 	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -29,6 +29,17 @@ func (a *OpenAIAdaptor) BuildHTTPRequest(baseURL, key string, req *model.ChatCom
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+key)
 	return httpReq, nil
+}
+
+func buildOpenAIChatCompletionsURL(baseURL string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(baseURL, "/chat/completions") {
+		return baseURL
+	}
+	if strings.HasSuffix(baseURL, "/v1") {
+		return baseURL + "/chat/completions"
+	}
+	return baseURL + "/v1/chat/completions"
 }
 
 func (a *OpenAIAdaptor) ParseResponse(resp *http.Response) (*model.ChatCompletionResponse, error) {

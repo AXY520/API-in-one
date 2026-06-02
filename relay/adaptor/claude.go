@@ -494,5 +494,8 @@ func buildClaudeURL(baseURL string) string {
 	if strings.HasSuffix(baseURL, "/messages") {
 		return baseURL
 	}
+	if strings.HasSuffix(baseURL, "/v1") {
+		return baseURL + "/messages"
+	}
 	return baseURL + "/v1/messages"
 }

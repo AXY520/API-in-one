@@ -221,21 +221,51 @@ func (p *Pool) GetAvailableModels() []model.ModelObject {
 					ID:      m,
 					Object:  "model",
 					Created: 1700000000,
-					OwnedBy: ch.Name,
+					OwnedBy: modelProvider(m),
 				})
 			}
 		}
-		for alias := range ch.ModelMapping {
+		for alias, upstream := range ch.ModelMapping {
 			if !seen[alias] {
 				seen[alias] = true
 				models = append(models, model.ModelObject{
 					ID:      alias,
 					Object:  "model",
 					Created: 1700000000,
-					OwnedBy: ch.Name + " (alias)",
+					OwnedBy: modelProvider(upstream),
 				})
 			}
 		}
 	}
 	return models
+}
+
+func modelProvider(modelID string) string {
+	id := strings.ToLower(modelID)
+	switch {
+	case strings.HasPrefix(id, "gpt-"), strings.HasPrefix(id, "o1"), strings.HasPrefix(id, "o3"), strings.HasPrefix(id, "o4"), strings.Contains(id, "openai"):
+		return "OpenAI"
+	case strings.HasPrefix(id, "claude"), strings.Contains(id, "anthropic"):
+		return "Anthropic"
+	case strings.HasPrefix(id, "gemini"), strings.HasPrefix(id, "models/gemini"), strings.Contains(id, "google"):
+		return "Google"
+	case strings.Contains(id, "deepseek"):
+		return "DeepSeek"
+	case strings.Contains(id, "qwen"), strings.Contains(id, "tongyi"):
+		return "Alibaba"
+	case strings.Contains(id, "mistral"), strings.Contains(id, "mixtral"), strings.Contains(id, "codestral"):
+		return "Mistral"
+	case strings.Contains(id, "llama"), strings.Contains(id, "meta-"):
+		return "Meta"
+	case strings.Contains(id, "mimo"), strings.Contains(id, "xiaomi"):
+		return "Xiaomi"
+	case strings.Contains(id, "doubao"), strings.Contains(id, "volc"):
+		return "ByteDance"
+	case strings.Contains(id, "ernie"), strings.Contains(id, "wenxin"):
+		return "Baidu"
+	case strings.Contains(id, "glm"), strings.Contains(id, "chatglm"):
+		return "Zhipu"
+	default:
+		return "Other"
+	}
 }

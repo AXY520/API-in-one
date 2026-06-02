@@ -1718,9 +1718,9 @@
       activeLogDetailId = id;
       activeLogDetailTimer = setInterval(() => {
         if (document.getElementById('log-modal')?.classList.contains('active')) {
-          refreshLogDetail(id);
+          refreshLogDetail(id, { silent: true });
         }
-      }, 1000);
+      }, 2500);
     }
 
     function stopLogDetailAutoRefresh() {
@@ -1817,7 +1817,6 @@
       const content = document.getElementById('log-detail-content');
       content.classList.add('opacity-50');
       openModal('log-modal');
-      startLogDetailAutoRefresh(id);
 
       await refreshLogDetail(id, { closeOnError: true });
     }
@@ -1827,6 +1826,7 @@
       try {
         const data = await api(`/admin/logs/${id}`);
         const log = data.log || {};
+        const isPending = log.status === 102 || log.status === 0;
         
         document.getElementById('log-detail-id').textContent = `Log ID: ${log.id}`;
         const attempts = log.attempts || [];
@@ -1860,12 +1860,19 @@
         }
 
         content.classList.remove('opacity-50');
+        if (isPending && !activeLogDetailTimer) {
+          startLogDetailAutoRefresh(id);
+        } else if (!isPending) {
+          stopLogDetailAutoRefresh();
+        }
         lucide.createIcons();
       } catch(e) {
         if (options.closeOnError) {
           closeModal('log-modal');
         }
-        showToast('获取日志详情失败: ' + e.message, true);
+        if (!options.silent) {
+          showToast('获取日志详情失败: ' + e.message, true);
+        }
       }
     }
 
