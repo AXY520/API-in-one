@@ -152,24 +152,90 @@
       overflow: hidden;
     }
     @media (max-width: 640px) {
+      html, body {
+        min-height: 100dvh;
+        overflow-x: hidden;
+        overflow-y: auto;
+      }
+      body {
+        height: auto;
+      }
+      #app {
+        min-height: 100dvh;
+        height: auto;
+        overflow: visible;
+      }
+      #app > aside {
+        position: relative;
+        height: auto;
+        padding: 0.75rem;
+      }
+      #app > aside nav {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.375rem;
+      }
+      #app > aside nav .nav-item {
+        min-height: 3.25rem;
+        flex-direction: column;
+        justify-content: center;
+        gap: 0.25rem;
+        padding: 0.5rem 0.25rem;
+        border-left-width: 0 !important;
+        text-align: center;
+        font-size: 0.75rem;
+        border-radius: 0.75rem;
+      }
+      #app > aside nav .nav-item svg {
+        width: 1rem;
+        height: 1rem;
+      }
+      #app > aside > .mt-auto {
+        display: none;
+      }
+      #app main {
+        overflow: visible;
+        padding: 1rem;
+      }
+      .tab-panel {
+        padding-bottom: 1rem;
+      }
+      .tab-panel > .flex:first-child h2 {
+        font-size: 1.625rem;
+        line-height: 2rem;
+      }
+      .glass-card {
+        border-radius: 1rem !important;
+      }
       .modal-overlay {
         padding: 0.75rem;
         align-items: flex-start;
+        overflow-y: auto;
       }
       .modal-content {
         width: 100%;
         max-height: calc(100dvh - 1.5rem);
         overflow-y: auto;
-        border-radius: 1.25rem;
+        border-radius: 1rem !important;
+        padding: 1rem !important;
       }
       .table :where(th,td) {
         padding-left: .5rem;
         padding-right: .5rem;
       }
+      #tab-stats .glass-card {
+        padding: 1rem;
+      }
+      #tab-stats .overflow-x-auto {
+        min-height: 0;
+      }
+      #logs-table-body td {
+        white-space: nowrap;
+      }
     }
   </style>
 </head>
-<body class="h-screen bg-slate-50 dark:bg-gradient-to-tr dark:from-[#070b13] dark:via-[#0b101c] dark:to-[#0e1629] text-slate-700 dark:text-slate-200 antialiased overflow-hidden transition-colors duration-300">
+<body class="min-h-screen md:h-screen bg-slate-50 dark:bg-gradient-to-tr dark:from-[#070b13] dark:via-[#0b101c] dark:to-[#0e1629] text-slate-700 dark:text-slate-200 antialiased overflow-x-hidden md:overflow-hidden transition-colors duration-300">
 
   <!-- Background Decorative Orbs -->
   <div class="fixed top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-500/5 dark:bg-cyan-900/10 blur-[150px] pointer-events-none"></div>
@@ -198,12 +264,12 @@
   </div>
 
   <!-- Main Application Wrapper -->
-  <div class="hidden h-screen flex flex-col md:flex-row overflow-hidden" id="app">
+  <div class="hidden min-h-screen md:h-screen flex flex-col md:flex-row overflow-visible md:overflow-hidden" id="app">
     
     <!-- Sidebar / Navigation -->
     <aside class="w-full md:w-72 shrink-0 md:h-screen sticky top-0 bg-slate-100/90 dark:bg-[#080d19]/80 backdrop-blur-xl border-b md:border-b-0 md:border-r border-slate-200 dark:border-white/5 flex flex-col p-6 z-50 transition-colors duration-300">
       
-      <div class="flex items-center justify-between mb-8">
+      <div class="flex items-center justify-between mb-3 md:mb-8">
         <div class="flex items-center gap-3">
           <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-cyan-500 to-violet-600 font-extrabold text-white text-lg">
             API
@@ -257,7 +323,7 @@
     </aside>
 
     <!-- Main Content Area -->
-    <main class="flex-1 min-w-0 overflow-y-auto p-6 md:p-10">
+    <main class="flex-1 min-w-0 overflow-visible md:overflow-y-auto p-6 md:p-10">
 
       <!-- ==================== TAB: DASHBOARD ==================== -->
       <div id="tab-dashboard" class="tab-panel hidden space-y-8">
@@ -677,14 +743,20 @@
           <div class="space-y-1.5">
             <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
               <span>客户端请求 payload (Request)</span>
-              <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-req-box')">复制</button>
+              <div class="flex items-center gap-2">
+                <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" id="ld-req-toggle" onclick="togglePayloadView('ld-req-box')">展开</button>
+                <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-req-box')">复制</button>
+              </div>
             </div>
             <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-[55vh] border border-white/5 text-emerald-400 scroll-fade" id="ld-req-box"></pre>
           </div>
           <div class="space-y-1.5" id="ld-upreq-container">
             <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
               <span>最终发出上游 payload (Converted Upstream)</span>
-              <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-upreq-box')">复制</button>
+              <div class="flex items-center gap-2">
+                <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" id="ld-upreq-toggle" onclick="togglePayloadView('ld-upreq-box')">展开</button>
+                <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-upreq-box')">复制</button>
+              </div>
             </div>
             <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-[55vh] border border-white/5 text-purple-400 scroll-fade" id="ld-upreq-box"></pre>
           </div>
@@ -791,6 +863,9 @@
     let logsLoading = false;
     let activeLogDetailId = null;
     let activeLogDetailTimer = null;
+    let logDetailPayloadCache = {};
+    let logDetailLastRenderKey = '';
+    let logListLastRenderKey = '';
 
     // Charts references
     let trafficTrendChart = null;
@@ -948,6 +1023,8 @@
       }
       if (id === 'log-modal') {
         stopLogDetailAutoRefresh();
+        logDetailPayloadCache = {};
+        logDetailLastRenderKey = '';
       }
       if (!document.querySelector('.modal-overlay.active')) {
         document.body.classList.remove('modal-open');
@@ -1739,6 +1816,7 @@
 
       const body = document.getElementById('logs-table-body');
       if (!silent) {
+        logListLastRenderKey = '';
         body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-550">正在检索流水日志...</td></tr>`;
       }
 
@@ -1753,7 +1831,24 @@
         document.getElementById('log-page-info').textContent = `${logPage} / ${totalPages}`;
 
         if (list.length === 0) {
-          body.innerHTML = `<tr><td colspan="7" class="py-12 text-center text-slate-500 italic">没有匹配的流量流水记录</td></tr>`;
+          if (logListLastRenderKey !== 'empty') {
+            body.innerHTML = `<tr><td colspan="7" class="py-12 text-center text-slate-500 italic">没有匹配的流量流水记录</td></tr>`;
+            logListLastRenderKey = 'empty';
+          }
+          return;
+        }
+
+        const renderKey = list.map(log => [
+          log.id,
+          log.status,
+          log.duration,
+          log.mode || '',
+          log.access_key || '',
+          log.channel || '',
+          log.model || '',
+          log.timestamp || '',
+        ].join(':')).join('|');
+        if (silent && renderKey === logListLastRenderKey) {
           return;
         }
 
@@ -1792,6 +1887,7 @@
             </tr>
           `;
         }).join('');
+        logListLastRenderKey = renderKey;
         lucide.createIcons();
       } catch(e) {
         if (!silent) {
@@ -1827,36 +1923,50 @@
         const data = await api(`/admin/logs/${id}`);
         const log = data.log || {};
         const isPending = log.status === 102 || log.status === 0;
+        const attempts = log.attempts || [];
+        const renderKey = [
+          log.id,
+          log.status,
+          log.duration,
+          log.channel || '',
+          attempts.map(att => `${att.attempt}:${att.status}:${att.duration_ms}:${att.error ? att.error.length : 0}`).join(','),
+          log.request ? 'request' : '',
+          log.upstream_request ? 'upstream' : '',
+        ].join('|');
+        const shouldRenderDetail = renderKey !== logDetailLastRenderKey;
         
         document.getElementById('log-detail-id').textContent = `Log ID: ${log.id}`;
-        const attempts = log.attempts || [];
-        const attemptsContainer = document.getElementById('ld-attempts');
-        if (attempts.length === 0) {
-          attemptsContainer.innerHTML = `<div class="text-xs text-slate-400 italic">没有尝试探测数据</div>`;
-        } else {
-          attemptsContainer.innerHTML = attempts.map(att => {
-            const attOK = att.status >= 200 && att.status < 400;
-            const clr = attOK ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
-            return `
-              <div class="p-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-[11px] font-mono leading-relaxed">
-                <div class="flex items-center justify-between">
-                  <span class="font-bold text-slate-800 dark:text-slate-300">#${att.attempt} ${esc(att.channel)}</span>
-                  <span class="${clr} font-bold">${att.status || 'ERROR'} (${att.duration_ms}ms)</span>
+        if (shouldRenderDetail) {
+          const attemptsContainer = document.getElementById('ld-attempts');
+          if (attempts.length === 0) {
+            attemptsContainer.innerHTML = `<div class="text-xs text-slate-400 italic">没有尝试探测数据</div>`;
+          } else {
+            attemptsContainer.innerHTML = attempts.map(att => {
+              const attOK = att.status >= 200 && att.status < 400;
+              const clr = attOK ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
+              return `
+                <div class="p-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-[11px] font-mono leading-relaxed">
+                  <div class="flex items-center justify-between">
+                    <span class="font-bold text-slate-800 dark:text-slate-300">#${att.attempt} ${esc(att.channel)}</span>
+                    <span class="${clr} font-bold">${att.status || 'ERROR'} (${att.duration_ms}ms)</span>
+                  </div>
+                  ${att.error ? `<div class="text-[10px] text-rose-600 dark:text-rose-500 mt-1 max-h-12 overflow-y-auto">${esc(att.error)}</div>` : ''}
                 </div>
-                ${att.error ? `<div class="text-[10px] text-rose-600 dark:text-rose-500 mt-1 max-h-12 overflow-y-auto">${esc(att.error)}</div>` : ''}
-              </div>
-            `;
-          }).join('');
-        }
+              `;
+            }).join('');
+          }
 
-        document.getElementById('ld-req-box').textContent = log.request ? JSON.stringify(log.request, null, 2) : '【空 Payload】';
-        
-        const upReqContainer = document.getElementById('ld-upreq-container');
-        if (log.upstream_request) {
-          upReqContainer.classList.remove('hidden');
-          document.getElementById('ld-upreq-box').textContent = JSON.stringify(log.upstream_request, null, 2);
-        } else {
-          upReqContainer.classList.add('hidden');
+          setPayloadBox('ld-req-box', log.request);
+
+          const upReqContainer = document.getElementById('ld-upreq-container');
+          if (log.upstream_request) {
+            upReqContainer.classList.remove('hidden');
+            setPayloadBox('ld-upreq-box', log.upstream_request);
+          } else {
+            upReqContainer.classList.add('hidden');
+            clearPayloadBox('ld-upreq-box');
+          }
+          logDetailLastRenderKey = renderKey;
         }
 
         content.classList.remove('opacity-50');
@@ -1876,10 +1986,71 @@
       }
     }
 
+    function stringifyPayload(payload) {
+      if (!payload) return '【空 Payload】';
+      try {
+        return JSON.stringify(payload, null, 2);
+      } catch (_) {
+        return String(payload);
+      }
+    }
+
+    function payloadPreview(text) {
+      const limit = 12000;
+      if (text.length <= limit) return text;
+      const omitted = text.length - limit;
+      return `${text.slice(0, limit)}\n\n... 已截断 ${omitted.toLocaleString()} 个字符，点击“展开”查看完整内容。`;
+    }
+
+    function setPayloadBox(id, payload) {
+      const box = document.getElementById(id);
+      if (!box) return;
+      const full = stringifyPayload(payload);
+      logDetailPayloadCache[id] = {
+        full,
+        expanded: false,
+      };
+      box.textContent = payloadPreview(full);
+      box.dataset.expanded = 'false';
+      updatePayloadToggle(id);
+    }
+
+    function clearPayloadBox(id) {
+      delete logDetailPayloadCache[id];
+      const box = document.getElementById(id);
+      if (box) {
+        box.textContent = '';
+        box.dataset.expanded = 'false';
+      }
+      updatePayloadToggle(id);
+    }
+
+    function updatePayloadToggle(id) {
+      const btn = document.getElementById(id === 'ld-req-box' ? 'ld-req-toggle' : 'ld-upreq-toggle');
+      const cached = logDetailPayloadCache[id];
+      if (!btn) return;
+      if (!cached || cached.full.length <= 12000) {
+        btn.classList.add('hidden');
+        return;
+      }
+      btn.classList.remove('hidden');
+      btn.textContent = cached.expanded ? '收起' : '展开';
+    }
+
+    function togglePayloadView(id) {
+      const box = document.getElementById(id);
+      const cached = logDetailPayloadCache[id];
+      if (!box || !cached) return;
+      cached.expanded = !cached.expanded;
+      box.textContent = cached.expanded ? cached.full : payloadPreview(cached.full);
+      box.dataset.expanded = cached.expanded ? 'true' : 'false';
+      updatePayloadToggle(id);
+    }
+
     function copyJSON(id) {
       const box = document.getElementById(id);
       if (!box) return;
-      navigator.clipboard.writeText(box.textContent);
+      navigator.clipboard.writeText(logDetailPayloadCache[id]?.full || box.textContent);
       showToast('Payload 已复制到剪贴板');
     }
 
