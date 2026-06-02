@@ -2,6 +2,10 @@ package relay
 
 import (
 	"api-in-one/model"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -107,5 +111,59 @@ func TestBuildRawChatCompletionsURLAvoidsDuplicateV1(t *testing.T) {
 		if got := buildRawChatCompletionsURL(input); got != want {
 			t.Fatalf("buildRawChatCompletionsURL(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestDoConvertedUsesOpenAICompatibleChannel(t *testing.T) {
+	var gotPath string
+	var gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(model.ChatCompletionResponse{
+			ID:      "chatcmpl_test",
+			Object:  "chat.completion",
+			Created: 1700000000,
+			Model:   "upstream-model",
+			Choices: []model.Choice{{
+				Index: 0,
+				Message: &model.Message{
+					Role:    "assistant",
+					Content: "ok",
+				},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	openai := model.NewChannel("openai", "openai", server.URL+"/v1", "", "", false, []string{"openai-key"}, []string{"public-model"}, map[string]string{"public-model": "upstream-model"}, 10, 100)
+	claude := model.NewChannel("claude", "claude", "https://claude.example", "https://claude.example/v1", "", false, []string{"claude-key"}, []string{"public-model"}, nil, 10, 100)
+	engine := NewEngine(NewPool([]*model.Channel{claude, openai}))
+
+	result, err := engine.DoConverted(context.Background(), &model.ChatCompletionRequest{
+		Model: "public-model",
+		Messages: []model.Message{{
+			Role:    "user",
+			Content: "hello",
+		}},
+	}, "claude")
+	if err != nil {
+		t.Fatalf("DoConverted: %v", err)
+	}
+	if result.Channel != "openai" {
+		t.Fatalf("expected openai channel, got %s", result.Channel)
+	}
+	if result.Model != "upstream-model" {
+		t.Fatalf("expected resolved model upstream-model, got %s", result.Model)
+	}
+	if gotPath != "/v1/chat/completions" {
+		t.Fatalf("expected OpenAI chat completions path, got %s", gotPath)
+	}
+	if gotAuth != "Bearer openai-key" {
+		t.Fatalf("expected OpenAI bearer auth, got %q", gotAuth)
+	}
+	if len(result.Attempts) != 1 || result.Attempts[0].Protocol != "claude" || result.Attempts[0].AdaptorName != "openai" {
+		t.Fatalf("unexpected attempts: %#v", result.Attempts)
 	}
 }

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"api-in-one/model"
+	"api-in-one/relay"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -168,5 +169,30 @@ func TestResponsesToChatCompletionMapsToolSearch(t *testing.T) {
 	out := responsesToChatCompletion(req, true)
 	if len(out.Tools) != 1 || out.Tools[0].Function.Name != "tool_search" {
 		t.Fatalf("expected tool_search function, got %#v", out.Tools)
+	}
+}
+
+func TestShouldFallbackFromClaudePassthroughForUnsupportedNativeEndpoint(t *testing.T) {
+	err := &relay.RelayError{
+		Err: relay.ErrAllRetriesFailed,
+		Attempts: []relay.AttemptLog{
+			{Status: 404},
+			{Status: 405},
+		},
+	}
+	if !shouldFallbackFromClaudePassthrough(err) {
+		t.Fatalf("expected unsupported native Claude endpoint to fall back to conversion")
+	}
+}
+
+func TestShouldNotFallbackFromClaudePassthroughForAuthErrors(t *testing.T) {
+	err := &relay.RelayError{
+		Err: relay.ErrAllRetriesFailed,
+		Attempts: []relay.AttemptLog{
+			{Status: 401},
+		},
+	}
+	if shouldFallbackFromClaudePassthrough(err) {
+		t.Fatalf("auth errors should not fall back to conversion")
 	}
 }

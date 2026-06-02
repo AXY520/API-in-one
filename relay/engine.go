@@ -105,11 +105,27 @@ func (e *RelayError) Unwrap() error {
 // protocol indicates the inbound protocol ("openai", "claude", "gemini", "responses")
 // and is used to select the appropriate base URL when a channel has multiple endpoints.
 func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, protocol string) (*RelayResult, error) {
+	return e.doChat(ctx, req, protocol, protocol, "")
+}
+
+// DoConverted executes a request that has already been converted to OpenAI chat completions.
+func (e *Engine) DoConverted(ctx context.Context, req *model.ChatCompletionRequest, inboundProtocol string) (*RelayResult, error) {
+	return e.doChat(ctx, req, inboundProtocol, "openai", "openai")
+}
+
+func (e *Engine) doChat(ctx context.Context, req *model.ChatCompletionRequest, protocol string, upstreamProtocol string, selectionProtocol string) (*RelayResult, error) {
 	var lastErr error
 	var attempts []AttemptLog
 
 	for attempt := 0; attempt < e.maxRetries; attempt++ {
-		ch, resolvedModel, err := e.pool.SelectChannel(req.Model)
+		var ch *model.Channel
+		var resolvedModel string
+		var err error
+		if selectionProtocol != "" {
+			ch, resolvedModel, err = e.pool.SelectChannelForProtocol(req.Model, selectionProtocol)
+		} else {
+			ch, resolvedModel, err = e.pool.SelectChannel(req.Model)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -137,9 +153,7 @@ func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, proto
 			continue
 		}
 
-		// Use the adaptor matching the inbound protocol, not the channel type.
-		// This allows a single channel to serve multiple protocols via different URLs.
-		adaptorType := protocol
+		adaptorType := upstreamProtocol
 		if adaptorType == "responses" {
 			adaptorType = "openai" // Responses API uses OpenAI adaptor upstream
 		}
@@ -163,7 +177,7 @@ func (e *Engine) Do(ctx context.Context, req *model.ChatCompletionRequest, proto
 		)
 
 		attemptStart := time.Now()
-		result, status, err := e.doRequest(ctx, ad, ch, key, &reqCopy, protocol)
+		result, status, err := e.doRequest(ctx, ad, ch, key, &reqCopy, adaptorType)
 		attemptDuration := time.Since(attemptStart)
 		ch.RecordKeyResult(key, status, attemptDuration, err)
 		attemptLog := AttemptLog{

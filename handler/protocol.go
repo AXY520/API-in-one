@@ -73,7 +73,7 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 	applyModelSystemPrompt(oaiReq, h.modelSystemPrompt(claudeReq.Model))
 
 	start := time.Now()
-	result, err := h.engine.Do(c.Request.Context(), oaiReq, "claude")
+	result, err := h.engine.DoConverted(c.Request.Context(), oaiReq, "claude")
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": map[string]interface{}{
 			"message": fmt.Sprintf("relay error: %v", err),
@@ -128,7 +128,7 @@ func (h *Protocol) tryClaudePassthrough(c *gin.Context, claudeReq *claudeInbound
 	start := time.Now()
 	result, err := h.engine.DoRaw(c.Request.Context(), "claude", claudeReq.Model, claudeReq.Stream, rawBody, c.Request.Header)
 	if err != nil {
-		if errors.Is(err, relay.ErrNoAvailableChannel) {
+		if errors.Is(err, relay.ErrNoAvailableChannel) || shouldFallbackFromClaudePassthrough(err) {
 			return nil, false
 		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": map[string]interface{}{
@@ -161,6 +161,19 @@ func (h *Protocol) tryClaudePassthrough(c *gin.Context, claudeReq *claudeInbound
 		AccessKey:     requestAccessKey(c),
 	})
 	return result, true
+}
+
+func shouldFallbackFromClaudePassthrough(err error) bool {
+	attempts := attemptsFromError(err)
+	if len(attempts) == 0 {
+		return false
+	}
+	for _, attempt := range attempts {
+		if attempt.Status != http.StatusNotFound && attempt.Status != http.StatusMethodNotAllowed {
+			return false
+		}
+	}
+	return true
 }
 
 func (h *Protocol) handleClaudeStream(c *gin.Context, result *relay.RelayResult) {
@@ -990,7 +1003,7 @@ func (h *Protocol) Responses(c *gin.Context) {
 	applyModelSystemPrompt(oaiReq, h.modelSystemPrompt(req.Model))
 
 	start := time.Now()
-	result, err := h.engine.Do(c.Request.Context(), oaiReq, "responses")
+	result, err := h.engine.DoConverted(c.Request.Context(), oaiReq, "responses")
 	if err != nil {
 		finishRequestLog(logID, RequestLog{
 			Protocol:        "responses",
