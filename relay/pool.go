@@ -180,9 +180,14 @@ func routeStateKey(requestedModel string, protocol string, candidates []routeCan
 func (p *Pool) UpdateChannels(channels []*model.Channel) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	// Reset health for all new channels so previously unhealthy ones get a fresh start
+	oldStates := make(map[string]model.ChannelRuntimeState, len(p.channels))
+	for _, ch := range p.channels {
+		oldStates[ch.Name] = ch.SnapshotRuntimeState()
+	}
 	for _, ch := range channels {
-		ch.ResetHealth()
+		if state, ok := oldStates[ch.Name]; ok {
+			ch.RestoreRuntimeState(state)
+		}
 	}
 	p.channels = channels
 	p.routeStates = make(map[string]map[string]int)

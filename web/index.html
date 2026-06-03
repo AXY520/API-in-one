@@ -500,7 +500,7 @@
               <table class="table table-sm w-full text-slate-700 dark:text-slate-300">
                 <thead>
                   <tr class="border-b border-slate-200 dark:border-white/5 text-slate-500 dark:text-slate-400 uppercase text-xs">
-                    <th>时间</th>
+                    <th class="w-[4.5rem] md:w-[5rem]">时间</th>
                     <th>Key</th>
                     <th>协议 / 模式</th>
                     <th>模型</th>
@@ -639,11 +639,16 @@
 
         <!-- Part 2: Upstream keys -->
         <div class="space-y-3">
-          <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">上游 API Keys (轮询轮替)</div>
-          <div class="form-control">
-            <textarea class="textarea textarea-bordered min-h-24 bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-xs text-slate-800 dark:text-white" id="f-keys" placeholder="sk-key1&#10;sk-key2"></textarea>
-            <span class="text-xs text-slate-500 mt-1">每行输入一个 API Key，中转层在选择该渠道时会自动使用轮询负载。</span>
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">上游 API Keys</div>
+              <div class="text-xs text-slate-500 mt-1" id="channel-key-summary">尚未配置 Key</div>
+            </div>
+            <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-white rounded-xl" onclick="openChannelKeysModal()">
+              <i data-lucide="key-round" class="w-4 h-4 mr-1"></i> 管理 Keys
+            </button>
           </div>
+          <textarea class="hidden" id="f-keys"></textarea>
         </div>
 
         <!-- Part 3: Model and mapping -->
@@ -797,33 +802,18 @@
       </div>
       <input type="hidden" id="key-channel-name" value="">
 
-      <!-- Key stats table -->
-      <div class="space-y-2">
-        <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">Key 列表与健康统计</div>
-        <div class="overflow-x-auto border border-slate-200 dark:border-white/5 rounded-2xl max-h-60 overflow-y-auto scroll-fade">
-          <table class="table table-sm w-full text-slate-700 dark:text-slate-300">
-            <thead>
-              <tr class="border-b border-slate-200 dark:border-white/5 bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 uppercase text-[10px]">
-                <th>索引</th>
-                <th>API Key</th>
-                <th>状态/探活</th>
-                <th>请求统计 (成功/失败)</th>
-                <th>时延</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="key-list-body">
-              <!-- keys dynamically loaded -->
-            </tbody>
-          </table>
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">逐条 Key 表单</div>
+          <div class="text-xs text-slate-500 mt-1" id="key-modal-summary">修改后点击保存 Keys 生效</div>
         </div>
+        <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-white rounded-xl" onclick="addKeyRow()">
+          <i data-lucide="plus" class="w-4 h-4 mr-1"></i> 添加 Key
+        </button>
       </div>
 
-      <!-- Bulk key replacement -->
-      <div class="space-y-2">
-        <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">批量全量替换 Key 仓库</div>
-        <textarea class="textarea textarea-bordered min-h-24 w-full bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-xs text-slate-800 dark:text-white" id="key-editor" placeholder="每行一个 Key"></textarea>
-        <span class="text-xs text-slate-500 block">注：点击“更新保存”会以输入框的内容完全替换该渠道目前的 API Keys。空行会被自动过滤。</span>
+      <div class="space-y-2 max-h-[58vh] overflow-y-auto pr-1 scroll-fade" id="key-list-body">
+        <!-- key form rows -->
       </div>
 
       <!-- Bottom action bar -->
@@ -833,7 +823,7 @@
         </button>
         <div class="flex gap-2">
           <button class="btn btn-ghost hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-400" onclick="closeModal('key-modal')">关闭</button>
-          <button class="btn btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveChannelKeys()">更新保存</button>
+          <button class="btn btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveChannelKeys()">保存 Keys</button>
         </div>
       </div>
     </div>
@@ -849,6 +839,7 @@
     let fetchedMapping = {};
     let activeKeyChannel = null;
     let activeKeyRows = [];
+    let activeKeyPersisted = false;
     let keyModelPickerIndex = null;
     let accessKeyPolicies = [];
     let accessPolicyModels = [];
@@ -1066,6 +1057,13 @@
     }
     function escAttr(s) {
       return esc(s).replace(/'/g, '&apos;');
+    }
+
+    function compactLogTime(timestamp) {
+      const value = String(timestamp || '');
+      const match = value.match(/(\d{1,2}):(\d{2}):(\d{2})/);
+      if (match) return `${match[1].padStart(2, '0')}:${match[2]}:${match[3]}`;
+      return value.length > 8 ? value.slice(-8) : value;
     }
 
     // ==================== DASHBOARD LOGIC ====================
@@ -1313,9 +1311,6 @@
                 <span>启用渠道</span>
               </label>
               <div class="flex gap-1.5">
-                <button class="btn btn-xs btn-outline border-slate-300 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white rounded-lg" onclick='openKeyManager(${JSON.stringify(ch)})'>
-                  <i data-lucide="key-round" class="w-3.5 h-3.5"></i> Keys
-                </button>
                 <button class="btn btn-xs btn-outline border-slate-300 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-cyan-600 dark:hover:text-cyan-400 rounded-lg" onclick='openEditChannel(${JSON.stringify(ch)})'>
                   编辑
                 </button>
@@ -1355,11 +1350,14 @@
       document.getElementById('f-baseurl-gemini').value = '';
       document.getElementById('f-supports-responses').checked = false;
       document.getElementById('f-keys').value = '';
-      document.getElementById('f-keys').placeholder = 'sk-key1\nsk-key2';
       document.getElementById('f-models').value = '';
       document.getElementById('f-priority').value = '10';
       document.getElementById('f-weight').value = '100';
       document.getElementById('f-enabled').checked = true;
+      activeKeyChannel = { name: '', models: [] };
+      activeKeyRows = [];
+      activeKeyPersisted = false;
+      updateChannelKeySummary();
       
       document.getElementById('mapping-editor-wrap').style.display = 'block';
       document.getElementById('mapping-editor').innerHTML = '';
@@ -1380,11 +1378,14 @@
       document.getElementById('f-baseurl-gemini').value = ch.base_url_gemini || '';
       document.getElementById('f-supports-responses').checked = !!ch.supports_responses;
       document.getElementById('f-keys').value = '';
-      document.getElementById('f-keys').placeholder = '正在读取已有 Key...';
       document.getElementById('f-models').value = (ch.models || []).join(', ');
       document.getElementById('f-priority').value = ch.priority;
       document.getElementById('f-weight').value = ch.weight;
       document.getElementById('f-enabled').checked = ch.enabled !== false;
+      activeKeyChannel = ch;
+      activeKeyRows = [];
+      activeKeyPersisted = true;
+      document.getElementById('channel-key-summary').textContent = '正在读取已有 Key...';
 
       document.getElementById('mapping-editor-wrap').style.display = 'block';
       const mapping = ch.model_mapping || {};
@@ -1397,11 +1398,12 @@
       openModal('channel-modal');
       api(`/admin/channels/${encodeURIComponent(ch.name)}/keys`)
         .then(data => {
-          document.getElementById('f-keys').value = (data.keys || []).join('\n');
-          document.getElementById('f-keys').placeholder = 'sk-key1\nsk-key2';
+          hydrateActiveKeyRows(data, ch);
+          syncKeyRowsToHiddenInput();
+          updateChannelKeySummary();
         })
         .catch(e => {
-          document.getElementById('f-keys').placeholder = '读取已有 Key 失败';
+          updateChannelKeySummary('读取已有 Key 失败');
           showToast('读取已有 Key 失败: ' + e.message, true);
         });
       lucide.createIcons();
@@ -1526,6 +1528,16 @@
 
       const keys = parseModelList(rawKeys);
       const models = parseModelList(modelsInput);
+      const disabledKeys = activeKeyRows
+        .filter(row => row.disabled && row.key.trim())
+        .map(row => row.key.trim());
+      const keyModels = {};
+      activeKeyRows.forEach(row => {
+        const key = row.key.trim();
+        if (key && (row.models || []).length > 0) {
+          keyModels[key] = row.models;
+        }
+      });
 
       const modelMapping = {};
       const rows = document.getElementById('mapping-editor').children;
@@ -1541,7 +1553,8 @@
         name, type, base_url: baseurl,
         base_url_claude: baseurlClaude, base_url_gemini: baseurlGemini,
         supports_responses: supportsResponses,
-        keys, models, model_mapping: modelMapping,
+        keys, disabled_keys: disabledKeys, key_models: keyModels,
+        models, model_mapping: modelMapping,
         priority, weight, enabled
       };
 
@@ -1579,47 +1592,91 @@
     }
 
     // ==================== KEYS LOGIC ====================
-    async function openKeyManager(ch) {
-      activeKeyChannel = ch;
-      document.getElementById('key-channel-name').value = ch.name;
-      document.getElementById('key-modal-title').textContent = 'Key 控制室 — ' + ch.name;
-      
-      const listBody = document.getElementById('key-list-body');
-      listBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-500">正在与后台同步密钥状态...</td></tr>`;
-      document.getElementById('key-editor').value = '';
-      openModal('key-modal');
+    function hydrateActiveKeyRows(data, ch) {
+      activeKeyRows = (data.keys || []).map((key, index) => {
+        const stat = (ch.key_stats || []).find(s => s.index === index) || {};
+        const keyModels = (data.key_models || {})[String(index)] || [];
+        return {
+          index,
+          key,
+          models: keyModels,
+          disabled: !!stat.disabled,
+          stat,
+          probe: null,
+        };
+      });
+    }
 
-      try {
-        const data = await api(`/admin/channels/${encodeURIComponent(ch.name)}/keys`);
-        activeKeyRows = (data.keys || []).map((key, index) => {
-          const stat = (ch.key_stats || []).find(s => s.index === index) || {};
-          const keyModels = (data.key_models || {})[String(index)] || [];
-          return {
-            index,
-            key,
-            masked_key: (data.masked_keys || [])[index] || key.slice(0, 8) + '...',
-            models: keyModels,
-            disabled: !!stat.disabled,
-            stat
-          };
-        });
-        document.getElementById('key-editor').value = (data.keys || []).join('\n');
-        renderKeyRows();
-      } catch(e) {
-        listBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-rose-400">密钥数据拉取失败: ${esc(e.message)}</td></tr>`;
+    function syncKeyRowsToHiddenInput() {
+      const keys = activeKeyRows.map(row => row.key.trim()).filter(Boolean);
+      document.getElementById('f-keys').value = keys.join('\n');
+    }
+
+    function updateChannelKeySummary(message = '') {
+      const summary = document.getElementById('channel-key-summary');
+      if (!summary) return;
+      if (message) {
+        summary.textContent = message;
+        return;
       }
+      const total = activeKeyRows.length;
+      const disabled = activeKeyRows.filter(row => row.disabled).length;
+      const limited = activeKeyRows.filter(row => (row.models || []).length > 0).length;
+      summary.textContent = total === 0
+        ? '尚未配置 Key'
+        : `${total} 个 Key${disabled ? `，${disabled} 个禁用` : ''}${limited ? `，${limited} 个设置了模型范围` : ''}`;
+    }
+
+    function openChannelKeysModal() {
+      const channelName = document.getElementById('edit-name').value || document.getElementById('f-name').value.trim();
+      activeKeyChannel = {
+        ...(activeKeyChannel || {}),
+        name: channelName,
+        models: parseModelList(document.getElementById('f-models').value),
+      };
+      activeKeyPersisted = !!document.getElementById('edit-name').value;
+      document.getElementById('key-channel-name').value = channelName;
+      document.getElementById('key-modal-title').textContent = channelName ? `渠道 Keys — ${channelName}` : '渠道 Keys';
+      renderKeyRows();
+      openModal('key-modal');
+      lucide.createIcons();
+    }
+
+    function addKeyRow() {
+      activeKeyRows.push({
+        index: activeKeyRows.length,
+        key: '',
+        models: [],
+        disabled: false,
+        stat: {},
+        probe: null,
+      });
+      renderKeyRows();
+    }
+
+    function removeKeyRow(index) {
+      activeKeyRows.splice(index, 1);
+      activeKeyRows.forEach((row, i) => { row.index = i; });
+      syncKeyRowsToHiddenInput();
+      updateChannelKeySummary();
+      renderKeyRows();
+    }
+
+    function updateKeyValue(index, value) {
+      if (!activeKeyRows[index]) return;
+      activeKeyRows[index].key = value;
+      syncKeyRowsToHiddenInput();
+      updateChannelKeySummary();
     }
 
     function renderKeyRows(probeResults = null) {
       const listBody = document.getElementById('key-list-body');
-      const probeMap = {};
-      if (probeResults) {
-        probeResults.forEach(r => { probeMap[r.index] = r; });
-      }
-
       listBody.innerHTML = activeKeyRows.map(row => {
         const stat = row.stat || {};
-        const probe = probeMap[row.index];
+        const probe = probeResults
+          ? (probeResults.find(r => r.index === row.index) || row.probe)
+          : row.probe;
+        if (probeResults && probe) row.probe = probe;
         
         let statusBadge = '';
         if (row.disabled) {
@@ -1638,28 +1695,15 @@
         }
 
         return `
-          <tr class="border-b border-slate-200 dark:border-white/5 font-mono text-xs">
-            <td>${row.index}</td>
-            <td class="text-slate-700 dark:text-slate-300">
-              ${esc(row.masked_key)}
-              <div class="mt-1 flex max-w-64 flex-wrap gap-1 overflow-hidden">
-                ${(row.models || []).slice(0, 3).map(model => `<span class="badge badge-xs max-w-24 truncate border-none bg-slate-200 text-[10px] text-slate-600 dark:bg-white/5 dark:text-slate-400">${esc(model)}</span>`).join('')}
-                ${(row.models || []).length > 3 ? `<span class="badge badge-xs border-none bg-cyan-100 text-[10px] text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-400">+${row.models.length - 3}</span>` : ''}
-                ${(row.models || []).length === 0 ? '<span class="text-[10px] text-slate-400 dark:text-slate-600">继承渠道全部模型</span>' : ''}
+          <div class="rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-100/60 dark:bg-white/5 p-3 space-y-3">
+            <div class="flex flex-col md:flex-row gap-2 md:items-center">
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="badge badge-sm border-none bg-slate-200 dark:bg-slate-900 text-slate-600 dark:text-slate-400 font-mono">#${row.index}</span>
+                ${statusBadge}
               </div>
-            </td>
-            <td>
-              <div>${statusBadge}</div>
-              ${probeText}
-            </td>
-            <td class="text-slate-500 dark:text-slate-400">
-              成功: ${stat.success_requests || 0} / 失败: ${stat.failure_requests || 0}
-              ${stat.last_used_at ? `<span class="block text-[10px] text-slate-450 dark:text-slate-500">最后使用: ${stat.last_used_at}</span>` : ''}
-            </td>
-            <td class="text-slate-800 dark:text-slate-300 font-bold">${stat.last_latency_ms || 0} ms</td>
-            <td>
-              <div class="flex gap-1">
-                <button class="btn btn-xs ${row.disabled ? 'btn-success text-white' : 'btn-ghost hover:bg-slate-100 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400'}" onclick="setKeyDisabled(${row.index}, ${!row.disabled})">
+              <input class="input input-sm input-bordered flex-1 bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl font-mono text-xs text-slate-800 dark:text-white" value="${escAttr(row.key)}" placeholder="sk-..." oninput="updateKeyValue(${row.index}, this.value)">
+              <div class="flex items-center gap-1">
+                <button class="btn btn-xs ${row.disabled ? 'btn-success text-white' : 'btn-ghost hover:bg-slate-200 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400'}" onclick="setKeyDisabled(${row.index}, ${!row.disabled})">
                   ${row.disabled ? '启用' : '禁用'}
                 </button>
                 <button class="btn btn-xs btn-ghost hover:bg-amber-100 dark:hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400" onclick="probeKeys(${row.index})">
@@ -1668,15 +1712,44 @@
                 <button class="btn btn-xs btn-ghost hover:bg-cyan-100 dark:hover:bg-cyan-500/10 hover:text-cyan-600 dark:hover:text-cyan-400" onclick="openKeyModelPicker(${row.index})">
                   模型
                 </button>
+                <button class="btn btn-xs btn-ghost hover:bg-rose-100 dark:hover:bg-rose-950/40 hover:text-rose-600 dark:hover:text-rose-400" onclick="removeKeyRow(${row.index})">
+                  删除
+                </button>
               </div>
-            </td>
-          </tr>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+              <div class="font-mono">
+                成功 ${stat.success_requests || 0} / 失败 ${stat.failure_requests || 0}
+                ${stat.consecutive_failure ? `<span class="ml-1 text-rose-600 dark:text-rose-400">连续失败 ${stat.consecutive_failure}</span>` : ''}
+              </div>
+              <div class="font-mono">延迟 ${stat.last_latency_ms || 0} ms</div>
+              <div class="font-mono truncate">${stat.last_used_at ? `最后使用 ${stat.last_used_at}` : '尚无使用记录'}</div>
+            </div>
+            <div class="flex flex-wrap gap-1">
+              ${(row.models || []).slice(0, 6).map(model => `<span class="badge badge-xs max-w-32 truncate border-none bg-slate-200 text-[10px] text-slate-600 dark:bg-black/20 dark:text-slate-400">${esc(model)}</span>`).join('')}
+              ${(row.models || []).length > 6 ? `<span class="badge badge-xs border-none bg-cyan-100 text-[10px] text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-400">+${row.models.length - 6}</span>` : ''}
+              ${(row.models || []).length === 0 ? '<span class="text-[10px] text-slate-400 dark:text-slate-600">继承渠道全部模型</span>' : ''}
+              ${probeText}
+            </div>
+          </div>
         `;
       }).join('');
+      if (activeKeyRows.length === 0) {
+        listBody.innerHTML = `<div class="rounded-2xl border border-dashed border-slate-300 dark:border-white/10 p-8 text-center text-sm text-slate-500">还没有 Key，点击右上角添加</div>`;
+      }
+      syncKeyRowsToHiddenInput();
+      updateChannelKeySummary();
+      document.getElementById('key-modal-summary').textContent = activeKeyPersisted
+        ? '保存 Keys 后立即更新此渠道'
+        : '新增渠道时，保存 Keys 会先写入渠道表单，最后随渠道一起保存';
       lucide.createIcons();
     }
 
     function openKeyModelPicker(index) {
+      if (keyPickerModels().length === 0) {
+        showToast('请先在渠道编辑里配置模型列表', true);
+        return;
+      }
       keyModelPickerIndex = index;
       pickerMode = 'key-models';
       pickerSelected = new Set(activeKeyRows[index].models || []);
@@ -1686,24 +1759,18 @@
       openModal('picker-modal');
     }
 
-    async function setKeyDisabled(index, disabled) {
-      try {
-        const cName = document.getElementById('key-channel-name').value;
-        await api(`/admin/channels/${encodeURIComponent(cName)}/keys/${index}/state`, {
-          method: 'PUT',
-          body: JSON.stringify({ disabled })
-        });
-        showToast(`密钥状态已${disabled ? '禁用' : '启用'}`);
-        activeKeyRows[index].disabled = disabled;
-        renderKeyRows();
-        loadData();
-      } catch(e) {
-        showToast('修改密钥状态失败: ' + e.message, true);
-      }
+    function setKeyDisabled(index, disabled) {
+      if (!activeKeyRows[index]) return;
+      activeKeyRows[index].disabled = disabled;
+      renderKeyRows();
     }
 
     async function probeKeys(indexFilter = null) {
       const cName = document.getElementById('key-channel-name').value;
+      if (!activeKeyPersisted || !cName) {
+        showToast('新增渠道保存后才能探活', true);
+        return;
+      }
       let path = `/admin/channels/${encodeURIComponent(cName)}/probe`;
       if (indexFilter !== null) {
         path += `?index=${indexFilter}`;
@@ -1722,10 +1789,14 @@
 
     async function saveChannelKeys() {
       const cName = document.getElementById('key-channel-name').value;
-      const rawText = document.getElementById('key-editor').value;
-      const keys = parseModelList(rawText);
+      activeKeyRows.forEach((row, index) => { row.index = index; });
+      const rows = activeKeyRows
+        .map(row => ({ ...row, key: row.key.trim() }))
+        .filter(row => row.key);
+      const keys = rows.map(row => row.key);
+      const disabledKeys = rows.filter(row => row.disabled).map(row => row.key);
       const keyModels = {};
-      activeKeyRows.forEach(row => {
+      rows.forEach(row => {
         if ((row.models || []).length > 0 && row.key) {
           keyModels[row.key] = row.models;
         }
@@ -1736,16 +1807,33 @@
         return;
       }
 
+      activeKeyRows = rows;
+      syncKeyRowsToHiddenInput();
+      updateChannelKeySummary();
+
+      if (!activeKeyPersisted) {
+        showToast('Keys 已写入渠道表单，保存渠道后生效');
+        closeModal('key-modal');
+        return;
+      }
+
       try {
         await api(`/admin/channels/${encodeURIComponent(cName)}/keys`, {
           method: 'PUT',
-          body: JSON.stringify({ keys, key_models: keyModels })
+          body: JSON.stringify({ keys, disabled_keys: disabledKeys, key_models: keyModels })
         });
-        showToast('密钥库全量更新保存成功！');
+        showToast('Keys 已更新保存');
+        const data = await api(`/admin/channels/${encodeURIComponent(cName)}/keys`);
+        const channelsData = await api('/admin/channels');
+        const latest = (channelsData.channels || []).find(ch => ch.name === cName) || activeKeyChannel;
+        activeKeyChannel = latest;
+        hydrateActiveKeyRows(data, latest);
+        syncKeyRowsToHiddenInput();
+        updateChannelKeySummary();
         closeModal('key-modal');
         loadData();
       } catch(e) {
-        showToast('更新失败: ' + e.message, true);
+        showToast('保存 Keys 失败: ' + e.message, true);
       }
     }
 
@@ -1863,10 +1951,11 @@
           const modeCls = log.mode === 'converted'
             ? 'bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-400'
             : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400';
+          const shortTime = compactLogTime(log.timestamp);
           
           return `
             <tr data-log-id="${log.id}" class="border-b border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors ${activeLogDetailId === log.id ? 'bg-cyan-500/10 dark:bg-cyan-500/20' : ''}" onclick="loadLogDetail(${log.id}, this)">
-              <td class="font-mono text-[10px] text-slate-500">${esc(log.timestamp)}</td>
+              <td class="w-[4.5rem] md:w-[5rem] max-w-[5rem] font-mono text-[10px] text-slate-500 whitespace-nowrap" title="${escAttr(log.timestamp)}">${esc(shortTime)}</td>
               <td><span class="badge badge-sm bg-slate-200 dark:bg-white/5 border-none font-mono text-[10px] text-slate-700 dark:text-slate-300">${esc(log.access_key || 'N/A')}</span></td>
               <td>
                 <div class="flex flex-wrap gap-1 items-center">
@@ -2342,12 +2431,16 @@
       openModal('picker-modal');
     }
 
+    function keyPickerModels() {
+      return parseModelList(document.getElementById('f-models').value);
+    }
+
     function renderPickerList() {
       const container = document.getElementById('picker-list');
       const query = document.getElementById('picker-search').value.toLowerCase();
       const sourceModels = pickerMode === 'channel-models'
         ? fetchedChannelModels
-        : (pickerMode === 'key-models' ? (activeKeyChannel?.models || []) : accessPolicyModels);
+        : (pickerMode === 'key-models' ? keyPickerModels() : accessPolicyModels);
 
       const filtered = sourceModels.filter(m => m.toLowerCase().includes(query));
       
@@ -2386,7 +2479,7 @@
     function pickerSelectAll() {
       const sourceModels = pickerMode === 'channel-models'
         ? fetchedChannelModels
-        : (pickerMode === 'key-models' ? (activeKeyChannel?.models || []) : accessPolicyModels);
+        : (pickerMode === 'key-models' ? keyPickerModels() : accessPolicyModels);
       sourceModels.forEach(m => pickerSelected.add(m));
       renderPickerList();
     }
@@ -2409,7 +2502,7 @@
         return;
       }
       if (pickerMode === 'key-models') {
-        activeKeyRows[keyModelPickerIndex].models = (activeKeyChannel?.models || []).filter(m => pickerSelected.has(m));
+        activeKeyRows[keyModelPickerIndex].models = keyPickerModels().filter(m => pickerSelected.has(m));
         closeModal('picker-modal');
         renderKeyRows();
         return;

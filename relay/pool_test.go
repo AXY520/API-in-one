@@ -2,7 +2,9 @@ package relay
 
 import (
 	"api-in-one/model"
+	"errors"
 	"testing"
+	"time"
 )
 
 func TestSelectChannelUsesLowestPriority(t *testing.T) {
@@ -46,6 +48,30 @@ func TestSelectChannelReturnsNoAvailableChannelWhenOnlyDisabledChannelMatches(t 
 	_, _, err := pool.SelectChannel("m")
 	if err != ErrNoAvailableChannel {
 		t.Fatalf("expected ErrNoAvailableChannel, got %v", err)
+	}
+}
+
+func TestUpdateChannelsPreservesKeyRuntimeState(t *testing.T) {
+	oldChannel := model.NewChannel("runtime", "openai", "https://old.example", "", "", false, []string{"key-a", "key-b"}, []string{"m"}, nil, 10, 100)
+	for i := 0; i < 3; i++ {
+		oldChannel.RecordKeyResult("key-a", 401, time.Millisecond, errors.New("invalid key"))
+	}
+	pool := NewPool([]*model.Channel{oldChannel})
+
+	newChannel := model.NewChannel("runtime", "openai", "https://new.example", "", "", false, []string{"key-a", "key-b", "key-c"}, []string{"m"}, nil, 10, 100)
+	pool.UpdateChannels([]*model.Channel{newChannel})
+
+	stats := newChannel.GetKeyStats()
+	if stats[0].ConsecutiveFailure != 3 {
+		t.Fatalf("expected existing failed key state to be preserved, got %#v", stats[0])
+	}
+	if stats[2].ConsecutiveFailure != 0 || stats[2].TotalRequests != 0 {
+		t.Fatalf("expected new key to start healthy, got %#v", stats[2])
+	}
+	for i := 0; i < 4; i++ {
+		if got := newChannel.NextKey(); got == "key-a" {
+			t.Fatalf("failed key should remain skipped after pool update")
+		}
 	}
 }
 

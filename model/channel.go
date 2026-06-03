@@ -43,6 +43,12 @@ type KeyStats struct {
 	LastLatencyMs      int64
 }
 
+type ChannelRuntimeState struct {
+	KeyIndex  uint64
+	FailCount int32
+	KeyStats  map[string]KeyStats
+}
+
 // NewChannel creates a Channel from config.
 func NewChannel(name, typ, baseURL, baseURLClaude, baseURLGemini string, supportsResponses bool, keys, models []string, modelMapping map[string]string, priority, weight int, keyModels ...map[string][]string) *Channel {
 	if modelMapping == nil {
@@ -203,6 +209,39 @@ func (c *Channel) GetKeyStats() []KeyStats {
 	result := make([]KeyStats, len(c.KeyStats))
 	copy(result, c.KeyStats)
 	return result
+}
+
+func (c *Channel) SnapshotRuntimeState() ChannelRuntimeState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureKeyStatsLocked()
+	state := ChannelRuntimeState{
+		KeyIndex:  c.keyIndex.Load(),
+		FailCount: c.failCount.Load(),
+		KeyStats:  make(map[string]KeyStats, len(c.Keys)),
+	}
+	for i, key := range c.Keys {
+		state.KeyStats[key] = c.KeyStats[i]
+	}
+	return state
+}
+
+func (c *Channel) RestoreRuntimeState(state ChannelRuntimeState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureKeyStatsLocked()
+	c.keyIndex.Store(state.KeyIndex)
+	c.failCount.Store(state.FailCount)
+	for i, key := range c.Keys {
+		stat, ok := state.KeyStats[key]
+		if !ok {
+			continue
+		}
+		stat.Index = i
+		stat.MaskedKey = maskKey(key)
+		stat.Disabled = c.DisabledKeys[key]
+		c.KeyStats[i] = stat
+	}
 }
 
 // ResetHealth resets the failure count to zero.

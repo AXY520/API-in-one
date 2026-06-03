@@ -231,6 +231,7 @@ func (h *Admin) UpdateChannelKeys(c *gin.Context) {
 	name := c.Param("name")
 	var req struct {
 		Keys            interface{}         `json:"keys"`
+		DisabledKeys    []string            `json:"disabled_keys"`
 		KeyModels       map[string][]string `json:"key_models"`
 		KeyModelByIndex map[string][]string `json:"key_model_by_index"`
 	}
@@ -246,6 +247,12 @@ func (h *Admin) UpdateChannelKeys(c *gin.Context) {
 	if err := config.UpdateChannelKeys(name, keys); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
+	}
+	if req.DisabledKeys != nil {
+		if err := config.UpdateChannelDisabledKeys(name, req.DisabledKeys); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	keyModels := unmaskKeyModels(keys, req.KeyModels, req.KeyModelByIndex)
 	if err := config.UpdateChannelKeyModels(name, keyModels); err != nil {
