@@ -110,7 +110,7 @@ func (h *Protocol) ClaudeMessages(c *gin.Context) {
 
 	// MiMo sometimes emits tool calls as XML-like text. Keep this compatibility
 	// scoped to MiMo/Xiaomi routes so normal model conversions stay standard.
-	if result.Response != nil && isMiMoCompatResult(result.Channel, claudeReq.Model, result.Model) {
+	if result.Response != nil && !result.DisableMiMoCompat && isMiMoCompatResult(result.Channel, claudeReq.Model, result.Model) {
 		cleanResponseToolCalls(result.Response)
 	}
 
@@ -1202,7 +1202,7 @@ func (h *Protocol) Responses(c *gin.Context) {
 		AccessKey:       requestAccessKey(c),
 	})
 
-	enableMiMoCompat = enableMiMoCompat || isMiMoCompatResult(result.Channel, req.Model, result.Model)
+	enableMiMoCompat = enableMiMoCompat || (!result.DisableMiMoCompat && isMiMoCompatResult(result.Channel, req.Model, result.Model))
 	if req.Stream {
 		h.handleResponsesStream(c, result, req.Model, enableMiMoCompat)
 		return
@@ -1311,14 +1311,11 @@ func mergeClaudeSystemPrompt(system interface{}, prompt string) interface{} {
 }
 
 func (h *Protocol) responsesMayUseMiMoCompat(modelName string) bool {
-	if isMiMoCompatModel(modelName) {
-		return true
-	}
 	ch, resolved, err := h.engine.PeekRoute(modelName)
 	if err != nil {
-		return false
+		return isMiMoCompatModel(modelName)
 	}
-	return isMiMoCompatResult(ch.Name, modelName, resolved)
+	return isMiMoCompatChannelResult(ch, modelName, resolved)
 }
 
 func (h *Protocol) handleResponsesStream(c *gin.Context, result *relay.RelayResult, modelName string, enableMiMoCompat bool) {

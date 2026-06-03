@@ -14,6 +14,7 @@ type Channel struct {
 	BaseURLClaude     string // optional: Claude protocol URL
 	BaseURLGemini     string // optional: Gemini protocol URL
 	SupportsResponses bool   // whether upstream accepts /v1/responses natively
+	DisableMiMoCompat bool
 	Keys              []string
 	DisabledKeys      map[string]bool
 	KeyModels         map[string][]string

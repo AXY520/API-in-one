@@ -50,13 +50,14 @@ func (e *Engine) PeekRoute(requestedModel string) (*model.Channel, string, error
 
 // RelayResult holds the outcome of a relay attempt.
 type RelayResult struct {
-	Response *model.ChatCompletionResponse
-	SSE      adaptor.SSEProcessor
-	Raw      *http.Response
-	IsStream bool
-	Channel  string
-	Model    string
-	Attempts []AttemptLog
+	Response          *model.ChatCompletionResponse
+	SSE               adaptor.SSEProcessor
+	Raw               *http.Response
+	IsStream          bool
+	Channel           string
+	Model             string
+	DisableMiMoCompat bool
+	Attempts          []AttemptLog
 }
 
 // RawRelayResult holds a same-protocol passthrough response.
@@ -220,6 +221,7 @@ func (e *Engine) doChat(ctx context.Context, req *model.ChatCompletionRequest, p
 		ch.RecordSuccess()
 		result.Channel = ch.Name
 		result.Model = resolvedModel
+		result.DisableMiMoCompat = ch.DisableMiMoCompat
 		result.Attempts = attempts
 		return result, nil
 	}

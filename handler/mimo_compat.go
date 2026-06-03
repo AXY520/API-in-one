@@ -12,6 +12,17 @@ func isMiMoCompatResult(channelName, requestedModel, resolvedModel string) bool 
 	return isMiMoCompatModel(requestedModel) || isMiMoCompatModel(resolvedModel) || isXiaomiChannel(channelName)
 }
 
+func isMiMoCompatChannelResult(ch *model.Channel, requestedModel, resolvedModel string) bool {
+	if ch != nil && ch.DisableMiMoCompat {
+		return false
+	}
+	channelName := ""
+	if ch != nil {
+		channelName = ch.Name
+	}
+	return isMiMoCompatResult(channelName, requestedModel, resolvedModel)
+}
+
 func isMiMoCompatModel(modelName string) bool {
 	return strings.Contains(strings.ToLower(modelName), "mimo")
 }

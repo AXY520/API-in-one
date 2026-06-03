@@ -879,6 +879,13 @@
               <span class="block text-xs text-slate-500 mt-0.5">如果勾选，/v1/responses 接口会直接透传发给上游；若未勾选，中转器会自动降级翻译为 OpenAI Chat Completions 协议。</span>
             </div>
           </label>
+          <label class="flex items-start gap-3 p-3 bg-slate-100 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 cursor-pointer mt-2">
+            <input class="checkbox checkbox-primary mt-0.5 rounded-lg" type="checkbox" id="f-disable-mimo-compat">
+            <div>
+              <span class="block text-sm font-semibold text-slate-700 dark:text-slate-300">上游已完成 MiMo 适配</span>
+              <span class="block text-xs text-slate-500 mt-0.5">适用于直接接入 mimo2api 的渠道。勾选后，本项目不会再对该渠道执行 MiMo 专用工具/Responses 兼容转换。</span>
+            </div>
+          </label>
         </div>
 
         <!-- Part 2: Upstream keys -->
@@ -1560,6 +1567,7 @@
                   <div class="flex flex-wrap items-center gap-1.5 pt-1">
                     <span class="badge bg-cyan-100 dark:bg-cyan-500/10 border-none text-cyan-800 dark:text-cyan-400 text-[10px] font-semibold">${esc(ch.type)}</span>
                     ${ch.supports_responses ? '<span class="badge bg-sky-100 dark:bg-sky-500/10 border-none text-sky-700 dark:text-sky-300 text-[10px]">Responses</span>' : ''}
+                    ${ch.disable_mimo_compat ? '<span class="badge bg-emerald-100 dark:bg-emerald-500/10 border-none text-emerald-700 dark:text-emerald-400 text-[10px]">MiMo直连</span>' : ''}
                     ${isEnabled && aliases.length > 0 ? `<span class="badge bg-slate-200 dark:bg-white/5 border-none text-slate-500 dark:text-slate-400 text-[10px]">映射 ${aliases.length}</span>` : ''}
                   </div>
                 </div>
@@ -1616,6 +1624,7 @@
       document.getElementById('f-baseurl-claude').value = '';
       document.getElementById('f-baseurl-gemini').value = '';
       document.getElementById('f-supports-responses').checked = false;
+      document.getElementById('f-disable-mimo-compat').checked = false;
       document.getElementById('f-keys').value = '';
       document.getElementById('f-models').value = '';
       document.getElementById('f-priority').value = '10';
@@ -1644,6 +1653,7 @@
       document.getElementById('f-baseurl-claude').value = ch.base_url_claude || '';
       document.getElementById('f-baseurl-gemini').value = ch.base_url_gemini || '';
       document.getElementById('f-supports-responses').checked = !!ch.supports_responses;
+      document.getElementById('f-disable-mimo-compat').checked = !!ch.disable_mimo_compat;
       document.getElementById('f-keys').value = '';
       document.getElementById('f-models').value = (ch.models || []).join(', ');
       document.getElementById('f-priority').value = ch.priority;
@@ -1782,6 +1792,7 @@
       const baseurlClaude = document.getElementById('f-baseurl-claude').value.trim();
       const baseurlGemini = document.getElementById('f-baseurl-gemini').value.trim();
       const supportsResponses = document.getElementById('f-supports-responses').checked;
+      const disableMiMoCompat = document.getElementById('f-disable-mimo-compat').checked;
       const rawKeys = document.getElementById('f-keys').value;
       const modelsInput = document.getElementById('f-models').value;
       const priority = parseInt(document.getElementById('f-priority').value) || 10;
@@ -1820,6 +1831,7 @@
         name, type, base_url: baseurl,
         base_url_claude: baseurlClaude, base_url_gemini: baseurlGemini,
         supports_responses: supportsResponses,
+        disable_mimo_compat: disableMiMoCompat,
         keys, disabled_keys: disabledKeys, key_models: keyModels,
         models, model_mapping: modelMapping,
         priority, weight, enabled

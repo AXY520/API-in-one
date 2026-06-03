@@ -50,6 +50,7 @@ type ChannelConfig struct {
 	BaseURLClaude     string              `json:"base_url_claude" yaml:"base_url_claude"` // optional: Claude protocol URL
 	BaseURLGemini     string              `json:"base_url_gemini" yaml:"base_url_gemini"` // optional: Gemini protocol URL
 	SupportsResponses bool                `json:"supports_responses" yaml:"supports_responses"`
+	DisableMiMoCompat bool                `json:"disable_mimo_compat,omitempty" yaml:"disable_mimo_compat,omitempty"`
 	Keys              []string            `json:"keys"          yaml:"keys"`
 	DisabledKeys      []string            `json:"disabled_keys,omitempty" yaml:"disabled_keys,omitempty"`
 	KeyModels         map[string][]string `json:"key_models,omitempty" yaml:"key_models,omitempty"`

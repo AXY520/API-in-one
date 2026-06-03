@@ -78,6 +78,18 @@ func TestChatCompletionToResponsesDoesNotParseFakeToolCallForNormalModels(t *tes
 	}
 }
 
+func TestMiMoCompatCanBeDisabledPerChannel(t *testing.T) {
+	ch := model.NewChannel("mimo2api", "openai", "https://example.com", "", "", false, []string{"k"}, []string{"mimo-v2.5-pro"}, nil, 10, 100)
+	ch.DisableMiMoCompat = true
+	if isMiMoCompatChannelResult(ch, "mimo-v2.5-pro", "mimo-v2.5-pro") {
+		t.Fatalf("expected MiMo compat disabled for mimo2api channel")
+	}
+	ch.DisableMiMoCompat = false
+	if !isMiMoCompatChannelResult(ch, "mimo-v2.5-pro", "mimo-v2.5-pro") {
+		t.Fatalf("expected MiMo compat enabled by default")
+	}
+}
+
 func TestChatCompletionToResponsesIncludesNormalText(t *testing.T) {
 	resp := &model.ChatCompletionResponse{
 		ID:      "text",

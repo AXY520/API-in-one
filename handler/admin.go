@@ -45,6 +45,7 @@ type ChannelStatus struct {
 	BaseURLClaude     string            `json:"base_url_claude,omitempty"`
 	BaseURLGemini     string            `json:"base_url_gemini,omitempty"`
 	SupportsResponses bool              `json:"supports_responses"`
+	DisableMiMoCompat bool              `json:"disable_mimo_compat"`
 	KeyCount          int               `json:"key_count"`
 	MaskedKeys        []string          `json:"masked_keys"`
 	KeyStats          []KeyStatus       `json:"key_stats"`
@@ -84,6 +85,7 @@ func (h *Admin) ListChannels(c *gin.Context) {
 			BaseURLClaude:     ch.BaseURLClaude,
 			BaseURLGemini:     ch.BaseURLGemini,
 			SupportsResponses: ch.SupportsResponses,
+			DisableMiMoCompat: ch.DisableMiMoCompat,
 			KeyCount:          len(ch.Keys),
 			MaskedKeys:        maskKeys(ch.Keys),
 			KeyStats:          buildKeyStatus(ch.GetKeyStats()),
