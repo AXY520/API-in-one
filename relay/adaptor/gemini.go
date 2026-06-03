@@ -110,6 +110,7 @@ func (a *GeminiAdaptor) BuildHTTPRequest(baseURL, key string, req *model.ChatCom
 	if err != nil {
 		return nil, err
 	}
+	SetUpstreamHeaders(httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-goog-api-key", key)
 	return httpReq, nil

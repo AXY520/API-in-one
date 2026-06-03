@@ -201,6 +201,17 @@ func (p *Pool) GetChannels() []*model.Channel {
 	return p.channels
 }
 
+func (p *Pool) ResetChannelKeyFailure(channelName string, keyIndex int) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, ch := range p.channels {
+		if ch.Name == channelName {
+			return ch.ResetKeyFailure(keyIndex)
+		}
+	}
+	return false
+}
+
 // GetAvailableModels returns client-visible model names across healthy channels.
 func (p *Pool) GetAvailableModels() []model.ModelObject {
 	p.mu.RLock()

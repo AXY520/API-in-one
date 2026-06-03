@@ -78,6 +78,7 @@ func (a *ClaudeAdaptor) BuildHTTPRequest(baseURL, key string, req *model.ChatCom
 	if err != nil {
 		return nil, err
 	}
+	SetUpstreamHeaders(httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", key)
 	httpReq.Header.Set("anthropic-version", "2023-06-01")

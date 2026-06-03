@@ -5,6 +5,12 @@ import (
 	"net/http"
 )
 
+const UpstreamUserAgent = "API-in-one/1.0"
+
+func SetUpstreamHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", UpstreamUserAgent)
+}
+
 // RelayRequest contains everything needed to forward a request upstream.
 type RelayRequest struct {
 	Body    *model.ChatCompletionRequest

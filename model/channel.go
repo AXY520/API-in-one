@@ -41,12 +41,45 @@ type KeyStats struct {
 	LastError          string
 	LastUsedAt         string
 	LastLatencyMs      int64
+	SuspendedUntil     string
 }
 
 type ChannelRuntimeState struct {
 	KeyIndex  uint64
 	FailCount int32
 	KeyStats  map[string]KeyStats
+}
+
+var (
+	keyFailureCooldownSeconds atomic.Int64
+	keyFailureThreshold       atomic.Int64
+)
+
+func init() {
+	SetKeyFailurePolicy(3, 10*time.Minute)
+}
+
+func SetKeyFailurePolicy(threshold int, cooldown time.Duration) {
+	if threshold < 1 {
+		threshold = 3
+	}
+	if cooldown < time.Second {
+		cooldown = 10 * time.Minute
+	}
+	keyFailureThreshold.Store(int64(threshold))
+	keyFailureCooldownSeconds.Store(int64(cooldown.Seconds()))
+}
+
+func KeyFailurePolicy() (int, time.Duration) {
+	threshold := int(keyFailureThreshold.Load())
+	if threshold < 1 {
+		threshold = 3
+	}
+	seconds := keyFailureCooldownSeconds.Load()
+	if seconds < 1 {
+		seconds = int64((10 * time.Minute).Seconds())
+	}
+	return threshold, time.Duration(seconds) * time.Second
 }
 
 // NewChannel creates a Channel from config.
@@ -115,13 +148,6 @@ func (c *Channel) NextKeyForModel(modelName string) string {
 			return c.Keys[keyIdx]
 		}
 	}
-	for i := 0; i < len(c.Keys); i++ {
-		idx := c.keyIndex.Add(1)
-		keyIdx := int((idx - 1) % uint64(len(c.Keys)))
-		if c.KeyCanUseModel(keyIdx, modelName) {
-			return c.Keys[keyIdx]
-		}
-	}
 	return ""
 }
 
@@ -142,7 +168,10 @@ func (c *Channel) IsKeyHealthy(index int) bool {
 		return false
 	}
 	key := c.Keys[index]
-	return !c.DisabledKeys[key] && c.KeyStats[index].ConsecutiveFailure < 3
+	if c.DisabledKeys[key] {
+		return false
+	}
+	return c.keyHealthyLocked(index, time.Now())
 }
 
 func (c *Channel) KeyCanUseModel(index int, modelName string) bool {
@@ -192,6 +221,10 @@ func (c *Channel) RecordKeyResult(key string, status int, latency time.Duration,
 	if err != nil || status < 200 || status >= 400 {
 		ks.FailureRequests++
 		ks.ConsecutiveFailure++
+		threshold, cooldown := KeyFailurePolicy()
+		if ks.ConsecutiveFailure >= int64(threshold) {
+			ks.SuspendedUntil = time.Now().Add(cooldown).Format("2006-01-02 15:04:05")
+		}
 		if err != nil {
 			ks.LastError = err.Error()
 		}
@@ -199,13 +232,53 @@ func (c *Channel) RecordKeyResult(key string, status int, latency time.Duration,
 		ks.SuccessRequests++
 		ks.ConsecutiveFailure = 0
 		ks.LastError = ""
+		ks.SuspendedUntil = ""
 	}
+}
+
+func (c *Channel) ResetKeyFailure(index int) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureKeyStatsLocked()
+	if index < 0 || index >= len(c.KeyStats) {
+		return false
+	}
+	c.KeyStats[index].ConsecutiveFailure = 0
+	c.KeyStats[index].LastError = ""
+	c.KeyStats[index].SuspendedUntil = ""
+	return true
+}
+
+func (c *Channel) keyHealthyLocked(index int, now time.Time) bool {
+	ks := &c.KeyStats[index]
+	threshold, cooldown := KeyFailurePolicy()
+	if ks.ConsecutiveFailure < int64(threshold) {
+		return true
+	}
+	if ks.SuspendedUntil == "" {
+		ks.SuspendedUntil = now.Add(cooldown).Format("2006-01-02 15:04:05")
+		return false
+	}
+	until, err := time.ParseInLocation("2006-01-02 15:04:05", ks.SuspendedUntil, time.Local)
+	if err != nil || now.Before(until) {
+		return false
+	}
+	ks.ConsecutiveFailure = 0
+	ks.LastError = ""
+	ks.SuspendedUntil = ""
+	return true
 }
 
 func (c *Channel) GetKeyStats() []KeyStats {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.ensureKeyStatsLocked()
+	now := time.Now()
+	for i, key := range c.Keys {
+		if !c.DisabledKeys[key] {
+			c.keyHealthyLocked(i, now)
+		}
+	}
 	result := make([]KeyStats, len(c.KeyStats))
 	copy(result, c.KeyStats)
 	return result

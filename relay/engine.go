@@ -440,6 +440,11 @@ func buildRawHTTPRequest(ctx context.Context, ch *model.Channel, protocol, key s
 	if err != nil {
 		return nil, err
 	}
+	userAgent := strings.TrimSpace(inboundHeader.Get("User-Agent"))
+	if userAgent == "" {
+		userAgent = adaptor.UpstreamUserAgent
+	}
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", inboundHeader.Get("Accept"))
 	switch protocol {

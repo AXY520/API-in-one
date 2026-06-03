@@ -68,6 +68,7 @@ type KeyStatus struct {
 	LastError          string `json:"last_error,omitempty"`
 	LastUsedAt         string `json:"last_used_at,omitempty"`
 	LastLatencyMs      int64  `json:"last_latency_ms"`
+	SuspendedUntil     string `json:"suspended_until,omitempty"`
 	Healthy            bool   `json:"healthy"`
 }
 
@@ -102,6 +103,7 @@ func (h *Admin) ListChannels(c *gin.Context) {
 
 func buildKeyStatus(stats []model.KeyStats) []KeyStatus {
 	result := make([]KeyStatus, 0, len(stats))
+	threshold, _ := model.KeyFailurePolicy()
 	for _, stat := range stats {
 		result = append(result, KeyStatus{
 			Index:              stat.Index,
@@ -115,7 +117,8 @@ func buildKeyStatus(stats []model.KeyStats) []KeyStatus {
 			LastError:          stat.LastError,
 			LastUsedAt:         stat.LastUsedAt,
 			LastLatencyMs:      stat.LastLatencyMs,
-			Healthy:            !stat.Disabled && stat.ConsecutiveFailure < 3,
+			SuspendedUntil:     stat.SuspendedUntil,
+			Healthy:            !stat.Disabled && stat.ConsecutiveFailure < int64(threshold),
 		})
 	}
 	return result
@@ -307,6 +310,7 @@ func (h *Admin) UpdateChannelKeyState(c *gin.Context) {
 	}
 	var req struct {
 		Disabled bool `json:"disabled"`
+		Recover  bool `json:"recover"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
@@ -342,11 +346,16 @@ func (h *Admin) UpdateChannelKeyState(c *gin.Context) {
 		return
 	}
 	h.rebuildPool()
+	recovered := false
+	if req.Recover || !req.Disabled {
+		recovered = h.pool.ResetChannelKeyFailure(name, index)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"message":       "channel key state updated",
 		"name":          name,
 		"key_index":     index,
 		"disabled":      req.Disabled,
+		"recovered":     recovered,
 		"disabled_keys": maskKeys(disabledKeys),
 	})
 }
@@ -558,6 +567,10 @@ func (h *Admin) GetSettings(c *gin.Context) {
 		"access_keys":          cfg.Server.AccessKeys,
 		"models":               h.pool.GetAvailableModels(),
 		"model_system_prompts": cfg.Server.ModelSystemPrompts,
+		"key_failure_policy": gin.H{
+			"threshold":        cfg.Server.KeyFailureThreshold,
+			"cooldown_seconds": cfg.Server.KeyFailureCooldownSeconds,
+		},
 	})
 }
 
@@ -592,6 +605,29 @@ func (h *Admin) UpdateModelSystemPrompts(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "model_system_prompts": config.GetModelSystemPrompts()})
+}
+
+func (h *Admin) UpdateKeyFailurePolicy(c *gin.Context) {
+	var req struct {
+		Threshold       int `json:"threshold"`
+		CooldownSeconds int `json:"cooldown_seconds"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		return
+	}
+	if err := config.UpdateKeyFailurePolicy(req.Threshold, req.CooldownSeconds); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update key failure policy: " + err.Error()})
+		return
+	}
+	cfg := config.Get()
+	c.JSON(http.StatusOK, gin.H{
+		"ok": true,
+		"key_failure_policy": gin.H{
+			"threshold":        cfg.Server.KeyFailureThreshold,
+			"cooldown_seconds": cfg.Server.KeyFailureCooldownSeconds,
+		},
+	})
 }
 
 func (h *Admin) normalizeModelSystemPrompts(prompts map[string]string) map[string]string {
@@ -665,7 +701,9 @@ func (h *Admin) FetchModels(c *gin.Context) {
 		}
 	case "gemini":
 		url := strings.TrimRight(req.BaseURL, "/") + "/v1beta/models?key=" + req.Key
-		httpResp, err := client.Get(url)
+		httpReq, _ := http.NewRequest("GET", url, nil)
+		adaptor.SetUpstreamHeaders(httpReq)
+		httpResp, err := client.Do(httpReq)
 		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "failed to fetch models: " + err.Error()})
 			return
@@ -680,6 +718,7 @@ func (h *Admin) FetchModels(c *gin.Context) {
 	default: // openai compatible
 		url := strings.TrimRight(req.BaseURL, "/") + "/models"
 		httpReq, _ := http.NewRequest("GET", url, nil)
+		adaptor.SetUpstreamHeaders(httpReq)
 		httpReq.Header.Set("Authorization", "Bearer "+req.Key)
 		httpResp, err := client.Do(httpReq)
 		if err != nil {

@@ -1,20 +1,24 @@
 package config
 
 import (
+	"api-in-one/model"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type ServerConfig struct {
-	Port               int               `json:"port"       yaml:"port"`
-	AdminKey           string            `json:"admin_key"  yaml:"admin_key"`
-	AccessKeys         []AccessKeyConfig `json:"access_keys" yaml:"access_keys"`
-	ModelSystemPrompts map[string]string `json:"model_system_prompts,omitempty" yaml:"model_system_prompts,omitempty"`
+	Port                      int               `json:"port"       yaml:"port"`
+	AdminKey                  string            `json:"admin_key"  yaml:"admin_key"`
+	AccessKeys                []AccessKeyConfig `json:"access_keys" yaml:"access_keys"`
+	ModelSystemPrompts        map[string]string `json:"model_system_prompts,omitempty" yaml:"model_system_prompts,omitempty"`
+	KeyFailureThreshold       int               `json:"key_failure_threshold,omitempty" yaml:"key_failure_threshold,omitempty"`
+	KeyFailureCooldownSeconds int               `json:"key_failure_cooldown_seconds,omitempty" yaml:"key_failure_cooldown_seconds,omitempty"`
 }
 
 type AccessKeyConfig struct {
@@ -105,6 +109,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.Server.ModelSystemPrompts == nil {
 		cfg.Server.ModelSystemPrompts = make(map[string]string)
 	}
+	applyKeyFailureDefaults(&cfg.Server)
 	normalizeAccessKeys(&cfg.Server.AccessKeys)
 	normalizeModelSystemPrompts(cfg.Server.ModelSystemPrompts)
 	for i := range cfg.Channels {
@@ -122,6 +127,16 @@ func applyDefaults(cfg *Config) {
 			cfg.Channels[i].ModelMapping = make(map[string]string)
 		}
 		cfg.Channels[i].KeyModels = filterKeyModels(cfg.Channels[i].KeyModels, cfg.Channels[i].Keys, cfg.Channels[i].Models)
+	}
+	model.SetKeyFailurePolicy(cfg.Server.KeyFailureThreshold, time.Duration(cfg.Server.KeyFailureCooldownSeconds)*time.Second)
+}
+
+func applyKeyFailureDefaults(server *ServerConfig) {
+	if server.KeyFailureThreshold < 1 {
+		server.KeyFailureThreshold = 3
+	}
+	if server.KeyFailureCooldownSeconds < 1 {
+		server.KeyFailureCooldownSeconds = 600
 	}
 }
 
@@ -437,6 +452,16 @@ func UpdateModelSystemPrompts(prompts map[string]string) error {
 	}
 	normalizeModelSystemPrompts(prompts)
 	globalConfig.Server.ModelSystemPrompts = prompts
+	return saveToDiskLocked()
+}
+
+func UpdateKeyFailurePolicy(threshold, cooldownSeconds int) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	globalConfig.Server.KeyFailureThreshold = threshold
+	globalConfig.Server.KeyFailureCooldownSeconds = cooldownSeconds
+	applyKeyFailureDefaults(&globalConfig.Server)
+	model.SetKeyFailurePolicy(globalConfig.Server.KeyFailureThreshold, time.Duration(globalConfig.Server.KeyFailureCooldownSeconds)*time.Second)
 	return saveToDiskLocked()
 }
 

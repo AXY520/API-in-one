@@ -64,6 +64,7 @@ func Setup(engine *relay.Engine, pool *relay.Pool, indexHTML []byte) *gin.Engine
 		admin.GET("/settings", adminHandler.GetSettings)
 		admin.PUT("/access-keys", adminHandler.UpdateAccessKeys)
 		admin.PUT("/model-system-prompts", adminHandler.UpdateModelSystemPrompts)
+		admin.PUT("/key-failure-policy", adminHandler.UpdateKeyFailurePolicy)
 		admin.POST("/models/fetch", adminHandler.FetchModels)
 		// Stats
 		admin.GET("/stats", adminHandler.GetStats)

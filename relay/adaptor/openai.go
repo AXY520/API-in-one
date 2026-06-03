@@ -26,6 +26,7 @@ func (a *OpenAIAdaptor) BuildHTTPRequest(baseURL, key string, req *model.ChatCom
 	if err != nil {
 		return nil, err
 	}
+	SetUpstreamHeaders(httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+key)
 	return httpReq, nil

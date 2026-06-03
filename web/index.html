@@ -571,6 +571,29 @@
           </div>
         </div>
 
+        <!-- Key failure policy -->
+        <div class="rounded-3xl glass-card p-6 space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 class="font-bold text-lg text-slate-900 dark:text-white">Key 熔断恢复策略</h3>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">控制上游 Key 连续失败后挂起，以及自动恢复前的冷却时间。</p>
+            </div>
+            <button class="btn btn-sm btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveKeyFailurePolicy()">
+              保存熔断策略
+            </button>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="form-control">
+              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">连续失败次数</span></label>
+              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl font-mono text-slate-800 dark:text-white" type="number" id="key-failure-threshold" min="1" step="1">
+            </div>
+            <div class="form-control">
+              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">冷却时间（秒）</span></label>
+              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl font-mono text-slate-800 dark:text-white" type="number" id="key-failure-cooldown" min="1" step="1">
+            </div>
+          </div>
+        </div>
+
         <!-- Admin Key display -->
         <div class="rounded-3xl glass-card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -817,10 +840,13 @@
       </div>
 
       <!-- Bottom action bar -->
-      <div class="flex justify-between items-center border-t border-slate-200 dark:border-white/5 pt-4">
-        <button class="btn bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border-none rounded-xl" onclick="probeKeys()">
-          <i data-lucide="zap" class="w-4 h-4 mr-1"></i> 全局一键探活
-        </button>
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 border-t border-slate-200 dark:border-white/5 pt-4">
+        <div class="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <select class="select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white font-mono text-xs min-w-0 sm:w-56" id="probe-model-select"></select>
+          <button class="btn bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border-none rounded-xl" onclick="probeKeys()">
+            <i data-lucide="zap" class="w-4 h-4 mr-1"></i> 全局一键探活
+          </button>
+        </div>
         <div class="flex gap-2">
           <button class="btn btn-ghost hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-400" onclick="closeModal('key-modal')">关闭</button>
           <button class="btn btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveChannelKeys()">保存 Keys</button>
@@ -844,6 +870,7 @@
     let accessKeyPolicies = [];
     let accessPolicyModels = [];
     let modelSystemPrompts = {};
+    let keyFailurePolicy = { threshold: 3, cooldown_seconds: 600 };
     let fetchedChannelModels = [];
     let pickerMode = 'policy';
 
@@ -1656,6 +1683,7 @@
       activeKeyPersisted = !!document.getElementById('edit-name').value;
       document.getElementById('key-channel-name').value = channelName;
       document.getElementById('key-modal-title').textContent = channelName ? `渠道 Keys — ${channelName}` : '渠道 Keys';
+      renderProbeModelSelect();
       renderKeyRows();
       openModal('key-modal');
       lucide.createIcons();
@@ -1689,9 +1717,11 @@
     }
 
     function renderKeyRows(probeResults = null) {
+      renderProbeModelSelect();
       const listBody = document.getElementById('key-list-body');
       listBody.innerHTML = activeKeyRows.map(row => {
         const stat = row.stat || {};
+        const isSuspended = !row.disabled && (stat.healthy === false || stat.consecutive_failure >= 3);
         const probe = probeResults
           ? (probeResults.find(r => r.index === row.index) || row.probe)
           : row.probe;
@@ -1700,7 +1730,7 @@
         let statusBadge = '';
         if (row.disabled) {
           statusBadge = `<span class="badge bg-slate-200 dark:bg-slate-800 border-none text-slate-500 dark:text-slate-400">已禁用</span>`;
-        } else if (stat.healthy === false || stat.consecutive_failure >= 3) {
+        } else if (isSuspended) {
           statusBadge = `<span class="badge bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border-none">挂起熔断</span>`;
         } else {
           statusBadge = `<span class="badge bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-none">健康</span>`;
@@ -1725,6 +1755,7 @@
                 <button class="btn btn-xs ${row.disabled ? 'btn-success text-white' : 'btn-ghost hover:bg-slate-200 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400'}" onclick="setKeyDisabled(${row.index}, ${!row.disabled})">
                   ${row.disabled ? '启用' : '禁用'}
                 </button>
+                ${isSuspended ? `<button class="btn btn-xs btn-ghost hover:bg-emerald-100 dark:hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400" onclick="recoverKey(${row.index})">恢复</button>` : ''}
                 <button class="btn btn-xs btn-ghost hover:bg-amber-100 dark:hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400" onclick="probeKeys(${row.index})">
                   探活
                 </button>
@@ -1740,6 +1771,7 @@
               <div class="font-mono">
                 成功 ${stat.success_requests || 0} / 失败 ${stat.failure_requests || 0}
                 ${stat.consecutive_failure ? `<span class="ml-1 text-rose-600 dark:text-rose-400">连续失败 ${stat.consecutive_failure}</span>` : ''}
+                ${stat.suspended_until ? `<span class="ml-1 text-amber-600 dark:text-amber-400">冷却至 ${esc(stat.suspended_until)}</span>` : ''}
               </div>
               <div class="font-mono">延迟 ${stat.last_latency_ms || 0} ms</div>
               <div class="font-mono truncate">${stat.last_used_at ? `最后使用 ${stat.last_used_at}` : '尚无使用记录'}</div>
@@ -1764,6 +1796,26 @@
       lucide.createIcons();
     }
 
+    function renderProbeModelSelect() {
+      const select = document.getElementById('probe-model-select');
+      if (!select) return;
+      const previous = select.value;
+      const models = keyPickerModels();
+      if (models.length === 0) {
+        select.innerHTML = '<option value="">无可探活模型</option>';
+        select.disabled = true;
+        return;
+      }
+      select.disabled = false;
+      select.innerHTML = models.map(model => `<option value="${escAttr(model)}">${esc(model)}</option>`).join('');
+      select.value = models.includes(previous) ? previous : models[0];
+    }
+
+    function selectedProbeModel() {
+      const select = document.getElementById('probe-model-select');
+      return select && !select.disabled ? select.value : '';
+    }
+
     function openKeyModelPicker(index) {
       if (keyPickerModels().length === 0) {
         showToast('请先在渠道编辑里配置模型列表', true);
@@ -1784,22 +1836,52 @@
       renderKeyRows();
     }
 
+    async function recoverKey(index) {
+      const cName = document.getElementById('key-channel-name').value;
+      if (!activeKeyPersisted || !cName) {
+        showToast('新增渠道保存后才能恢复 Key', true);
+        return;
+      }
+      try {
+        await api(`/admin/channels/${encodeURIComponent(cName)}/keys/${index}/state`, {
+          method: 'PUT',
+          body: JSON.stringify({ disabled: false, recover: true })
+        });
+        const channelsData = await api('/admin/channels');
+        const latest = (channelsData.channels || []).find(ch => ch.name === cName) || activeKeyChannel;
+        activeKeyChannel = latest;
+        const kData = await api(`/admin/channels/${encodeURIComponent(cName)}/keys`);
+        hydrateActiveKeyRows(kData, latest);
+        syncKeyRowsToHiddenInput();
+        renderKeyRows();
+        showToast(`Key #${index} 已解除熔断`);
+      } catch(e) {
+        showToast('恢复 Key 失败: ' + e.message, true);
+      }
+    }
+
     async function probeKeys(indexFilter = null) {
       const cName = document.getElementById('key-channel-name').value;
       if (!activeKeyPersisted || !cName) {
         showToast('新增渠道保存后才能探活', true);
         return;
       }
-      let path = `/admin/channels/${encodeURIComponent(cName)}/probe`;
+      const params = new URLSearchParams();
       if (indexFilter !== null) {
-        path += `?index=${indexFilter}`;
+        params.set('index', indexFilter);
       }
+      const model = selectedProbeModel();
+      if (model) {
+        params.set('model', model);
+      }
+      const query = params.toString();
+      const path = `/admin/channels/${encodeURIComponent(cName)}/probe${query ? `?${query}` : ''}`;
       
-      showToast(indexFilter !== null ? '正在测试此 Key 延迟...' : '正在对该渠道所有 Key 进行并发探测...');
+      showToast(indexFilter !== null ? `正在用 ${model || '默认模型'} 测试此 Key...` : `正在用 ${model || '默认模型'} 对该渠道所有 Key 探活...`);
       
       try {
         const data = await api(path, { method: 'POST' });
-        showToast(indexFilter !== null ? '探测完成' : '全渠道探测已结束');
+        showToast(indexFilter !== null ? `探测完成: ${data.model || model || '默认模型'}` : `全渠道探测已结束: ${data.model || model || '默认模型'}`);
         renderKeyRows(data.results || []);
       } catch(e) {
         showToast('探测失败: ' + e.message, true);
@@ -2171,9 +2253,11 @@
         accessPolicyModels = (data.models || []).map(m => m.id || m).sort((a,b) => a.localeCompare(b));
         accessKeyPolicies = normalizeAccessKeyPolicies(data.access_keys || []);
         modelSystemPrompts = data.model_system_prompts || {};
+        keyFailurePolicy = data.key_failure_policy || keyFailurePolicy;
         
         renderAccessKeyPolicies();
         renderModelSystemPrompts();
+        renderKeyFailurePolicy();
 
         const adminKey = data.admin_key || '';
         const maskedAdmin = adminKey.length > 8 ? adminKey.slice(0, 4) + '****' + adminKey.slice(-4) : adminKey;
@@ -2251,6 +2335,34 @@
         </div>
       `).join('');
       lucide.createIcons();
+    }
+
+    function renderKeyFailurePolicy() {
+      const threshold = document.getElementById('key-failure-threshold');
+      const cooldown = document.getElementById('key-failure-cooldown');
+      if (!threshold || !cooldown) return;
+      threshold.value = keyFailurePolicy.threshold || 3;
+      cooldown.value = keyFailurePolicy.cooldown_seconds || 600;
+    }
+
+    async function saveKeyFailurePolicy() {
+      const threshold = parseInt(document.getElementById('key-failure-threshold').value, 10);
+      const cooldown = parseInt(document.getElementById('key-failure-cooldown').value, 10);
+      if (!Number.isFinite(threshold) || threshold < 1 || !Number.isFinite(cooldown) || cooldown < 1) {
+        showToast('连续失败次数和冷却时间都必须大于 0', true);
+        return;
+      }
+      try {
+        const data = await api('/admin/key-failure-policy', {
+          method: 'PUT',
+          body: JSON.stringify({ threshold, cooldown_seconds: cooldown })
+        });
+        keyFailurePolicy = data.key_failure_policy || { threshold, cooldown_seconds: cooldown };
+        renderKeyFailurePolicy();
+        showToast('Key 熔断恢复策略已保存');
+      } catch(e) {
+        showToast('保存熔断策略失败: ' + e.message, true);
+      }
     }
 
     function openPromptModal(modelName = '') {
