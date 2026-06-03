@@ -1321,6 +1321,26 @@
       return value.length > 8 ? value.slice(-8) : value;
     }
 
+    function logAccessKeyStyle(key) {
+      const value = String(key || 'N/A');
+      const palette = [
+        ['#e0f2fe', '#075985', '#38bdf8'],
+        ['#dcfce7', '#166534', '#4ade80'],
+        ['#fef3c7', '#92400e', '#f59e0b'],
+        ['#fce7f3', '#9d174d', '#f472b6'],
+        ['#ede9fe', '#5b21b6', '#a78bfa'],
+        ['#ccfbf1', '#115e59', '#2dd4bf'],
+        ['#ffe4e6', '#9f1239', '#fb7185'],
+        ['#e2e8f0', '#334155', '#94a3b8'],
+      ];
+      let hash = 0;
+      for (let i = 0; i < value.length; i++) {
+        hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
+      }
+      const [bg, fg, border] = palette[Math.abs(hash) % palette.length];
+      return `background:${bg};color:${fg};border-color:${border};`;
+    }
+
     function displayLogChannel(log) {
       if (log?.channel) {
         return { text: log.channel, title: log.channel };
@@ -1954,7 +1974,8 @@
       const listBody = document.getElementById('key-list-body');
       listBody.innerHTML = activeKeyRows.map(row => {
         const stat = row.stat || {};
-        const isSuspended = !row.disabled && (stat.healthy === false || stat.consecutive_failure >= 3);
+        const failureThreshold = keyFailurePolicy.threshold || 3;
+        const isSuspended = !row.disabled && (stat.healthy === false || stat.consecutive_failure >= failureThreshold);
         const probe = probeResults
           ? (probeResults.find(r => r.index === row.index) || row.probe)
           : row.probe;
@@ -2288,11 +2309,13 @@
             : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400';
           const shortTime = compactLogTime(log.timestamp);
           const displayChannel = displayLogChannel(log);
+          const accessKey = log.access_key || 'N/A';
+          const accessKeyStyle = logAccessKeyStyle(accessKey);
           
           return `
             <tr data-log-id="${log.id}" class="border-b border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors ${activeLogDetailId === log.id ? 'bg-cyan-500/10 dark:bg-cyan-500/20' : ''}" onclick="loadLogDetail(${log.id}, this)">
               <td class="w-[4.5rem] md:w-[5rem] max-w-[5rem] font-mono text-[10px] text-slate-500 whitespace-nowrap" title="${escAttr(log.timestamp)}">${esc(shortTime)}</td>
-              <td><span class="badge badge-sm bg-slate-200 dark:bg-white/5 border-none font-mono text-[10px] text-slate-700 dark:text-slate-300">${esc(log.access_key || 'N/A')}</span></td>
+              <td><span class="badge badge-sm font-mono text-[10px] border" style="${accessKeyStyle}" title="${escAttr(accessKey)}">${esc(accessKey)}</span></td>
               <td>
                 <div class="flex flex-wrap gap-1 items-center">
                   ${protoBadge}

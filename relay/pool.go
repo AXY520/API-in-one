@@ -134,7 +134,7 @@ func (p *Pool) weightedCandidatesLocked(requestedModel string, protocol string) 
 			if ch.Type != "openai" || !ch.SupportsResponses {
 				continue
 			}
-		} else if protocol != "" && ch.Type != protocol {
+		} else if protocol != "" && !ch.SupportsProtocol(protocol) {
 			continue
 		}
 		if ch.HasModel(requestedModel) {

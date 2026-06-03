@@ -133,6 +133,20 @@ func (c *Channel) DisabledKeyList() []string {
 	return result
 }
 
+func (c *Channel) SupportsProtocol(protocol string) bool {
+	if protocol == "" || protocol == c.Type {
+		return true
+	}
+	switch protocol {
+	case "claude":
+		return c.BaseURLClaude != ""
+	case "gemini":
+		return c.BaseURLGemini != ""
+	default:
+		return false
+	}
+}
+
 // NextKey returns the next API key using round-robin.
 func (c *Channel) NextKey() string {
 	return c.NextKeyForModel("")
@@ -247,6 +261,7 @@ func (c *Channel) ResetKeyFailure(index int) bool {
 	c.KeyStats[index].ConsecutiveFailure = 0
 	c.KeyStats[index].LastError = ""
 	c.KeyStats[index].SuspendedUntil = ""
+	c.failCount.Store(0)
 	return true
 }
 
@@ -325,7 +340,24 @@ func (c *Channel) ResetHealth() {
 
 // IsHealthy returns true if the channel hasn't exceeded failure threshold.
 func (c *Channel) IsHealthy() bool {
-	return c.Enabled && c.failCount.Load() < 5
+	if !c.Enabled {
+		return false
+	}
+	threshold, _ := KeyFailurePolicy()
+	if c.failCount.Load() < int32(threshold) {
+		return true
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureKeyStatsLocked()
+	now := time.Now()
+	for i, key := range c.Keys {
+		if !c.DisabledKeys[key] && c.keyHealthyLocked(i, now) {
+			c.failCount.Store(0)
+			return true
+		}
+	}
+	return false
 }
 
 // HasModel checks if this channel can serve the given model (directly or via mapping).

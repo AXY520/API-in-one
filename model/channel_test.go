@@ -93,6 +93,46 @@ func TestResetKeyFailureRestoresSuspendedKey(t *testing.T) {
 	}
 }
 
+func TestChannelHealthUsesConfiguredFailureThreshold(t *testing.T) {
+	oldThreshold, oldCooldown := KeyFailurePolicy()
+	SetKeyFailurePolicy(2, oldCooldown)
+	defer SetKeyFailurePolicy(oldThreshold, oldCooldown)
+
+	ch := NewChannel("test", "openai", "https://example.com", "", "", false, []string{"key-a"}, []string{"m"}, nil, 10, 100)
+	ch.RecordKeyResult("key-a", 502, time.Millisecond, errors.New("bad gateway"))
+	ch.RecordFailure()
+	if !ch.IsHealthy() {
+		t.Fatalf("expected channel healthy before configured threshold")
+	}
+	ch.RecordKeyResult("key-a", 502, time.Millisecond, errors.New("bad gateway"))
+	ch.RecordFailure()
+	if ch.IsHealthy() {
+		t.Fatalf("expected channel unhealthy at configured threshold")
+	}
+}
+
+func TestResetKeyFailureRestoresChannelHealth(t *testing.T) {
+	oldThreshold, oldCooldown := KeyFailurePolicy()
+	SetKeyFailurePolicy(2, oldCooldown)
+	defer SetKeyFailurePolicy(oldThreshold, oldCooldown)
+
+	ch := NewChannel("test", "openai", "https://example.com", "", "", false, []string{"key-a"}, []string{"m"}, nil, 10, 100)
+	for i := 0; i < 3; i++ {
+		ch.RecordKeyResult("key-a", 429, time.Millisecond, errors.New("rate limited"))
+	}
+	ch.RecordFailure()
+	ch.RecordFailure()
+	if ch.IsHealthy() {
+		t.Fatalf("expected channel unhealthy before reset")
+	}
+	if !ch.ResetKeyFailure(0) {
+		t.Fatalf("expected reset to succeed")
+	}
+	if !ch.IsHealthy() {
+		t.Fatalf("expected channel healthy after key reset")
+	}
+}
+
 func TestSuspendedKeyRecoversAfterCooldown(t *testing.T) {
 	oldThreshold, oldCooldown := KeyFailurePolicy()
 	SetKeyFailurePolicy(3, time.Second)

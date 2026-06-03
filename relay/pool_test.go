@@ -213,8 +213,9 @@ func TestGetAvailableModelsSkipsDisabledChannels(t *testing.T) {
 	}
 }
 
-func TestSelectChannelForProtocolRequiresChannelType(t *testing.T) {
+func TestSelectChannelForProtocolUsesDedicatedProtocolURL(t *testing.T) {
 	openai := model.NewChannel("openai", "openai", "https://openai.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	openaiWithClaudeURL := model.NewChannel("openai-claude-url", "openai", "https://openai.example", "https://openai.example/anthropic", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
 	claude := model.NewChannel("claude", "claude", "https://claude.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
 	pool := NewPool([]*model.Channel{openai, claude})
 
@@ -224,6 +225,14 @@ func TestSelectChannelForProtocolRequiresChannelType(t *testing.T) {
 	}
 	if ch.Name != "claude" {
 		t.Fatalf("expected claude channel, got %s", ch.Name)
+	}
+
+	ch, _, err = NewPool([]*model.Channel{openaiWithClaudeURL}).SelectChannelForProtocol("m", "claude")
+	if err != nil {
+		t.Fatalf("select openai channel with claude url: %v", err)
+	}
+	if ch.Name != "openai-claude-url" {
+		t.Fatalf("expected openai channel with claude url, got %s", ch.Name)
 	}
 
 	_, _, err = NewPool([]*model.Channel{openai}).SelectChannelForProtocol("m", "claude")
