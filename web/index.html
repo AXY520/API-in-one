@@ -1066,6 +1066,25 @@
       return value.length > 8 ? value.slice(-8) : value;
     }
 
+    function displayLogChannel(log) {
+      if (log?.channel) {
+        return { text: log.channel, title: log.channel };
+      }
+      const attempts = Array.isArray(log?.attempts) ? log.attempts : [];
+      const names = [];
+      attempts.forEach(att => {
+        const name = att?.channel;
+        if (name && !names.includes(name)) names.push(name);
+      });
+      if (names.length === 0) {
+        return { text: 'N/A', title: '没有命中可用渠道' };
+      }
+      return {
+        text: names.length > 2 ? `${names[0]} / ${names[1]} +${names.length - 2}` : names.join(' / '),
+        title: names.join(' / '),
+      };
+    }
+
     // ==================== DASHBOARD LOGIC ====================
     async function loadDashboardStats() {
       try {
@@ -1933,6 +1952,7 @@
           log.mode || '',
           log.access_key || '',
           log.channel || '',
+          (log.attempts || []).map(att => att.channel || '').join(','),
           log.model || '',
           log.timestamp || '',
         ].join(':')).join('|');
@@ -1952,6 +1972,7 @@
             ? 'bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-400'
             : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400';
           const shortTime = compactLogTime(log.timestamp);
+          const displayChannel = displayLogChannel(log);
           
           return `
             <tr data-log-id="${log.id}" class="border-b border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors ${activeLogDetailId === log.id ? 'bg-cyan-500/10 dark:bg-cyan-500/20' : ''}" onclick="loadLogDetail(${log.id}, this)">
@@ -1965,7 +1986,7 @@
                 <span class="block text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-1">id: ${log.id}</span>
               </td>
               <td class="font-bold text-slate-800 dark:text-slate-300 text-sm font-mono truncate max-w-[220px]">${esc(log.model)}</td>
-              <td class="font-mono text-xs text-slate-600 dark:text-slate-400">${esc(log.channel || 'N/A')}</td>
+              <td class="font-mono text-xs text-slate-600 dark:text-slate-400 max-w-[9rem] truncate" title="${escAttr(displayChannel.title)}">${esc(displayChannel.text)}</td>
               <td>
                 <span class="badge ${statusCls} font-mono text-[10px] py-1 border">${isPending ? '处理中' : log.status}</span>
                 <span class="block text-[10px] text-slate-500 font-mono mt-1">${isPending ? '...' : `${log.duration}ms`}</span>
