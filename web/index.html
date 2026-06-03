@@ -17,11 +17,6 @@
     }
   </script>
 
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  
   <!-- Tailwind CSS & DaisyUI -->
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.min.css" rel="stylesheet" type="text/css" />
   <script src="https://cdn.tailwindcss.com"></script>
@@ -38,12 +33,12 @@
       theme: {
         extend: {
           fontFamily: {
-            sans: ['Outfit', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace'],
+            sans: ['Segoe UI Variable', 'Segoe UI', 'Inter', 'system-ui', 'sans-serif'],
+            mono: ['Cascadia Mono', 'Cascadia Code', 'Consolas', 'ui-monospace', 'monospace'],
           },
           boxShadow: {
-            'glow-cyan': '0 0 15px rgba(6, 182, 212, 0.15)',
-            'glow-violet': '0 0 15px rgba(139, 92, 246, 0.15)',
+            'fluent': '0 18px 50px rgba(15, 23, 42, 0.10)',
+            'fluent-hover': '0 24px 70px rgba(37, 99, 235, 0.16)',
           }
         }
       }
@@ -51,31 +46,261 @@
   </script>
 
   <style>
-    /* Glassmorphism primitives */
+    :root {
+      --fluent-blue: #0078d4;
+      --fluent-blue-strong: #005fb8;
+      --fluent-cyan: #40e0d0;
+      --fluent-text: #1f2937;
+      --fluent-muted: #667085;
+      --fluent-line: rgba(17, 24, 39, 0.11);
+      --fluent-line-strong: rgba(0, 120, 212, 0.24);
+      --fluent-panel: rgba(255, 255, 255, 0.66);
+      --fluent-panel-solid: rgba(255, 255, 255, 0.88);
+      --fluent-surface: rgba(255, 255, 255, 0.52);
+      --fluent-sidebar: rgba(248, 251, 255, 0.78);
+      --fluent-shadow: 0 18px 50px rgba(15, 23, 42, 0.10);
+      --fluent-shadow-hover: 0 24px 70px rgba(37, 99, 235, 0.16);
+    }
+
+    .dark {
+      --fluent-text: #f5f9ff;
+      --fluent-muted: #a8b3c7;
+      --fluent-line: rgba(255, 255, 255, 0.11);
+      --fluent-line-strong: rgba(80, 180, 255, 0.28);
+      --fluent-panel: rgba(20, 33, 52, 0.70);
+      --fluent-panel-solid: rgba(18, 30, 48, 0.92);
+      --fluent-surface: rgba(255, 255, 255, 0.055);
+      --fluent-sidebar: rgba(9, 21, 38, 0.76);
+      --fluent-shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+      --fluent-shadow-hover: 0 24px 72px rgba(0, 120, 212, 0.22);
+    }
+
+    html {
+      background: #eaf5ff;
+    }
+
+    html.dark {
+      background: #07111f;
+    }
+
+    body {
+      font-feature-settings: "ss01" 1, "cv05" 1;
+      background:
+        radial-gradient(circle at 18% 8%, rgba(99, 179, 255, 0.22), transparent 32%),
+        radial-gradient(circle at 82% 10%, rgba(64, 224, 208, 0.18), transparent 30%),
+        linear-gradient(135deg, #f7fbff 0%, #eef7ff 42%, #f9fbff 100%);
+    }
+
+    .dark body {
+      background:
+        radial-gradient(circle at 18% 7%, rgba(0, 120, 212, 0.28), transparent 34%),
+        radial-gradient(circle at 82% 12%, rgba(64, 224, 208, 0.10), transparent 32%),
+        linear-gradient(135deg, #07111f 0%, #0d1b2f 48%, #071421 100%);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.30) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.24) 1px, transparent 1px);
+      background-size: 34px 34px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,0.45), transparent 76%);
+      opacity: 0.45;
+    }
+
+    .dark body::before {
+      background-image:
+        linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+      opacity: 0.36;
+    }
+
+    /* Fluent acrylic primitives */
     .glass-card {
-      background: rgba(255, 255, 255, 0.65);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(15, 23, 42, 0.08);
+      position: relative;
+      background: linear-gradient(135deg, rgba(255,255,255,0.74), rgba(255,255,255,0.52));
+      backdrop-filter: blur(22px) saturate(145%);
+      -webkit-backdrop-filter: blur(22px) saturate(145%);
+      border: 1px solid var(--fluent-line);
+      box-shadow: var(--fluent-shadow);
+      overflow: hidden;
+    }
+    .glass-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border-radius: inherit;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,0.82), transparent 36%),
+        linear-gradient(315deg, rgba(0,120,212,0.16), transparent 42%);
+      opacity: 0.58;
+    }
+    .glass-card > * {
+      position: relative;
+      z-index: 1;
     }
     .dark .glass-card {
-      background: rgba(19, 26, 42, 0.7);
-      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: linear-gradient(135deg, rgba(23, 38, 60, 0.78), rgba(12, 24, 42, 0.66));
+      border-color: var(--fluent-line);
     }
 
     .glass-card-hover {
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms ease, background 220ms ease;
     }
     .glass-card-hover:hover {
-      background: rgba(255, 255, 255, 0.95);
-      border-color: rgba(6, 182, 212, 0.3);
-      box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.08), 0 0 20px rgba(6, 182, 212, 0.05);
-      transform: translateY(-2px);
+      border-color: var(--fluent-line-strong);
+      box-shadow: var(--fluent-shadow-hover);
+      transform: translateY(-3px);
     }
-    .dark .glass-card-hover:hover {
-      background: rgba(22, 31, 52, 0.85);
-      border-color: rgba(6, 182, 212, 0.25);
-      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 0 20px rgba(6, 182, 212, 0.05);
+
+    .fluent-shell {
+      background: transparent;
+    }
+
+    .fluent-sidebar {
+      background: var(--fluent-sidebar);
+      backdrop-filter: blur(24px) saturate(150%);
+      -webkit-backdrop-filter: blur(24px) saturate(150%);
+      box-shadow: inset -1px 0 rgba(255,255,255,0.46), 12px 0 34px rgba(15,23,42,0.05);
+    }
+
+    .dark .fluent-sidebar {
+      box-shadow: inset -1px 0 rgba(255,255,255,0.08), 14px 0 42px rgba(0,0,0,0.28);
+    }
+
+    .fluent-brand-mark {
+      background:
+        linear-gradient(145deg, rgba(255,255,255,0.38), transparent 38%),
+        linear-gradient(135deg, #39a8ff 0%, #0078d4 58%, #40e0d0 100%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 10px 26px rgba(0,120,212,0.22);
+    }
+
+    .nav-item {
+      position: relative;
+      border: 1px solid transparent;
+    }
+
+    .nav-item:hover {
+      border-color: var(--fluent-line);
+      background: rgba(255,255,255,0.44) !important;
+    }
+
+    .dark .nav-item:hover {
+      background: rgba(255,255,255,0.07) !important;
+    }
+
+    .nav-item.border-cyan-500 {
+      border-left-width: 1px !important;
+      border-color: var(--fluent-line-strong) !important;
+      background: linear-gradient(135deg, rgba(0,120,212,0.14), rgba(64,224,208,0.08)) !important;
+      box-shadow: inset 0 1px rgba(255,255,255,0.52), 0 8px 24px rgba(0,120,212,0.10);
+    }
+
+    .dark .nav-item.border-cyan-500 {
+      box-shadow: inset 0 1px rgba(255,255,255,0.10), 0 10px 28px rgba(0,120,212,0.18);
+    }
+
+    .nav-item.border-cyan-500::before {
+      content: "";
+      position: absolute;
+      left: 8px;
+      top: 20%;
+      bottom: 20%;
+      width: 3px;
+      border-radius: 999px;
+      background: var(--fluent-blue);
+    }
+
+    .btn {
+      min-height: 2.45rem;
+      border-radius: 0.625rem !important;
+      transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0f8de8, #0078d4 62%, #0aa7c2) !important;
+      border: 1px solid rgba(255,255,255,0.24) !important;
+      box-shadow: inset 0 1px rgba(255,255,255,0.30), 0 10px 24px rgba(0,120,212,0.24);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #0078d4, #005fb8 70%, #078aa0) !important;
+      box-shadow: inset 0 1px rgba(255,255,255,0.34), 0 14px 30px rgba(0,120,212,0.30);
+    }
+
+    .input, .select, .textarea {
+      border-radius: 0.625rem !important;
+      background: rgba(255,255,255,0.72) !important;
+      border-color: var(--fluent-line) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
+      transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+    }
+
+    .dark .input, .dark .select, .dark .textarea {
+      background: rgba(5, 13, 25, 0.42) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+    }
+
+    .input:focus, .select:focus, .textarea:focus {
+      outline: none !important;
+      border-color: rgba(0,120,212,0.58) !important;
+      box-shadow: 0 0 0 3px rgba(0,120,212,0.14), inset 0 1px 0 rgba(255,255,255,0.60);
+    }
+
+    .badge {
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.24);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.28);
+    }
+
+    .table :where(th) {
+      background: rgba(255,255,255,0.40);
+      font-weight: 650;
+      letter-spacing: 0;
+    }
+
+    .dark .table :where(th) {
+      background: rgba(255,255,255,0.04);
+    }
+
+    .table :where(td,th) {
+      border-color: var(--fluent-line) !important;
+    }
+
+    .toggle:checked, .checkbox:checked {
+      --tglbg: white;
+      background-color: var(--fluent-blue) !important;
+      border-color: var(--fluent-blue) !important;
+    }
+
+    pre {
+      border-radius: 0.75rem !important;
+    }
+
+    .glass-card.rounded-3xl,
+    .glass-card.rounded-2xl,
+    .modal-content.rounded-3xl,
+    .modal-content.rounded-2xl {
+      border-radius: 0.875rem !important;
+    }
+
+    .glass-card .rounded-2xl,
+    .glass-card .rounded-3xl {
+      border-radius: 0.75rem !important;
+    }
+
+    [class*="tracking-[0.2em]"] {
+      letter-spacing: 0 !important;
+      color: var(--fluent-blue) !important;
+      text-transform: none !important;
     }
     
     /* Scrollbars */
@@ -107,8 +332,8 @@
     .modal-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(15, 23, 42, 0.4);
-      backdrop-filter: blur(8px);
+      background: rgba(230, 241, 252, 0.54);
+      backdrop-filter: blur(18px) saturate(130%);
       z-index: 100;
       display: none;
       align-items: center;
@@ -119,21 +344,21 @@
       touch-action: none;
     }
     .dark .modal-overlay {
-      background: rgba(3, 7, 18, 0.75);
+      background: rgba(3, 10, 20, 0.72);
     }
     .modal-overlay.active {
       display: flex;
       animation: fadeIn 0.2s ease-out;
     }
     .modal-content {
-      transform: scale(0.95);
+      transform: translateY(10px) scale(0.98);
       opacity: 0;
-      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), opacity 180ms ease;
       overscroll-behavior: contain;
       touch-action: auto;
     }
     .modal-overlay.active .modal-content {
-      transform: scale(1);
+      transform: translateY(0) scale(1);
       opacity: 1;
     }
 
@@ -143,7 +368,7 @@
     }
 
     mark {
-      background: rgba(6, 182, 212, 0.3);
+      background: rgba(0, 120, 212, 0.22);
       color: inherit;
       border-radius: 2px;
       padding: 0 2px;
@@ -235,28 +460,24 @@
     }
   </style>
 </head>
-<body class="min-h-screen md:h-screen bg-slate-50 dark:bg-gradient-to-tr dark:from-[#070b13] dark:via-[#0b101c] dark:to-[#0e1629] text-slate-700 dark:text-slate-200 antialiased overflow-x-hidden md:overflow-hidden transition-colors duration-300">
-
-  <!-- Background Decorative Orbs -->
-  <div class="fixed top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-500/5 dark:bg-cyan-900/10 blur-[150px] pointer-events-none"></div>
-  <div class="fixed bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-500/5 dark:bg-purple-900/10 blur-[150px] pointer-events-none"></div>
+<body class="min-h-screen md:h-screen text-slate-700 dark:text-slate-200 antialiased overflow-x-hidden md:overflow-hidden transition-colors duration-300">
 
   <!-- Login Page -->
-  <div id="login-overlay" class="fixed inset-0 z-[200] flex items-center justify-center bg-[#070b13] p-4">
-    <div class="w-full max-w-md p-8 rounded-3xl glass-card border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] bg-slate-900/90 text-slate-200">
+  <div id="login-overlay" class="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <div class="w-full max-w-md p-8 rounded-2xl glass-card text-slate-700 dark:text-slate-200">
       <div class="mb-6 text-center">
-        <div class="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-cyan-500 to-violet-600 text-3xl font-black text-white shadow-lg shadow-cyan-500/20 mb-4">
+        <div class="fluent-brand-mark inline-flex h-16 w-16 items-center justify-center rounded-2xl text-3xl font-black text-white mb-4">
           A
         </div>
-        <h2 class="text-3xl font-bold tracking-tight text-white">API-in-one</h2>
-        <p class="text-sm text-slate-400 mt-2">模型代理与中转控制中心</p>
+        <h2 class="text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">API-in-one</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">系统级模型代理控制中心</p>
       </div>
       <div class="space-y-4">
         <div class="form-control">
-          <label class="label"><span class="label-text text-slate-300">管理员密钥 Admin Key</span></label>
-          <input class="input input-bordered w-full bg-slate-950/50 border-white/10 focus:border-cyan-500 focus:outline-none text-white font-mono" type="password" id="key-input" placeholder="输入 Admin Key" onkeydown="if(event.key==='Enter')doLogin()">
+          <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">管理员密钥 Admin Key</span></label>
+          <input class="input input-bordered w-full text-slate-900 dark:text-white font-mono" type="password" id="key-input" placeholder="输入 Admin Key" onkeydown="if(event.key==='Enter')doLogin()">
         </div>
-        <button class="btn btn-primary w-full bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-600 hover:to-violet-700 text-white border-none rounded-xl mt-2 font-medium" onclick="doLogin()">
+        <button class="btn btn-primary w-full text-white mt-2 font-medium" onclick="doLogin()">
           验证并登入
         </button>
       </div>
@@ -264,19 +485,19 @@
   </div>
 
   <!-- Main Application Wrapper -->
-  <div class="hidden min-h-screen md:h-screen flex flex-col md:flex-row overflow-visible md:overflow-hidden" id="app">
+  <div class="fluent-shell hidden min-h-screen md:h-screen flex flex-col md:flex-row overflow-visible md:overflow-hidden" id="app">
     
     <!-- Sidebar / Navigation -->
-    <aside class="w-full md:w-72 shrink-0 md:h-screen sticky top-0 bg-slate-100/90 dark:bg-[#080d19]/80 backdrop-blur-xl border-b md:border-b-0 md:border-r border-slate-200 dark:border-white/5 flex flex-col p-6 z-50 transition-colors duration-300">
+    <aside class="fluent-sidebar w-full md:w-72 shrink-0 md:h-screen sticky top-0 border-b md:border-b-0 md:border-r border-slate-200/70 dark:border-white/10 flex flex-col p-6 z-50 transition-colors duration-300">
       
       <div class="flex items-center justify-between mb-3 md:mb-8">
         <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-cyan-500 to-violet-600 font-extrabold text-white text-lg">
+          <div class="fluent-brand-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-extrabold text-white text-lg">
             API
           </div>
           <div>
-            <h1 class="font-bold text-lg text-slate-900 dark:text-white leading-tight">API-in-one</h1>
-            <p class="text-xs text-slate-500 dark:text-slate-400">智能网关网格面盘</p>
+            <h1 class="font-semibold text-lg text-slate-950 dark:text-white leading-tight">API-in-one</h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400">网关控制面板</p>
           </div>
         </div>
         <!-- Theme Toggle Button -->
@@ -308,13 +529,13 @@
 
       <!-- Bottom Panel info -->
       <div class="mt-auto pt-6 border-t border-slate-200 dark:border-white/5">
-        <div class="rounded-2xl bg-slate-200/50 dark:bg-white/5 p-4 border border-slate-200 dark:border-white/5">
+        <div class="rounded-2xl bg-white/44 dark:bg-white/5 p-4 border border-slate-200/70 dark:border-white/10 backdrop-blur-xl">
           <div class="text-[10px] uppercase font-bold tracking-wider text-slate-500">网关状态</div>
           <div class="flex items-center gap-2 mt-1.5">
             <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span class="text-sm font-medium text-slate-700 dark:text-slate-300" id="gw-version">Running (v1.0.0)</span>
           </div>
-          <div class="mt-2 text-xs font-mono text-cyan-600 dark:text-cyan-500/80 truncate" id="gw-endpoint">Loading...</div>
+          <div class="mt-2 text-xs font-mono text-[#0078d4] dark:text-sky-300 truncate" id="gw-endpoint">Loading...</div>
         </div>
         <button class="btn btn-outline btn-sm w-full border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/5 rounded-xl mt-4" onclick="doLogout()">
           <i data-lucide="log-out" class="w-4 h-4 mr-2"></i> 退出控制台
@@ -360,7 +581,7 @@
           <div class="rounded-3xl glass-card p-6 flex flex-col justify-between">
             <div class="flex items-center justify-between text-slate-500 dark:text-slate-400">
               <span class="text-sm font-medium">平均时延</span>
-              <div class="p-2 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400"><i data-lucide="timer" class="w-5 h-5"></i></div>
+              <div class="p-2 rounded-lg bg-sky-500/10 text-[#0078d4] dark:text-sky-300"><i data-lucide="timer" class="w-5 h-5"></i></div>
             </div>
             <div class="mt-4">
               <div class="text-3xl font-bold text-slate-900 dark:text-white font-mono" id="stat-avg-latency">0 ms</div>
@@ -422,7 +643,7 @@
             <div class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-500">Routing Upstream Settings</div>
             <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">渠道路由管理</h2>
           </div>
-          <button class="btn btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-600 hover:to-violet-700 text-white border-none rounded-xl" onclick="openAddChannel()">
+          <button class="btn btn-primary text-white" onclick="openAddChannel()">
             <i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i> 添加渠道
           </button>
         </div>
@@ -545,7 +766,7 @@
               <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-white rounded-xl" onclick="addAccessKeyPolicy()">
                 <i data-lucide="plus" class="w-4 h-4 mr-1"></i> 添加令牌
               </button>
-              <button class="btn btn-sm btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveAccessKeyPolicies()">
+              <button class="btn btn-sm btn-primary text-white" onclick="saveAccessKeyPolicies()">
                 保存所有密钥
               </button>
             </div>
@@ -562,7 +783,7 @@
               <h3 class="font-bold text-lg text-slate-900 dark:text-white">模型 System Prompt 静态注入</h3>
               <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">在代理转发前，向指定客户端可见模型请求的消息流末尾追加注入固定的开发者提示词。</p>
             </div>
-            <button class="btn btn-sm btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="openPromptModal()">
+            <button class="btn btn-sm btn-primary text-white" onclick="openPromptModal()">
               <i data-lucide="plus" class="w-4 h-4 mr-1"></i> 添加注入
             </button>
           </div>
@@ -578,7 +799,7 @@
               <h3 class="font-bold text-lg text-slate-900 dark:text-white">Key 熔断恢复策略</h3>
               <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">控制上游 Key 连续失败后挂起，以及自动恢复前的冷却时间。</p>
             </div>
-            <button class="btn btn-sm btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveKeyFailurePolicy()">
+            <button class="btn btn-sm btn-primary text-white" onclick="saveKeyFailurePolicy()">
               保存熔断策略
             </button>
           </div>
@@ -622,7 +843,7 @@
       <div class="space-y-6">
         <!-- Part 1: Basics -->
         <div class="space-y-3">
-          <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">基础参数</div>
+          <div class="text-xs font-bold text-cyan-700 dark:text-sky-300 uppercase tracking-wider">基础参数</div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div class="form-control">
               <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">渠道标识名称 *</span></label>
@@ -664,7 +885,7 @@
         <div class="space-y-3">
           <div class="flex items-center justify-between gap-3">
             <div>
-              <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">上游 API Keys</div>
+              <div class="text-xs font-bold text-cyan-700 dark:text-sky-300 uppercase tracking-wider">上游 API Keys</div>
               <div class="text-xs text-slate-500 mt-1" id="channel-key-summary">尚未配置 Key</div>
             </div>
             <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-white rounded-xl" onclick="openChannelKeysModal()">
@@ -676,7 +897,7 @@
 
         <!-- Part 3: Model and mapping -->
         <div class="space-y-3">
-          <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">模型支持及映射</div>
+          <div class="text-xs font-bold text-cyan-700 dark:text-sky-300 uppercase tracking-wider">模型支持及映射</div>
           <div class="form-control">
             <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">支持的模型列表 (英文逗号分隔)</span></label>
             <div class="flex gap-2">
@@ -701,7 +922,7 @@
 
         <!-- Part 4: Advanced settings -->
         <div class="space-y-3">
-          <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">权重与调度优先级</div>
+          <div class="text-xs font-bold text-cyan-700 dark:text-sky-300 uppercase tracking-wider">权重与调度优先级</div>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
             <div class="form-control">
               <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">优先级 Priority</span></label>
@@ -722,7 +943,7 @@
       <!-- Action Buttons -->
       <div class="flex justify-end gap-3 border-t border-slate-200 dark:border-white/5 pt-4 mt-6">
         <button class="btn btn-ghost hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-400" onclick="closeModal('channel-modal')">取消</button>
-        <button class="btn btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveChannel()">保存渠道</button>
+        <button class="btn btn-primary text-white" onclick="saveChannel()">保存渠道</button>
       </div>
     </div>
   </div>
@@ -786,7 +1007,7 @@
                 <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-upreq-box')">复制</button>
               </div>
             </div>
-            <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-[55vh] border border-white/5 text-purple-400 scroll-fade" id="ld-upreq-box"></pre>
+            <pre class="bg-slate-950 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-auto max-h-[55vh] border border-white/5 text-sky-300 scroll-fade" id="ld-upreq-box"></pre>
           </div>
         </div>
       </div>
@@ -827,7 +1048,7 @@
 
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <div class="text-xs font-bold text-cyan-650 dark:text-cyan-500 uppercase tracking-wider">逐条 Key 表单</div>
+          <div class="text-xs font-bold text-cyan-700 dark:text-sky-300 uppercase tracking-wider">逐条 Key 表单</div>
           <div class="text-xs text-slate-500 mt-1" id="key-modal-summary">修改后点击保存 Keys 生效</div>
         </div>
         <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-white rounded-xl" onclick="addKeyRow()">
@@ -849,7 +1070,7 @@
         </div>
         <div class="flex gap-2">
           <button class="btn btn-ghost hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-400" onclick="closeModal('key-modal')">关闭</button>
-          <button class="btn btn-primary bg-gradient-to-r from-cyan-500 to-violet-600 border-none text-white rounded-xl" onclick="saveChannelKeys()">保存 Keys</button>
+          <button class="btn btn-primary text-white" onclick="saveChannelKeys()">保存 Keys</button>
         </div>
       </div>
     </div>
@@ -1167,7 +1388,7 @@
           labels: labels,
           datasets: [{
             data: data,
-            backgroundColor: ['#06b6d4', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899'],
+            backgroundColor: ['#0078d4', '#40e0d0', '#f59e0b', '#10b981', '#64748b'],
             borderWidth: 0,
           }]
         },
@@ -1219,8 +1440,8 @@
             {
               label: '平均延迟 (ms)',
               data: latencyData,
-              backgroundColor: 'rgba(139, 92, 246, 0.4)',
-              borderColor: '#8b5cf6',
+              backgroundColor: 'rgba(0, 120, 212, 0.22)',
+              borderColor: '#0078d4',
               borderWidth: 2,
               borderRadius: 8,
               yAxisID: 'y'
@@ -1228,8 +1449,8 @@
             {
               label: '总调用次数',
               data: requestsData,
-              backgroundColor: 'rgba(6, 182, 212, 0.4)',
-              borderColor: '#06b6d4',
+              backgroundColor: 'rgba(64, 224, 208, 0.24)',
+              borderColor: '#40e0d0',
               borderWidth: 2,
               borderRadius: 8,
               yAxisID: 'y1'
@@ -1299,7 +1520,7 @@
       const container = document.getElementById('channels-list-container');
       if (channels.length === 0) {
         container.innerHTML = `
-          <div class="col-span-full py-16 text-center text-slate-500 rounded-3xl border border-dashed border-slate-350 dark:border-white/10 glass-card">
+          <div class="col-span-full py-16 text-center text-slate-500 rounded-3xl border border-dashed border-slate-300 dark:border-white/10 glass-card">
             <i data-lucide="git-merge" class="w-16 h-16 mx-auto text-slate-400 dark:text-slate-700 mb-3"></i>
             还没有任何路由渠道，点击右上角「添加渠道」
           </div>
@@ -1338,7 +1559,7 @@
                   <div class="truncate text-xs font-semibold text-slate-500 dark:text-slate-500 font-mono">${esc(ch.base_url)}</div>
                   <div class="flex flex-wrap items-center gap-1.5 pt-1">
                     <span class="badge bg-cyan-100 dark:bg-cyan-500/10 border-none text-cyan-800 dark:text-cyan-400 text-[10px] font-semibold">${esc(ch.type)}</span>
-                    ${ch.supports_responses ? '<span class="badge bg-violet-100 dark:bg-violet-500/10 border-none text-violet-700 dark:text-violet-400 text-[10px]">Responses</span>' : ''}
+                    ${ch.supports_responses ? '<span class="badge bg-sky-100 dark:bg-sky-500/10 border-none text-sky-700 dark:text-sky-300 text-[10px]">Responses</span>' : ''}
                     ${isEnabled && aliases.length > 0 ? `<span class="badge bg-slate-200 dark:bg-white/5 border-none text-slate-500 dark:text-slate-400 text-[10px]">映射 ${aliases.length}</span>` : ''}
                   </div>
                 </div>
@@ -2006,7 +2227,7 @@
       const body = document.getElementById('logs-table-body');
       if (!silent) {
         logListLastRenderKey = '';
-        body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-550">正在检索流水日志...</td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500">正在检索流水日志...</td></tr>`;
       }
 
       try {
@@ -2051,7 +2272,7 @@
           const protoBadge = `<span class="badge badge-sm font-mono bg-slate-200 dark:bg-white/5 border-none text-[10px] text-slate-600 dark:text-slate-400">${esc(log.protocol)}</span>`;
           const modeText = log.mode === 'converted' ? '转换' : '透穿';
           const modeCls = log.mode === 'converted'
-            ? 'bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-400'
+            ? 'bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300'
             : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400';
           const shortTime = compactLogTime(log.timestamp);
           const displayChannel = displayLogChannel(log);
@@ -2083,7 +2304,7 @@
         lucide.createIcons();
       } catch(e) {
         if (!silent) {
-          body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-rose-450">流水拉取失败: ${esc(e.message)}</td></tr>`;
+          body.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-rose-500">流水拉取失败: ${esc(e.message)}</td></tr>`;
         }
       } finally {
         logsLoading = false;
