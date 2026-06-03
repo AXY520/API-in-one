@@ -18,12 +18,14 @@ type ClaudeAdaptor struct{}
 // ---- Claude native request/response structures ----
 
 type claudeRequest struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens"`
-	System    string          `json:"system,omitempty"`
-	Messages  []claudeMessage `json:"messages"`
-	Stream    bool            `json:"stream,omitempty"`
-	Tools     []claudeTool    `json:"tools,omitempty"`
+	Model         string          `json:"model"`
+	MaxTokens     int             `json:"max_tokens"`
+	System        string          `json:"system,omitempty"`
+	Messages      []claudeMessage `json:"messages"`
+	Stream        bool            `json:"stream,omitempty"`
+	Tools         []claudeTool    `json:"tools,omitempty"`
+	ToolChoice    interface{}     `json:"tool_choice,omitempty"`
+	StopSequences []string        `json:"stop_sequences,omitempty"`
 }
 
 type claudeMessage struct {
@@ -91,6 +93,10 @@ func (a *ClaudeAdaptor) convertRequest(req *model.ChatCompletionRequest) *claude
 	if req.MaxTokens != nil && *req.MaxTokens > 0 {
 		cr.MaxTokens = *req.MaxTokens
 	}
+	if len(req.Stop) > 0 {
+		cr.StopSequences = req.Stop
+	}
+	cr.ToolChoice = openAIToClaudeToolChoice(req.ToolChoice)
 
 	// Extract system message and convert messages
 	var systemParts []string
@@ -105,10 +111,14 @@ func (a *ClaudeAdaptor) convertRequest(req *model.ChatCompletionRequest) *claude
 				ToolUseID: msg.ToolCallID,
 				Content:   extractTextContent(msg.Content),
 			}
-			cr.Messages = append(cr.Messages, claudeMessage{
-				Role:    "user",
-				Content: []claudeContent{toolResult},
-			})
+			if len(cr.Messages) > 0 && cr.Messages[len(cr.Messages)-1].Role == "user" {
+				cr.Messages[len(cr.Messages)-1].Content = appendClaudeContent(cr.Messages[len(cr.Messages)-1].Content, toolResult)
+			} else {
+				cr.Messages = append(cr.Messages, claudeMessage{
+					Role:    "user",
+					Content: []claudeContent{toolResult},
+				})
+			}
 		case "assistant":
 			content := openAIMessageToClaudeContent(msg)
 			cr.Messages = append(cr.Messages, claudeMessage{
@@ -116,12 +126,22 @@ func (a *ClaudeAdaptor) convertRequest(req *model.ChatCompletionRequest) *claude
 				Content: content,
 			})
 		default:
+			role := msg.Role
+			if role != "user" && role != "assistant" {
+				role = "user"
+			}
 			claudeMsg := claudeMessage{
-				Role:    msg.Role,
+				Role:    role,
 				Content: extractTextContent(msg.Content),
 			}
 			cr.Messages = append(cr.Messages, claudeMsg)
 		}
+	}
+	if len(cr.Messages) > 0 && cr.Messages[0].Role != "user" {
+		cr.Messages = append([]claudeMessage{{
+			Role:    "user",
+			Content: "...",
+		}}, cr.Messages...)
 	}
 	if len(systemParts) > 0 {
 		cr.System = strings.Join(systemParts, "\n")
@@ -138,6 +158,39 @@ func (a *ClaudeAdaptor) convertRequest(req *model.ChatCompletionRequest) *claude
 	}
 
 	return cr
+}
+
+func appendClaudeContent(existing interface{}, next claudeContent) []claudeContent {
+	switch v := existing.(type) {
+	case []claudeContent:
+		return append(v, next)
+	case string:
+		if v == "" {
+			return []claudeContent{next}
+		}
+		return []claudeContent{{Type: "text", Text: v}, next}
+	default:
+		return []claudeContent{next}
+	}
+}
+
+func openAIToClaudeToolChoice(choice interface{}) interface{} {
+	switch v := choice.(type) {
+	case string:
+		switch v {
+		case "auto", "none":
+			return map[string]interface{}{"type": v}
+		case "required":
+			return map[string]interface{}{"type": "any"}
+		}
+	case map[string]interface{}:
+		if fn, ok := v["function"].(map[string]interface{}); ok {
+			if name, ok := fn["name"].(string); ok && name != "" {
+				return map[string]interface{}{"type": "tool", "name": name}
+			}
+		}
+	}
+	return nil
 }
 
 func (a *ClaudeAdaptor) ParseResponse(resp *http.Response) (*model.ChatCompletionResponse, error) {
@@ -465,13 +518,15 @@ func getMapString(m map[string]interface{}, key string) string {
 }
 
 func mapStopReason(reason string) string {
-	switch reason {
-	case "end_turn":
+	switch strings.ToLower(reason) {
+	case "end_turn", "stop_sequence":
 		return "stop"
 	case "max_tokens":
 		return "length"
 	case "tool_use":
 		return "tool_calls"
+	case "refusal":
+		return "content_filter"
 	default:
 		return "stop"
 	}

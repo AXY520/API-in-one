@@ -18,10 +18,11 @@ type GeminiAdaptor struct{}
 // ---- Gemini native request/response structures ----
 
 type geminiRequest struct {
-	Contents         []geminiContent        `json:"contents"`
-	SystemInstruction *geminiContent         `json:"systemInstruction,omitempty"`
+	Contents          []geminiContent         `json:"contents"`
+	SystemInstruction *geminiContent          `json:"systemInstruction,omitempty"`
 	GenerationConfig  *geminiGenerationConfig `json:"generationConfig,omitempty"`
-	Tools             []geminiTool           `json:"tools,omitempty"`
+	Tools             []geminiTool            `json:"tools,omitempty"`
+	ToolConfig        *geminiToolConfig       `json:"toolConfig,omitempty"`
 }
 
 type geminiContent struct {
@@ -31,8 +32,14 @@ type geminiContent struct {
 
 type geminiPart struct {
 	Text             string                  `json:"text,omitempty"`
+	InlineData       *geminiInlineData       `json:"inlineData,omitempty"`
 	FunctionCall     *geminiFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *geminiFunctionResponse `json:"functionResponse,omitempty"`
+}
+
+type geminiInlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
 }
 
 type geminiFunctionCall struct {
@@ -46,14 +53,20 @@ type geminiFunctionResponse struct {
 }
 
 type geminiGenerationConfig struct {
-	MaxOutputTokens int     `json:"maxOutputTokens,omitempty"`
-	Temperature     float64 `json:"temperature,omitempty"`
-	TopP            float64 `json:"topP,omitempty"`
-	StopSequences   []string `json:"stopSequences,omitempty"`
+	MaxOutputTokens  int         `json:"maxOutputTokens,omitempty"`
+	Temperature      float64     `json:"temperature,omitempty"`
+	TopP             float64     `json:"topP,omitempty"`
+	StopSequences    []string    `json:"stopSequences,omitempty"`
+	ResponseMimeType string      `json:"responseMimeType,omitempty"`
+	ResponseSchema   interface{} `json:"responseSchema,omitempty"`
 }
 
 type geminiTool struct {
 	FunctionDeclarations []geminiFunctionDecl `json:"function_declarations"`
+}
+
+type geminiToolConfig struct {
+	FunctionCallingConfig map[string]interface{} `json:"functionCallingConfig,omitempty"`
 }
 
 type geminiFunctionDecl struct {
@@ -68,8 +81,8 @@ type geminiResponse struct {
 }
 
 type geminiCandidate struct {
-	Content       geminiContent `json:"content"`
-	FinishReason  string        `json:"finishReason"`
+	Content      geminiContent `json:"content"`
+	FinishReason string        `json:"finishReason"`
 }
 
 type geminiUsageMetadata struct {
@@ -108,7 +121,7 @@ func (a *GeminiAdaptor) convertRequest(req *model.ChatCompletionRequest) *gemini
 	for _, msg := range req.Messages {
 		if msg.Role == "system" {
 			gr.SystemInstruction = &geminiContent{
-				Parts: []geminiPart{{Text: extractTextContent(msg.Content)}},
+				Parts: buildGeminiParts(msg.Content),
 			}
 			continue
 		}
@@ -117,11 +130,7 @@ func (a *GeminiAdaptor) convertRequest(req *model.ChatCompletionRequest) *gemini
 			role = "model"
 		}
 		if role == "model" {
-			var parts []geminiPart
-			text := extractTextContent(msg.Content)
-			if text != "" {
-				parts = append(parts, geminiPart{Text: text})
-			}
+			parts := buildGeminiParts(msg.Content)
 			for _, tc := range msg.ToolCalls {
 				var args map[string]interface{}
 				if tc.Function.Arguments != "" {
@@ -151,7 +160,7 @@ func (a *GeminiAdaptor) convertRequest(req *model.ChatCompletionRequest) *gemini
 				name = msg.ToolCallID
 			}
 			gr.Contents = append(gr.Contents, geminiContent{
-				Role: "function",
+				Role: "user",
 				Parts: []geminiPart{{
 					FunctionResponse: &geminiFunctionResponse{
 						Name:     name,
@@ -163,9 +172,11 @@ func (a *GeminiAdaptor) convertRequest(req *model.ChatCompletionRequest) *gemini
 		}
 		gc := geminiContent{
 			Role:  role,
-			Parts: []geminiPart{{Text: extractTextContent(msg.Content)}},
+			Parts: buildGeminiParts(msg.Content),
 		}
-		gr.Contents = append(gr.Contents, gc)
+		if len(gc.Parts) > 0 {
+			gr.Contents = append(gr.Contents, gc)
+		}
 	}
 
 	// Generation config
@@ -181,7 +192,11 @@ func (a *GeminiAdaptor) convertRequest(req *model.ChatCompletionRequest) *gemini
 	}
 	if len(req.Stop) > 0 {
 		gc.StopSequences = req.Stop
+		if len(gc.StopSequences) > 5 {
+			gc.StopSequences = gc.StopSequences[:5]
+		}
 	}
+	applyGeminiResponseFormat(gc, req.ResponseFormat)
 	gr.GenerationConfig = gc
 
 	// Convert tools
@@ -189,15 +204,146 @@ func (a *GeminiAdaptor) convertRequest(req *model.ChatCompletionRequest) *gemini
 		fd := geminiFunctionDecl{
 			Name:        tool.Function.Name,
 			Description: tool.Function.Description,
-			Parameters:  tool.Function.Parameters,
+			Parameters:  cleanGeminiSchema(tool.Function.Parameters),
 		}
 		if len(gr.Tools) == 0 {
 			gr.Tools = []geminiTool{{}}
 		}
 		gr.Tools[0].FunctionDeclarations = append(gr.Tools[0].FunctionDeclarations, fd)
 	}
+	gr.ToolConfig = openAIToGeminiToolConfig(req.ToolChoice)
 
 	return gr
+}
+
+func buildGeminiParts(content interface{}) []geminiPart {
+	switch v := content.(type) {
+	case []model.ContentPart:
+		var parts []geminiPart
+		for _, part := range v {
+			switch part.Type {
+			case "text":
+				if part.Text != "" {
+					parts = append(parts, geminiPart{Text: part.Text})
+				}
+			case "image_url":
+				if part.ImageURL == nil {
+					continue
+				}
+				if mimeType, data, ok := parseDataURL(part.ImageURL.URL); ok {
+					parts = append(parts, geminiPart{InlineData: &geminiInlineData{MimeType: mimeType, Data: data}})
+				}
+			}
+		}
+		return parts
+	default:
+		text := extractTextContent(content)
+		if text == "" {
+			return nil
+		}
+		return []geminiPart{{Text: text}}
+	}
+}
+
+func parseDataURL(raw string) (string, string, bool) {
+	if !strings.HasPrefix(raw, "data:") {
+		return "", "", false
+	}
+	header, data, ok := strings.Cut(strings.TrimPrefix(raw, "data:"), ",")
+	if !ok || !strings.Contains(header, ";base64") || data == "" {
+		return "", "", false
+	}
+	mimeType := strings.TrimSuffix(header, ";base64")
+	if mimeType == "" {
+		return "", "", false
+	}
+	return mimeType, data, true
+}
+
+func openAIToGeminiToolConfig(choice interface{}) *geminiToolConfig {
+	var cfg map[string]interface{}
+	switch v := choice.(type) {
+	case string:
+		switch v {
+		case "auto":
+			cfg = map[string]interface{}{"mode": "AUTO"}
+		case "none":
+			cfg = map[string]interface{}{"mode": "NONE"}
+		case "required":
+			cfg = map[string]interface{}{"mode": "ANY"}
+		}
+	case map[string]interface{}:
+		if fn, ok := v["function"].(map[string]interface{}); ok {
+			if name, ok := fn["name"].(string); ok && name != "" {
+				cfg = map[string]interface{}{"mode": "ANY", "allowedFunctionNames": []string{name}}
+			}
+		}
+	}
+	if cfg == nil {
+		return nil
+	}
+	return &geminiToolConfig{FunctionCallingConfig: cfg}
+}
+
+func applyGeminiResponseFormat(gc *geminiGenerationConfig, responseFormat interface{}) {
+	format, ok := responseFormat.(map[string]interface{})
+	if !ok {
+		return
+	}
+	formatType, _ := format["type"].(string)
+	if formatType != "json_object" && formatType != "json_schema" {
+		return
+	}
+	gc.ResponseMimeType = "application/json"
+	if jsonSchema, ok := format["json_schema"].(map[string]interface{}); ok {
+		if schema, ok := jsonSchema["schema"]; ok {
+			gc.ResponseSchema = cleanGeminiSchema(schema)
+		}
+	}
+}
+
+func cleanGeminiSchema(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		allowed := map[string]bool{
+			"anyOf": true, "default": true, "description": true, "enum": true,
+			"format": true, "items": true, "maxItems": true, "maxLength": true,
+			"maximum": true, "minimum": true, "minItems": true, "minLength": true,
+			"nullable": true, "properties": true, "required": true, "title": true, "type": true,
+		}
+		out := map[string]interface{}{}
+		for k, val := range v {
+			if !allowed[k] {
+				continue
+			}
+			out[k] = cleanGeminiSchema(val)
+		}
+		if typ, ok := out["type"].(string); ok {
+			switch strings.ToLower(typ) {
+			case "object":
+				out["type"] = "OBJECT"
+			case "array":
+				out["type"] = "ARRAY"
+			case "string":
+				out["type"] = "STRING"
+			case "integer":
+				out["type"] = "INTEGER"
+			case "number":
+				out["type"] = "NUMBER"
+			case "boolean":
+				out["type"] = "BOOLEAN"
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, 0, len(v))
+		for _, item := range v {
+			out = append(out, cleanGeminiSchema(item))
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 func (a *GeminiAdaptor) ParseResponse(resp *http.Response) (*model.ChatCompletionResponse, error) {
@@ -354,12 +500,12 @@ func (p *geminiSSEProcessor) Next() ([]byte, error) {
 }
 
 func mapGeminiStopReason(reason string) string {
-	switch reason {
+	switch strings.ToUpper(reason) {
 	case "STOP":
 		return "stop"
 	case "MAX_TOKENS":
 		return "length"
-	case "SAFETY":
+	case "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "MALFORMED_FUNCTION_CALL":
 		return "content_filter"
 	default:
 		return "stop"

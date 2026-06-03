@@ -39,6 +39,8 @@ type RequestLog struct {
 type LogFilter struct {
 	Limit     int
 	Offset    int
+	SinceID   int64
+	UntilID   int64
 	Protocol  string
 	Model     string
 	Channel   string
@@ -404,6 +406,37 @@ LIMIT ? OFFSET ?`, args...)
 	return result
 }
 
+func (s *LogStore) export(filter LogFilter) []RequestLog {
+	db := s.database()
+	if db == nil {
+		return nil
+	}
+	filter = normalizeLogExportFilter(filter)
+	where, args := buildLogWhere(filter)
+	args = append(args, filter.Limit, filter.Offset)
+	rows, err := db.Query(`
+SELECT id, protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp
+FROM request_logs `+where+`
+ORDER BY id DESC
+LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		slog.Warn("failed to export request logs", "error", err)
+		return nil
+	}
+	defer rows.Close()
+
+	result := make([]RequestLog, 0, filter.Limit)
+	for rows.Next() {
+		log, err := scanFullRequestLog(rows)
+		if err != nil {
+			slog.Warn("failed to scan exported request log", "error", err)
+			continue
+		}
+		result = append(result, log)
+	}
+	return result
+}
+
 func (s *LogStore) count(filter LogFilter) int {
 	db := s.database()
 	if db == nil {
@@ -456,6 +489,24 @@ FROM request_logs WHERE id = ?`, id).
 	return log, true
 }
 
+type fullLogScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanFullRequestLog(scanner fullLogScanner) (RequestLog, error) {
+	var log RequestLog
+	var stream int
+	var attemptsJSON, requestJSON, upstreamJSON string
+	if err := scanner.Scan(&log.ID, &log.Protocol, &log.Mode, &log.Model, &log.ResolvedModel, &log.Channel, &log.AccessKey, &log.Status, &log.Duration, &stream, &log.Error, &attemptsJSON, &requestJSON, &upstreamJSON, &log.Timestamp); err != nil {
+		return RequestLog{}, err
+	}
+	log.Stream = stream == 1
+	_ = json.Unmarshal([]byte(attemptsJSON), &log.Attempts)
+	log.Request = decodeJSONValue(requestJSON)
+	log.UpstreamRequest = decodeJSONValue(upstreamJSON)
+	return log, nil
+}
+
 func (s *LogStore) stats() map[string]interface{} {
 	db := s.database()
 	if db == nil {
@@ -496,9 +547,30 @@ func normalizeLogFilter(filter LogFilter) LogFilter {
 	return filter
 }
 
+func normalizeLogExportFilter(filter LogFilter) LogFilter {
+	if filter.Limit <= 0 {
+		filter.Limit = 100
+	}
+	if filter.Limit > 1000 {
+		filter.Limit = 1000
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	return filter
+}
+
 func buildLogWhere(filter LogFilter) (string, []interface{}) {
 	clauses := make([]string, 0, 8)
 	args := make([]interface{}, 0, 8)
+	if filter.SinceID > 0 {
+		clauses = append(clauses, "id > ?")
+		args = append(args, filter.SinceID)
+	}
+	if filter.UntilID > 0 {
+		clauses = append(clauses, "id <= ?")
+		args = append(args, filter.UntilID)
+	}
 	if filter.Protocol != "" {
 		clauses = append(clauses, "protocol = ?")
 		args = append(args, filter.Protocol)

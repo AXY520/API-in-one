@@ -784,6 +784,67 @@ func (h *Admin) GetLogs(c *gin.Context) {
 	})
 }
 
+// ExportLogs returns full request logs for external troubleshooting.
+func (h *Admin) ExportLogs(c *gin.Context) {
+	n := 100
+	if v := c.Query("limit"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			n = parsed
+		}
+	}
+	if n > 1000 {
+		n = 1000
+	}
+	page := 1
+	if v := c.Query("page"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	filter := LogFilter{
+		Limit:     n,
+		Offset:    (page - 1) * n,
+		SinceID:   parseInt64Query(c, "since_id"),
+		UntilID:   parseInt64Query(c, "until_id"),
+		Protocol:  strings.TrimSpace(c.Query("protocol")),
+		Model:     strings.TrimSpace(c.Query("model")),
+		Channel:   strings.TrimSpace(c.Query("channel")),
+		AccessKey: strings.TrimSpace(c.Query("access_key")),
+		Status:    strings.TrimSpace(c.Query("status")),
+		Query:     strings.TrimSpace(c.Query("q")),
+	}
+	logs := globalLogStore.export(filter)
+	if strings.EqualFold(strings.TrimSpace(c.Query("format")), "jsonl") {
+		c.Header("Content-Type", "application/x-ndjson; charset=utf-8")
+		c.Status(http.StatusOK)
+		encoder := json.NewEncoder(c.Writer)
+		for _, entry := range logs {
+			_ = encoder.Encode(entry)
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"logs":           logs,
+		"total":          globalLogStore.total(),
+		"filtered_total": globalLogStore.count(filter),
+		"page":           page,
+		"limit":          n,
+		"generated_at":   time.Now().Format(time.RFC3339),
+	})
+}
+
+func parseInt64Query(c *gin.Context, name string) int64 {
+	value := strings.TrimSpace(c.Query(name))
+	if value == "" {
+		return 0
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 {
+		return 0
+	}
+	return parsed
+}
+
 // GetLog returns one request log by id.
 func (h *Admin) GetLog(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

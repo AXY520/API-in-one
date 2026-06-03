@@ -68,6 +68,7 @@ func Setup(engine *relay.Engine, pool *relay.Pool, indexHTML []byte) *gin.Engine
 		// Stats
 		admin.GET("/stats", adminHandler.GetStats)
 		admin.GET("/logs", adminHandler.GetLogs)
+		admin.GET("/logs/export", adminHandler.ExportLogs)
 		admin.GET("/logs/:id", adminHandler.GetLog)
 		admin.DELETE("/logs", adminHandler.ClearLogs)
 	}

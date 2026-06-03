@@ -32,13 +32,16 @@ func TestClaudeConvertRequestPreservesToolTurns(t *testing.T) {
 
 	got := ad.convertRequest(req)
 
-	if len(got.Messages) != 2 {
-		t.Fatalf("expected 2 messages, got %d", len(got.Messages))
+	if len(got.Messages) != 3 {
+		t.Fatalf("expected placeholder user + assistant + tool result messages, got %d", len(got.Messages))
+	}
+	if got.Messages[0].Role != "user" {
+		t.Fatalf("expected first message placeholder user, got %#v", got.Messages[0])
 	}
 
-	assistantBlocks, ok := got.Messages[0].Content.([]claudeContent)
+	assistantBlocks, ok := got.Messages[1].Content.([]claudeContent)
 	if !ok {
-		t.Fatalf("expected assistant content blocks, got %T", got.Messages[0].Content)
+		t.Fatalf("expected assistant content blocks, got %T", got.Messages[1].Content)
 	}
 	if len(assistantBlocks) != 2 {
 		t.Fatalf("expected text + tool_use blocks, got %#v", assistantBlocks)
@@ -47,9 +50,9 @@ func TestClaudeConvertRequestPreservesToolTurns(t *testing.T) {
 		t.Fatalf("unexpected tool_use block: %#v", assistantBlocks[1])
 	}
 
-	userBlocks, ok := got.Messages[1].Content.([]claudeContent)
+	userBlocks, ok := got.Messages[2].Content.([]claudeContent)
 	if !ok {
-		t.Fatalf("expected user content blocks, got %T", got.Messages[1].Content)
+		t.Fatalf("expected user content blocks, got %T", got.Messages[2].Content)
 	}
 	if len(userBlocks) != 1 || userBlocks[0].Type != "tool_result" || userBlocks[0].ToolUseID != "toolu_1" {
 		t.Fatalf("unexpected tool_result block: %#v", userBlocks)

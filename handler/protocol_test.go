@@ -196,3 +196,88 @@ func TestShouldNotFallbackFromClaudePassthroughForAuthErrors(t *testing.T) {
 		t.Fatalf("auth errors should not fall back to conversion")
 	}
 }
+
+func TestClaudeToOpenAIPreservesThinkingBlocks(t *testing.T) {
+	var req claudeInboundRequest
+	raw := []byte(`{
+		"model":"claude-test",
+		"messages":[{
+			"role":"assistant",
+			"content":[
+				{"type":"thinking","thinking":"plan"},
+				{"type":"text","text":"answer"}
+			]
+		}]
+	}`)
+	if err := json.Unmarshal(raw, &req); err != nil {
+		t.Fatal(err)
+	}
+
+	out := claudeToOpenAI(&req)
+	if len(out.Messages) != 1 {
+		t.Fatalf("expected one message, got %#v", out.Messages)
+	}
+	if out.Messages[0].ReasoningContent != "plan" {
+		t.Fatalf("expected thinking to become reasoning_content, got %#v", out.Messages[0])
+	}
+	if out.Messages[0].Content != "answer" {
+		t.Fatalf("expected text content, got %#v", out.Messages[0].Content)
+	}
+}
+
+func TestGeminiToOpenAIConvertsFunctionParts(t *testing.T) {
+	var req geminiInboundRequest
+	raw := []byte(`{
+		"contents":[
+			{"role":"model","parts":[{"functionCall":{"name":"lookup","args":{"q":"x"}}}]},
+			{"role":"user","parts":[{"functionResponse":{"name":"lookup","response":{"ok":true}}}]}
+		]
+	}`)
+	if err := json.Unmarshal(raw, &req); err != nil {
+		t.Fatal(err)
+	}
+
+	out := geminiToOpenAI(&req, "gemini-test")
+	if len(out.Messages) != 2 {
+		t.Fatalf("expected two messages, got %#v", out.Messages)
+	}
+	if len(out.Messages[0].ToolCalls) != 1 || out.Messages[0].ToolCalls[0].Function.Name != "lookup" {
+		t.Fatalf("expected assistant tool call, got %#v", out.Messages[0])
+	}
+	if out.Messages[1].Role != "tool" || out.Messages[1].ToolCallID == "" {
+		t.Fatalf("expected tool response with call id, got %#v", out.Messages[1])
+	}
+}
+
+func TestOpenAIToGeminiConvertsToolCalls(t *testing.T) {
+	finish := "tool_calls"
+	resp := &model.ChatCompletionResponse{
+		ID:    "chatcmpl_test",
+		Model: "gpt-test",
+		Choices: []model.Choice{{
+			Message: &model.Message{
+				Role: "assistant",
+				ToolCalls: []model.ToolCall{{
+					ID:   "call_1",
+					Type: "function",
+					Function: model.FunctionCall{
+						Name:      "lookup",
+						Arguments: `{"q":"x"}`,
+					},
+				}},
+			},
+			FinishReason: &finish,
+		}},
+	}
+
+	out := openAIToGemini(resp)
+	candidates := out["candidates"].([]map[string]interface{})
+	if candidates[0]["finishReason"] != "FUNCTION_CALL" {
+		t.Fatalf("expected FUNCTION_CALL finish reason, got %#v", candidates[0]["finishReason"])
+	}
+	content := candidates[0]["content"].(map[string]interface{})
+	parts := content["parts"].([]map[string]interface{})
+	if _, ok := parts[0]["functionCall"]; !ok {
+		t.Fatalf("expected Gemini functionCall part, got %#v", parts)
+	}
+}
