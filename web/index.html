@@ -900,6 +900,18 @@
               <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl font-mono text-slate-800 dark:text-white" type="number" id="key-failure-cooldown" min="1" step="1">
             </div>
           </div>
+          <div class="rounded-2xl border border-slate-200/70 bg-white/35 p-4 dark:border-white/10 dark:bg-white/5">
+            <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+              <div class="form-control max-w-xs">
+                <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">渠道模型连续失败阈值</span></label>
+                <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl font-mono text-slate-800 dark:text-white" type="number" id="channel-model-failure-threshold" min="1" step="1">
+              </div>
+              <button class="btn btn-sm btn-primary text-white" onclick="saveChannelModelFailurePolicy()">
+                保存模型阈值
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">某个渠道的某个模型连续失败达到阈值后，只临时禁用该渠道上的这个模型，恢复需要手动点击模型标签。</p>
+          </div>
         </div>
 
         <!-- Admin Key display -->
@@ -1186,6 +1198,7 @@
     let accessPolicyModels = [];
     let modelSystemPrompts = {};
     let keyFailurePolicy = { threshold: 3, cooldown_seconds: 600 };
+    let channelModelFailurePolicy = { threshold: 3 };
     let fetchedChannelModels = [];
     let pickerMode = 'policy';
 
@@ -1635,36 +1648,57 @@
       renderChannelsGrid(list);
     }
 
-    const channelModelPalette = [
-      { bg: 'rgba(14, 165, 233, 0.16)', text: '#0369a1', border: 'rgba(14, 165, 233, 0.28)' },
-      { bg: 'rgba(16, 185, 129, 0.16)', text: '#047857', border: 'rgba(16, 185, 129, 0.28)' },
-      { bg: 'rgba(139, 92, 246, 0.15)', text: '#6d28d9', border: 'rgba(139, 92, 246, 0.26)' },
-      { bg: 'rgba(245, 158, 11, 0.17)', text: '#b45309', border: 'rgba(245, 158, 11, 0.28)' },
-      { bg: 'rgba(236, 72, 153, 0.14)', text: '#be185d', border: 'rgba(236, 72, 153, 0.24)' },
-      { bg: 'rgba(99, 102, 241, 0.15)', text: '#4338ca', border: 'rgba(99, 102, 241, 0.26)' },
-      { bg: 'rgba(20, 184, 166, 0.16)', text: '#0f766e', border: 'rgba(20, 184, 166, 0.26)' },
-      { bg: 'rgba(244, 63, 94, 0.14)', text: '#be123c', border: 'rgba(244, 63, 94, 0.24)' },
-    ];
-
-    function modelChipStyle(modelName) {
-      let hash = 0;
-      for (let i = 0; i < modelName.length; i++) {
-        hash = ((hash << 5) - hash) + modelName.charCodeAt(i);
-        hash |= 0;
+    function modelHealthStyle(stat) {
+      if (stat?.disabled) {
+        return '--chip-bg:rgba(244,63,94,0.17);--chip-text:#be123c;--chip-border:rgba(244,63,94,0.32);';
       }
-      const color = channelModelPalette[Math.abs(hash) % channelModelPalette.length];
-      return `--chip-bg:${color.bg};--chip-text:${color.text};--chip-border:${color.border};`;
+      if ((stat?.consecutive_failure || 0) > 0) {
+        return '--chip-bg:rgba(245,158,11,0.18);--chip-text:#b45309;--chip-border:rgba(245,158,11,0.34);';
+      }
+      if ((stat?.success_requests || 0) > 0) {
+        return '--chip-bg:rgba(16,185,129,0.17);--chip-text:#047857;--chip-border:rgba(16,185,129,0.30);';
+      }
+      return '--chip-bg:rgba(148,163,184,0.16);--chip-text:#475569;--chip-border:rgba(148,163,184,0.24);';
     }
 
-    function renderChannelModelChips(models) {
+    function modelHealthTitle(model, stat) {
+      if (!stat) return model;
+      const parts = [
+        model,
+        stat.resolved_model && stat.resolved_model !== model ? `上游: ${stat.resolved_model}` : '',
+        `成功 ${stat.success_requests || 0}`,
+        `失败 ${stat.failure_requests || 0}`,
+        stat.consecutive_failure ? `连续失败 ${stat.consecutive_failure}` : '',
+        stat.last_status ? `最后状态 ${stat.last_status}` : '',
+        stat.last_latency_ms ? `最后延迟 ${stat.last_latency_ms}ms` : '',
+        stat.last_error ? `错误: ${stat.last_error}` : '',
+        stat.disabled ? '已临时禁用，点击恢复' : '',
+      ].filter(Boolean);
+      return parts.join('\n');
+    }
+
+    function renderChannelModelChips(channel, models) {
       if (!models.length) {
         return '<span class="text-[11px] italic text-slate-400 dark:text-slate-600">未配置模型</span>';
       }
-      const visible = models.slice(0, 10);
-      const hiddenCount = models.length - visible.length;
+      const stats = {};
+      (channel.model_stats || []).forEach(stat => { stats[stat.model] = stat; });
+      const ordered = models.slice().sort((a, b) => {
+        const sa = stats[a] || {};
+        const sb = stats[b] || {};
+        const score = s => (s.disabled ? 300 : 0) + ((s.consecutive_failure || 0) * 10) + ((s.failure_requests || 0) > 0 ? 1 : 0);
+        return score(sb) - score(sa);
+      });
+      const visible = ordered.slice(0, 10);
+      const hiddenCount = ordered.length - visible.length;
       return `
-        ${visible.map(model => `<span class="channel-model-chip" style="${modelChipStyle(model)}" title="${escAttr(model)}">${esc(model)}</span>`).join('')}
-        ${hiddenCount > 0 ? `<span class="channel-model-more" title="${escAttr(models.slice(10).join(', '))}">+${hiddenCount}</span>` : ''}
+        ${visible.map(model => {
+          const stat = stats[model] || {};
+          const click = stat.disabled ? ` onclick="recoverChannelModel('${escAttr(channel.name)}','${escAttr(model)}')"` : '';
+          const label = stat.disabled ? `${model} · 禁用` : ((stat.consecutive_failure || 0) > 0 ? `${model} · 失败${stat.consecutive_failure}` : model);
+          return `<span class="channel-model-chip ${stat.disabled ? 'cursor-pointer' : ''}" style="${modelHealthStyle(stat)}" title="${escAttr(modelHealthTitle(model, stat))}"${click}>${esc(label)}</span>`;
+        }).join('')}
+        ${hiddenCount > 0 ? `<span class="channel-model-more" title="${escAttr(ordered.slice(10).join(', '))}">+${hiddenCount}</span>` : ''}
       `;
     }
 
@@ -1725,7 +1759,7 @@
             </div>
 
             <div class="channel-model-strip ${enabledModels.length > 10 ? 'is-overflowing' : ''} flex flex-wrap gap-1.5" title="${escAttr(enabledModels.join(', '))}">
-              ${renderChannelModelChips(enabledModels)}
+              ${renderChannelModelChips(ch, enabledModels)}
             </div>
 
             <!-- Card Actions -->
@@ -1747,6 +1781,19 @@
         `;
       }).join('');
       lucide.createIcons();
+    }
+
+    async function recoverChannelModel(channelName, modelName) {
+      try {
+        await api(channelByNamePath('models/state', channelName), {
+          method: 'PUT',
+          body: JSON.stringify({ model: modelName, disabled: false, recover: true })
+        });
+        showToast(`已恢复 ${channelName} / ${modelName}`);
+        loadData();
+      } catch(e) {
+        showToast('恢复渠道模型失败: ' + e.message, true);
+      }
     }
 
     async function setChannelEnabled(name, enabled) {
@@ -2639,10 +2686,12 @@
         accessKeyPolicies = normalizeAccessKeyPolicies(data.access_keys || []);
         modelSystemPrompts = data.model_system_prompts || {};
         keyFailurePolicy = data.key_failure_policy || keyFailurePolicy;
+        channelModelFailurePolicy = data.channel_model_failure_policy || channelModelFailurePolicy;
         
         renderAccessKeyPolicies();
         renderModelSystemPrompts();
         renderKeyFailurePolicy();
+        renderChannelModelFailurePolicy();
 
         const adminKey = data.admin_key || '';
         const maskedAdmin = adminKey.length > 8 ? adminKey.slice(0, 4) + '****' + adminKey.slice(-4) : adminKey;
@@ -2730,6 +2779,12 @@
       cooldown.value = keyFailurePolicy.cooldown_seconds || 600;
     }
 
+    function renderChannelModelFailurePolicy() {
+      const threshold = document.getElementById('channel-model-failure-threshold');
+      if (!threshold) return;
+      threshold.value = channelModelFailurePolicy.threshold || 3;
+    }
+
     async function saveKeyFailurePolicy() {
       const threshold = parseInt(document.getElementById('key-failure-threshold').value, 10);
       const cooldown = parseInt(document.getElementById('key-failure-cooldown').value, 10);
@@ -2747,6 +2802,25 @@
         showToast('Key 熔断恢复策略已保存');
       } catch(e) {
         showToast('保存熔断策略失败: ' + e.message, true);
+      }
+    }
+
+    async function saveChannelModelFailurePolicy() {
+      const threshold = parseInt(document.getElementById('channel-model-failure-threshold').value, 10);
+      if (!Number.isFinite(threshold) || threshold < 1) {
+        showToast('渠道模型连续失败阈值必须大于 0', true);
+        return;
+      }
+      try {
+        const data = await api('/admin/channel-model-failure-policy', {
+          method: 'PUT',
+          body: JSON.stringify({ threshold })
+        });
+        channelModelFailurePolicy = data.channel_model_failure_policy || { threshold };
+        renderChannelModelFailurePolicy();
+        showToast('渠道模型失败阈值已保存');
+      } catch(e) {
+        showToast('保存渠道模型阈值失败: ' + e.message, true);
       }
     }
 

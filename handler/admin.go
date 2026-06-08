@@ -50,11 +50,28 @@ type ChannelStatus struct {
 	MaskedKeys        []string          `json:"masked_keys"`
 	KeyStats          []KeyStatus       `json:"key_stats"`
 	Models            []string          `json:"models"`
+	DisabledModels    []string          `json:"disabled_models"`
+	ModelStats        []ModelStatus     `json:"model_stats"`
 	ModelMapping      map[string]string `json:"model_mapping"`
 	Priority          int               `json:"priority"`
 	Weight            int               `json:"weight"`
 	Enabled           bool              `json:"enabled"`
 	Healthy           bool              `json:"healthy"`
+}
+
+type ModelStatus struct {
+	Model              string `json:"model"`
+	ResolvedModel      string `json:"resolved_model,omitempty"`
+	Disabled           bool   `json:"disabled"`
+	TotalRequests      int64  `json:"total_requests"`
+	SuccessRequests    int64  `json:"success_requests"`
+	FailureRequests    int64  `json:"failure_requests"`
+	ConsecutiveFailure int64  `json:"consecutive_failure"`
+	LastStatus         int    `json:"last_status"`
+	LastError          string `json:"last_error,omitempty"`
+	LastUsedAt         string `json:"last_used_at,omitempty"`
+	LastLatencyMs      int64  `json:"last_latency_ms"`
+	Healthy            bool   `json:"healthy"`
 }
 
 type KeyStatus struct {
@@ -90,6 +107,8 @@ func (h *Admin) ListChannels(c *gin.Context) {
 			MaskedKeys:        maskKeys(ch.Keys),
 			KeyStats:          buildKeyStatus(ch.GetKeyStats()),
 			Models:            ch.Models,
+			DisabledModels:    ch.DisabledModelList(),
+			ModelStats:        buildModelStatus(ch.GetModelStats()),
 			ModelMapping:      ch.ModelMapping,
 			Priority:          ch.Priority,
 			Weight:            ch.Weight,
@@ -101,6 +120,31 @@ func (h *Admin) ListChannels(c *gin.Context) {
 		"channels": result,
 		"total":    len(result),
 	})
+}
+
+func buildModelStatus(stats []model.ModelStats) []ModelStatus {
+	result := make([]ModelStatus, 0, len(stats))
+	threshold := config.Get().Server.ChannelModelFailureThreshold
+	if threshold < 1 {
+		threshold = 1
+	}
+	for _, stat := range stats {
+		result = append(result, ModelStatus{
+			Model:              stat.Model,
+			ResolvedModel:      stat.ResolvedModel,
+			Disabled:           stat.Disabled,
+			TotalRequests:      stat.TotalRequests,
+			SuccessRequests:    stat.SuccessRequests,
+			FailureRequests:    stat.FailureRequests,
+			ConsecutiveFailure: stat.ConsecutiveFailure,
+			LastStatus:         stat.LastStatus,
+			LastError:          stat.LastError,
+			LastUsedAt:         stat.LastUsedAt,
+			LastLatencyMs:      stat.LastLatencyMs,
+			Healthy:            !stat.Disabled && stat.ConsecutiveFailure < int64(threshold),
+		})
+	}
+	return result
 }
 
 func buildKeyStatus(stats []model.KeyStats) []KeyStatus {
@@ -369,6 +413,66 @@ func (h *Admin) UpdateChannelKeyState(c *gin.Context) {
 	})
 }
 
+// UpdateChannelModelState enables or disables one model on one channel.
+func (h *Admin) UpdateChannelModelState(c *gin.Context) {
+	name := channelNameFromRequest(c)
+	var req struct {
+		Model    string `json:"model"`
+		Disabled bool   `json:"disabled"`
+		Recover  bool   `json:"recover"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		return
+	}
+	req.Model = strings.TrimSpace(req.Model)
+	if req.Model == "" {
+		req.Model = strings.TrimSpace(c.Query("model"))
+	}
+	if req.Model == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "model is required"})
+		return
+	}
+	ch := findChannelConfig(name)
+	if ch == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("channel %q not found", name)})
+		return
+	}
+	disabled := make(map[string]bool, len(ch.DisabledModels)+1)
+	for _, modelName := range ch.DisabledModels {
+		disabled[modelName] = true
+	}
+	if req.Disabled {
+		disabled[req.Model] = true
+	} else {
+		delete(disabled, req.Model)
+		if upstream, ok := ch.ModelMapping[req.Model]; ok {
+			delete(disabled, upstream)
+		}
+	}
+	disabledModels := make([]string, 0, len(disabled))
+	for modelName := range disabled {
+		disabledModels = append(disabledModels, modelName)
+	}
+	if err := config.UpdateChannelDisabledModels(name, disabledModels); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	h.rebuildPool()
+	recovered := false
+	if req.Recover || !req.Disabled {
+		recovered = h.pool.ResetChannelModelFailure(name, req.Model)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message":         "channel model state updated",
+		"name":            name,
+		"model":           req.Model,
+		"disabled":        req.Disabled,
+		"recovered":       recovered,
+		"disabled_models": disabledModels,
+	})
+}
+
 // UpdateChannelState enables or disables a whole channel.
 func (h *Admin) UpdateChannelState(c *gin.Context) {
 	name := channelNameFromRequest(c)
@@ -580,6 +684,9 @@ func (h *Admin) GetSettings(c *gin.Context) {
 			"threshold":        cfg.Server.KeyFailureThreshold,
 			"cooldown_seconds": cfg.Server.KeyFailureCooldownSeconds,
 		},
+		"channel_model_failure_policy": gin.H{
+			"threshold": cfg.Server.ChannelModelFailureThreshold,
+		},
 	})
 }
 
@@ -598,6 +705,30 @@ func (h *Admin) UpdateAccessKeys(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "access_keys": config.GetAccessKeyConfigs()})
+}
+
+func (h *Admin) UpdateChannelModelFailurePolicy(c *gin.Context) {
+	var req struct {
+		Threshold int `json:"threshold"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		return
+	}
+	if req.Threshold < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "threshold must be greater than 0"})
+		return
+	}
+	if err := config.UpdateChannelModelFailureThreshold(req.Threshold); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	cfg := config.Get()
+	c.JSON(http.StatusOK, gin.H{
+		"channel_model_failure_policy": gin.H{
+			"threshold": cfg.Server.ChannelModelFailureThreshold,
+		},
+	})
 }
 
 func (h *Admin) UpdateModelSystemPrompts(c *gin.Context) {

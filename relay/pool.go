@@ -21,6 +21,7 @@ func NewChannelFromConfig(cc config.ChannelConfig) *Channel {
 		ch.Enabled = *cc.Enabled
 	}
 	ch.SetDisabledKeys(cc.DisabledKeys)
+	ch.SetDisabledModels(cc.DisabledModels)
 	return ch
 }
 
@@ -213,6 +214,17 @@ func (p *Pool) ResetChannelKeyFailure(channelName string, keyIndex int) bool {
 	return false
 }
 
+func (p *Pool) ResetChannelModelFailure(channelName string, modelName string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, ch := range p.channels {
+		if ch.Name == channelName {
+			return ch.ResetModelFailure(modelName)
+		}
+	}
+	return false
+}
+
 // GetAvailableModels returns client-visible model names across healthy channels.
 func (p *Pool) GetAvailableModels() []model.ModelObject {
 	p.mu.RLock()
@@ -232,6 +244,9 @@ func (p *Pool) GetAvailableModels() []model.ModelObject {
 			if mappedUpstream[m] {
 				continue
 			}
+			if !ch.HasModel(m) {
+				continue
+			}
 			if !seen[m] {
 				seen[m] = true
 				models = append(models, model.ModelObject{
@@ -243,6 +258,9 @@ func (p *Pool) GetAvailableModels() []model.ModelObject {
 			}
 		}
 		for alias, upstream := range ch.ModelMapping {
+			if !ch.HasModel(alias) {
+				continue
+			}
 			if !seen[alias] {
 				seen[alias] = true
 				models = append(models, model.ModelObject{

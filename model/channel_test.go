@@ -77,6 +77,28 @@ func TestRecordKeyResultResetsConsecutiveFailures(t *testing.T) {
 	}
 }
 
+func TestRecordModelResultDisablesAndRestoresChannelModel(t *testing.T) {
+	ch := NewChannel("test", "openai", "https://example.com", "", "", false, []string{"key-a"}, []string{"m"}, nil, 10, 100)
+	ch.RecordModelResult("m", "m", 502, time.Millisecond, errors.New("bad gateway"), 2)
+	if !ch.HasModel("m") {
+		t.Fatalf("expected model available before threshold")
+	}
+	ch.RecordModelResult("m", "m", 502, time.Millisecond, errors.New("bad gateway"), 2)
+	if ch.HasModel("m") {
+		t.Fatalf("expected model disabled at threshold")
+	}
+	stats := ch.GetModelStats()
+	if len(stats) != 1 || !stats[0].Disabled || stats[0].ConsecutiveFailure != 2 {
+		t.Fatalf("unexpected model stats: %#v", stats)
+	}
+	if !ch.ResetModelFailure("m") {
+		t.Fatalf("expected model reset to succeed")
+	}
+	if !ch.HasModel("m") {
+		t.Fatalf("expected model available after reset")
+	}
+}
+
 func TestResetKeyFailureRestoresSuspendedKey(t *testing.T) {
 	ch := NewChannel("test", "openai", "https://example.com", "", "", false, []string{"key-a", "key-b"}, []string{"m"}, nil, 10, 100)
 	for i := 0; i < 3; i++ {

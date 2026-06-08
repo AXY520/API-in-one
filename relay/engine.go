@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"api-in-one/config"
 	"api-in-one/model"
 	"api-in-one/relay/adaptor"
 	"bytes"
@@ -181,6 +182,7 @@ func (e *Engine) doChat(ctx context.Context, req *model.ChatCompletionRequest, p
 		result, status, err := e.doRequest(ctx, ad, ch, key, &reqCopy, adaptorType)
 		attemptDuration := time.Since(attemptStart)
 		ch.RecordKeyResult(key, status, attemptDuration, err)
+		e.recordModelResult(ch, req.Model, resolvedModel, status, attemptDuration, err)
 		attemptLog := AttemptLog{
 			Attempt:     attempt + 1,
 			Channel:     ch.Name,
@@ -272,6 +274,7 @@ func (e *Engine) DoRaw(ctx context.Context, protocol, requestedModel string, str
 			status = resp.StatusCode
 		}
 		ch.RecordKeyResult(key, status, attemptDuration, err)
+		e.recordModelResult(ch, requestedModel, resolvedModel, status, attemptDuration, err)
 		attemptLog := AttemptLog{
 			Attempt:     attempt + 1,
 			Channel:     ch.Name,
@@ -365,6 +368,7 @@ func (e *Engine) DoRawResponses(ctx context.Context, requestedModel string, stre
 			status = resp.StatusCode
 		}
 		ch.RecordKeyResult(key, status, attemptDuration, err)
+		e.recordModelResult(ch, requestedModel, resolvedModel, status, attemptDuration, err)
 		attemptLog := AttemptLog{
 			Attempt:     attempt + 1,
 			Channel:     ch.Name,
@@ -416,6 +420,19 @@ func (e *Engine) DoRawResponses(ctx context.Context, requestedModel string, stre
 		Err:      fmt.Errorf("%w: %v", ErrAllRetriesFailed, lastErr),
 		Attempts: attempts,
 	}
+}
+
+func (e *Engine) recordModelResult(ch *model.Channel, requestedModel, resolvedModel string, status int, latency time.Duration, err error) {
+	threshold := config.Get().Server.ChannelModelFailureThreshold
+	disabled := ch.RecordModelResult(requestedModel, resolvedModel, status, latency, err, threshold)
+	if !disabled {
+		return
+	}
+	if saveErr := config.UpdateChannelDisabledModels(ch.Name, ch.DisabledModelList()); saveErr != nil {
+		slog.Warn("failed to persist disabled channel model", "channel", ch.Name, "model", requestedModel, "error", saveErr)
+		return
+	}
+	slog.Warn("channel model temporarily disabled after consecutive failures", "channel", ch.Name, "model", requestedModel, "resolved_model", resolvedModel, "threshold", threshold)
 }
 
 func replaceRawModel(rawBody []byte, modelName string) ([]byte, error) {

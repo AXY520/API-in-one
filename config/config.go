@@ -13,12 +13,13 @@ import (
 )
 
 type ServerConfig struct {
-	Port                      int               `json:"port"       yaml:"port"`
-	AdminKey                  string            `json:"admin_key"  yaml:"admin_key"`
-	AccessKeys                []AccessKeyConfig `json:"access_keys" yaml:"access_keys"`
-	ModelSystemPrompts        map[string]string `json:"model_system_prompts,omitempty" yaml:"model_system_prompts,omitempty"`
-	KeyFailureThreshold       int               `json:"key_failure_threshold,omitempty" yaml:"key_failure_threshold,omitempty"`
-	KeyFailureCooldownSeconds int               `json:"key_failure_cooldown_seconds,omitempty" yaml:"key_failure_cooldown_seconds,omitempty"`
+	Port                         int               `json:"port"       yaml:"port"`
+	AdminKey                     string            `json:"admin_key"  yaml:"admin_key"`
+	AccessKeys                   []AccessKeyConfig `json:"access_keys" yaml:"access_keys"`
+	ModelSystemPrompts           map[string]string `json:"model_system_prompts,omitempty" yaml:"model_system_prompts,omitempty"`
+	KeyFailureThreshold          int               `json:"key_failure_threshold,omitempty" yaml:"key_failure_threshold,omitempty"`
+	KeyFailureCooldownSeconds    int               `json:"key_failure_cooldown_seconds,omitempty" yaml:"key_failure_cooldown_seconds,omitempty"`
+	ChannelModelFailureThreshold int               `json:"channel_model_failure_threshold,omitempty" yaml:"channel_model_failure_threshold,omitempty"`
 }
 
 type AccessKeyConfig struct {
@@ -53,6 +54,7 @@ type ChannelConfig struct {
 	DisableMiMoCompat bool                `json:"disable_mimo_compat,omitempty" yaml:"disable_mimo_compat,omitempty"`
 	Keys              []string            `json:"keys"          yaml:"keys"`
 	DisabledKeys      []string            `json:"disabled_keys,omitempty" yaml:"disabled_keys,omitempty"`
+	DisabledModels    []string            `json:"disabled_models,omitempty" yaml:"disabled_models,omitempty"`
 	KeyModels         map[string][]string `json:"key_models,omitempty" yaml:"key_models,omitempty"`
 	Models            []string            `json:"models"        yaml:"models"`
 	ModelMapping      map[string]string   `json:"model_mapping"  yaml:"model_mapping"`
@@ -111,6 +113,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Server.ModelSystemPrompts = make(map[string]string)
 	}
 	applyKeyFailureDefaults(&cfg.Server)
+	applyChannelModelFailureDefaults(&cfg.Server)
 	normalizeAccessKeys(&cfg.Server.AccessKeys)
 	normalizeModelSystemPrompts(cfg.Server.ModelSystemPrompts)
 	for i := range cfg.Channels {
@@ -128,8 +131,15 @@ func applyDefaults(cfg *Config) {
 			cfg.Channels[i].ModelMapping = make(map[string]string)
 		}
 		cfg.Channels[i].KeyModels = filterKeyModels(cfg.Channels[i].KeyModels, cfg.Channels[i].Keys, cfg.Channels[i].Models)
+		cfg.Channels[i].DisabledModels = filterVisibleChannelModels(cfg.Channels[i].DisabledModels, cfg.Channels[i].Models, cfg.Channels[i].ModelMapping)
 	}
 	model.SetKeyFailurePolicy(cfg.Server.KeyFailureThreshold, time.Duration(cfg.Server.KeyFailureCooldownSeconds)*time.Second)
+}
+
+func applyChannelModelFailureDefaults(server *ServerConfig) {
+	if server.ChannelModelFailureThreshold < 1 {
+		server.ChannelModelFailureThreshold = 3
+	}
 }
 
 func applyKeyFailureDefaults(server *ServerConfig) {
@@ -235,10 +245,14 @@ func UpdateChannel(name string, ch ChannelConfig) error {
 			if ch.DisabledKeys == nil {
 				ch.DisabledKeys = existing.DisabledKeys
 			}
+			if ch.DisabledModels == nil {
+				ch.DisabledModels = existing.DisabledModels
+			}
 			if ch.KeyModels == nil {
 				ch.KeyModels = existing.KeyModels
 			}
 			ch.DisabledKeys = filterExistingKeys(ch.DisabledKeys, ch.Keys)
+			ch.DisabledModels = filterVisibleChannelModels(ch.DisabledModels, ch.Models, ch.ModelMapping)
 			ch.KeyModels = filterKeyModels(ch.KeyModels, ch.Keys, ch.Models)
 			applyChannelDefaults(&ch)
 			globalConfig.Channels[i] = ch
@@ -258,6 +272,7 @@ func UpdateChannelKeys(name string, keys []string) error {
 			}
 			existing.Keys = keys
 			existing.DisabledKeys = filterExistingKeys(existing.DisabledKeys, keys)
+			existing.DisabledModels = filterVisibleChannelModels(existing.DisabledModels, existing.Models, existing.ModelMapping)
 			existing.KeyModels = filterKeyModels(existing.KeyModels, keys, existing.Models)
 			applyChannelDefaults(&existing)
 			globalConfig.Channels[i] = existing
@@ -332,12 +347,48 @@ func filterKeyModels(values map[string][]string, keys []string, models []string)
 	return result
 }
 
+func filterVisibleChannelModels(values []string, models []string, mapping map[string]string) []string {
+	allowed := make(map[string]bool, len(models)+len(mapping)*2)
+	for _, modelName := range models {
+		allowed[modelName] = true
+	}
+	for alias, upstream := range mapping {
+		allowed[alias] = true
+		allowed[upstream] = true
+	}
+	result := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, modelName := range values {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" || seen[modelName] || !allowed[modelName] {
+			continue
+		}
+		seen[modelName] = true
+		result = append(result, modelName)
+	}
+	return result
+}
+
 func UpdateChannelDisabledKeys(name string, disabledKeys []string) error {
 	configMu.Lock()
 	defer configMu.Unlock()
 	for i, existing := range globalConfig.Channels {
 		if existing.Name == name {
 			existing.DisabledKeys = disabledKeys
+			applyChannelDefaults(&existing)
+			globalConfig.Channels[i] = existing
+			return saveToDiskLocked()
+		}
+	}
+	return fmt.Errorf("channel %q not found", name)
+}
+
+func UpdateChannelDisabledModels(name string, disabledModels []string) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	for i, existing := range globalConfig.Channels {
+		if existing.Name == name {
+			existing.DisabledModels = filterVisibleChannelModels(disabledModels, existing.Models, existing.ModelMapping)
 			applyChannelDefaults(&existing)
 			globalConfig.Channels[i] = existing
 			return saveToDiskLocked()
@@ -463,6 +514,14 @@ func UpdateKeyFailurePolicy(threshold, cooldownSeconds int) error {
 	globalConfig.Server.KeyFailureCooldownSeconds = cooldownSeconds
 	applyKeyFailureDefaults(&globalConfig.Server)
 	model.SetKeyFailurePolicy(globalConfig.Server.KeyFailureThreshold, time.Duration(globalConfig.Server.KeyFailureCooldownSeconds)*time.Second)
+	return saveToDiskLocked()
+}
+
+func UpdateChannelModelFailureThreshold(threshold int) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	globalConfig.Server.ChannelModelFailureThreshold = threshold
+	applyChannelModelFailureDefaults(&globalConfig.Server)
 	return saveToDiskLocked()
 }
 

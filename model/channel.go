@@ -17,6 +17,7 @@ type Channel struct {
 	DisableMiMoCompat bool
 	Keys              []string
 	DisabledKeys      map[string]bool
+	DisabledModels    map[string]bool
 	KeyModels         map[string][]string
 	Models            []string
 	ModelMapping      map[string]string // alias → upstream model id
@@ -24,6 +25,7 @@ type Channel struct {
 	Weight            int
 	Enabled           bool
 	KeyStats          []KeyStats
+	ModelStats        map[string]ModelStats
 
 	keyIndex  atomic.Uint64
 	failCount atomic.Int32
@@ -45,10 +47,25 @@ type KeyStats struct {
 	SuspendedUntil     string
 }
 
+type ModelStats struct {
+	Model              string `json:"model"`
+	ResolvedModel      string `json:"resolved_model,omitempty"`
+	Disabled           bool   `json:"disabled"`
+	TotalRequests      int64  `json:"total_requests"`
+	SuccessRequests    int64  `json:"success_requests"`
+	FailureRequests    int64  `json:"failure_requests"`
+	ConsecutiveFailure int64  `json:"consecutive_failure"`
+	LastStatus         int    `json:"last_status"`
+	LastError          string `json:"last_error,omitempty"`
+	LastUsedAt         string `json:"last_used_at,omitempty"`
+	LastLatencyMs      int64  `json:"last_latency_ms"`
+}
+
 type ChannelRuntimeState struct {
-	KeyIndex  uint64
-	FailCount int32
-	KeyStats  map[string]KeyStats
+	KeyIndex   uint64
+	FailCount  int32
+	KeyStats   map[string]KeyStats
+	ModelStats map[string]ModelStats
 }
 
 var (
@@ -58,6 +75,33 @@ var (
 
 func init() {
 	SetKeyFailurePolicy(3, 10*time.Minute)
+}
+
+func (c *Channel) SetDisabledModels(models []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.DisabledModels = make(map[string]bool, len(models))
+	for _, modelName := range models {
+		c.DisabledModels[modelName] = true
+	}
+	c.ensureModelStatsLocked()
+}
+
+func (c *Channel) DisabledModelList() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	result := make([]string, 0, len(c.DisabledModels))
+	for _, modelName := range c.Models {
+		if c.DisabledModels[modelName] {
+			result = append(result, modelName)
+		}
+	}
+	for alias := range c.ModelMapping {
+		if c.DisabledModels[alias] {
+			result = append(result, alias)
+		}
+	}
+	return result
 }
 
 func SetKeyFailurePolicy(threshold int, cooldown time.Duration) {
@@ -251,6 +295,63 @@ func (c *Channel) RecordKeyResult(key string, status int, latency time.Duration,
 	}
 }
 
+func (c *Channel) RecordModelResult(modelName, resolvedModel string, status int, latency time.Duration, err error, failureThreshold int) bool {
+	if modelName == "" {
+		return false
+	}
+	if failureThreshold < 1 {
+		failureThreshold = 1
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureModelStatsLocked()
+	stat := c.ModelStats[modelName]
+	stat.Model = modelName
+	stat.ResolvedModel = resolvedModel
+	stat.Disabled = c.DisabledModels[modelName] || c.DisabledModels[resolvedModel]
+	stat.TotalRequests++
+	stat.LastStatus = status
+	stat.LastUsedAt = time.Now().Format("2006-01-02 15:04:05")
+	stat.LastLatencyMs = latency.Milliseconds()
+	if err != nil || status < 200 || status >= 400 {
+		stat.FailureRequests++
+		stat.ConsecutiveFailure++
+		if err != nil {
+			stat.LastError = err.Error()
+		}
+		if stat.ConsecutiveFailure >= int64(failureThreshold) {
+			c.DisabledModels[modelName] = true
+			if resolvedModel != "" {
+				c.DisabledModels[resolvedModel] = true
+			}
+			stat.Disabled = true
+		}
+	} else {
+		stat.SuccessRequests++
+		stat.ConsecutiveFailure = 0
+		stat.LastError = ""
+	}
+	c.ModelStats[modelName] = stat
+	return stat.Disabled
+}
+
+func (c *Channel) ResetModelFailure(modelName string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureModelStatsLocked()
+	delete(c.DisabledModels, modelName)
+	if upstream, ok := c.ModelMapping[modelName]; ok {
+		delete(c.DisabledModels, upstream)
+	}
+	stat := c.ModelStats[modelName]
+	stat.Model = modelName
+	stat.Disabled = false
+	stat.ConsecutiveFailure = 0
+	stat.LastError = ""
+	c.ModelStats[modelName] = stat
+	return true
+}
+
 func (c *Channel) ResetKeyFailure(index int) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -300,17 +401,48 @@ func (c *Channel) GetKeyStats() []KeyStats {
 	return result
 }
 
+func (c *Channel) GetModelStats() []ModelStats {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureModelStatsLocked()
+	result := make([]ModelStats, 0, len(c.Models)+len(c.ModelMapping))
+	seen := make(map[string]bool)
+	for _, modelName := range c.Models {
+		stat := c.ModelStats[modelName]
+		stat.Model = modelName
+		stat.ResolvedModel = c.ResolveModel(modelName)
+		stat.Disabled = c.DisabledModels[modelName] || c.DisabledModels[stat.ResolvedModel]
+		result = append(result, stat)
+		seen[modelName] = true
+	}
+	for alias, upstream := range c.ModelMapping {
+		if seen[alias] {
+			continue
+		}
+		stat := c.ModelStats[alias]
+		stat.Model = alias
+		stat.ResolvedModel = upstream
+		stat.Disabled = c.DisabledModels[alias] || c.DisabledModels[upstream]
+		result = append(result, stat)
+	}
+	return result
+}
+
 func (c *Channel) SnapshotRuntimeState() ChannelRuntimeState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.ensureKeyStatsLocked()
 	state := ChannelRuntimeState{
-		KeyIndex:  c.keyIndex.Load(),
-		FailCount: c.failCount.Load(),
-		KeyStats:  make(map[string]KeyStats, len(c.Keys)),
+		KeyIndex:   c.keyIndex.Load(),
+		FailCount:  c.failCount.Load(),
+		KeyStats:   make(map[string]KeyStats, len(c.Keys)),
+		ModelStats: make(map[string]ModelStats, len(c.ModelStats)),
 	}
 	for i, key := range c.Keys {
 		state.KeyStats[key] = c.KeyStats[i]
+	}
+	for modelName, stat := range c.ModelStats {
+		state.ModelStats[modelName] = stat
 	}
 	return state
 }
@@ -330,6 +462,11 @@ func (c *Channel) RestoreRuntimeState(state ChannelRuntimeState) {
 		stat.MaskedKey = maskKey(key)
 		stat.Disabled = c.DisabledKeys[key]
 		c.KeyStats[i] = stat
+	}
+	for modelName, stat := range state.ModelStats {
+		stat.Model = modelName
+		stat.Disabled = c.DisabledModels[modelName] || c.DisabledModels[stat.ResolvedModel]
+		c.ModelStats[modelName] = stat
 	}
 }
 
@@ -362,14 +499,20 @@ func (c *Channel) IsHealthy() bool {
 
 // HasModel checks if this channel can serve the given model (directly or via mapping).
 func (c *Channel) HasModel(model string) bool {
+	if c.DisabledModels != nil && c.DisabledModels[model] {
+		return false
+	}
 	// Check if it's directly in the models list
 	for _, m := range c.Models {
-		if m == model {
+		if m == model && !c.DisabledModels[m] {
 			return true
 		}
 	}
 	// Check if it's an alias that maps to a model in the list
 	if upstream, ok := c.ModelMapping[model]; ok {
+		if c.DisabledModels[upstream] {
+			return false
+		}
 		for _, m := range c.Models {
 			if m == upstream {
 				return true
@@ -434,6 +577,15 @@ func (c *Channel) ensureKeyStatsLocked() {
 		stat.MaskedKey = masked
 		stat.Disabled = c.DisabledKeys[key]
 		c.KeyStats[i] = stat
+	}
+}
+
+func (c *Channel) ensureModelStatsLocked() {
+	if c.DisabledModels == nil {
+		c.DisabledModels = make(map[string]bool)
+	}
+	if c.ModelStats == nil {
+		c.ModelStats = make(map[string]ModelStats)
 	}
 }
 

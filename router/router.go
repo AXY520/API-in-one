@@ -58,6 +58,7 @@ func Setup(engine *relay.Engine, pool *relay.Pool, indexHTML []byte) *gin.Engine
 		admin.GET("/channels/by-name/keys", adminHandler.GetChannelKeys)
 		admin.PUT("/channels/by-name/keys", adminHandler.UpdateChannelKeys)
 		admin.PUT("/channels/by-name/keys/:index/state", adminHandler.UpdateChannelKeyState)
+		admin.PUT("/channels/by-name/models/state", adminHandler.UpdateChannelModelState)
 		admin.POST("/channels/by-name/probe", adminHandler.ProbeChannelKeys)
 		admin.DELETE("/channels/by-name", adminHandler.DeleteChannel)
 		admin.PUT("/channels/:name", adminHandler.UpdateChannel)
@@ -72,6 +73,7 @@ func Setup(engine *relay.Engine, pool *relay.Pool, indexHTML []byte) *gin.Engine
 		admin.PUT("/access-keys", adminHandler.UpdateAccessKeys)
 		admin.PUT("/model-system-prompts", adminHandler.UpdateModelSystemPrompts)
 		admin.PUT("/key-failure-policy", adminHandler.UpdateKeyFailurePolicy)
+		admin.PUT("/channel-model-failure-policy", adminHandler.UpdateChannelModelFailurePolicy)
 		admin.POST("/models/fetch", adminHandler.FetchModels)
 		// Stats
 		admin.GET("/stats", adminHandler.GetStats)
