@@ -53,6 +53,13 @@ func Setup(engine *relay.Engine, pool *relay.Pool, indexHTML []byte) *gin.Engine
 	{
 		admin.GET("/channels", adminHandler.ListChannels)
 		admin.POST("/channels", adminHandler.CreateChannel)
+		admin.PUT("/channels/by-name", adminHandler.UpdateChannel)
+		admin.PUT("/channels/by-name/state", adminHandler.UpdateChannelState)
+		admin.GET("/channels/by-name/keys", adminHandler.GetChannelKeys)
+		admin.PUT("/channels/by-name/keys", adminHandler.UpdateChannelKeys)
+		admin.PUT("/channels/by-name/keys/:index/state", adminHandler.UpdateChannelKeyState)
+		admin.POST("/channels/by-name/probe", adminHandler.ProbeChannelKeys)
+		admin.DELETE("/channels/by-name", adminHandler.DeleteChannel)
 		admin.PUT("/channels/:name", adminHandler.UpdateChannel)
 		admin.PUT("/channels/:name/state", adminHandler.UpdateChannelState)
 		admin.GET("/channels/:name/keys", adminHandler.GetChannelKeys)

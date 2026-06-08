@@ -168,6 +168,13 @@ func findChannelConfig(name string) *config.ChannelConfig {
 	return nil
 }
 
+func channelNameFromRequest(c *gin.Context) string {
+	if name := strings.TrimSpace(c.Query("name")); name != "" {
+		return name
+	}
+	return c.Param("name")
+}
+
 func maskKeys(keys []string) []string {
 	masked := make([]string, 0, len(keys))
 	for _, key := range keys {
@@ -185,7 +192,7 @@ func maskKey(key string) string {
 
 // UpdateChannel updates an existing channel by name.
 func (h *Admin) UpdateChannel(c *gin.Context) {
-	name := c.Param("name")
+	name := channelNameFromRequest(c)
 	var ch config.ChannelConfig
 	if err := c.ShouldBindJSON(&ch); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
@@ -215,7 +222,7 @@ func (h *Admin) UpdateChannel(c *gin.Context) {
 
 // GetChannelKeys returns the raw upstream API keys for a channel.
 func (h *Admin) GetChannelKeys(c *gin.Context) {
-	name := c.Param("name")
+	name := channelNameFromRequest(c)
 	ch := findChannelConfig(name)
 	if ch == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("channel %q not found", name)})
@@ -233,7 +240,7 @@ func (h *Admin) GetChannelKeys(c *gin.Context) {
 
 // UpdateChannelKeys replaces only the upstream API keys for a channel.
 func (h *Admin) UpdateChannelKeys(c *gin.Context) {
-	name := c.Param("name")
+	name := channelNameFromRequest(c)
 	var req struct {
 		Keys            interface{}         `json:"keys"`
 		DisabledKeys    []string            `json:"disabled_keys"`
@@ -304,7 +311,7 @@ func unmaskKeyModels(keys []string, byKey map[string][]string, byIndex map[strin
 
 // UpdateChannelKeyState enables or disables one upstream key by index.
 func (h *Admin) UpdateChannelKeyState(c *gin.Context) {
-	name := c.Param("name")
+	name := channelNameFromRequest(c)
 	index, err := strconv.Atoi(c.Param("index"))
 	if err != nil || index < 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key index"})
@@ -364,7 +371,7 @@ func (h *Admin) UpdateChannelKeyState(c *gin.Context) {
 
 // UpdateChannelState enables or disables a whole channel.
 func (h *Admin) UpdateChannelState(c *gin.Context) {
-	name := c.Param("name")
+	name := channelNameFromRequest(c)
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -386,7 +393,7 @@ func (h *Admin) UpdateChannelState(c *gin.Context) {
 
 // ProbeChannelKeys sends a tiny non-stream request with every key in a channel.
 func (h *Admin) ProbeChannelKeys(c *gin.Context) {
-	name := c.Param("name")
+	name := channelNameFromRequest(c)
 	ch := findChannelConfig(name)
 	if ch == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("channel %q not found", name)})
@@ -540,7 +547,7 @@ func parseKeys(raw interface{}) []string {
 
 // DeleteChannel removes a channel by name.
 func (h *Admin) DeleteChannel(c *gin.Context) {
-	name := c.Param("name")
+	name := channelNameFromRequest(c)
 	if err := config.DeleteChannel(name); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return

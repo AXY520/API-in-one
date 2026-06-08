@@ -1306,6 +1306,11 @@
       return resp.json();
     }
 
+    function channelByNamePath(action = '', name) {
+      const suffix = action ? `/${action.replace(/^\/+/, '')}` : '';
+      return `/admin/channels/by-name${suffix}?name=${encodeURIComponent(name)}`;
+    }
+
     // Tab control
     function switchTab(tab) {
       document.querySelectorAll('.nav-item').forEach(el => {
@@ -1746,7 +1751,7 @@
 
     async function setChannelEnabled(name, enabled) {
       try {
-        await api(`/admin/channels/${encodeURIComponent(name)}/state`, {
+        await api(channelByNamePath('state', name), {
           method: 'PUT',
           body: JSON.stringify({ enabled })
         });
@@ -1817,7 +1822,7 @@
       }
 
       openModal('channel-modal');
-      api(`/admin/channels/${encodeURIComponent(ch.name)}/keys`)
+      api(channelByNamePath('keys', ch.name))
         .then(data => {
           hydrateActiveKeyRows(data, ch);
           syncKeyRowsToHiddenInput();
@@ -1887,7 +1892,7 @@
         let fetchKey = firstKey;
         if (!fetchKey && document.getElementById('edit-name').value) {
           const cName = document.getElementById('edit-name').value;
-          const kData = await api(`/admin/channels/${encodeURIComponent(cName)}/keys`);
+          const kData = await api(channelByNamePath('keys', cName));
           fetchKey = kData.keys && kData.keys[0] ? kData.keys[0] : '';
         }
 
@@ -1983,7 +1988,7 @@
 
       try {
         if (editName) {
-          await api(`/admin/channels/${encodeURIComponent(editName)}`, {
+          await api(channelByNamePath('', editName), {
             method: 'PUT',
             body: JSON.stringify(body)
           });
@@ -2005,7 +2010,7 @@
     async function deleteChannel(name) {
       if (confirm(`确认永久删除路由渠道 ${name} 吗？`)) {
         try {
-          await api(`/admin/channels/${encodeURIComponent(name)}`, { method: 'DELETE' });
+          await api(channelByNamePath('', name), { method: 'DELETE' });
           showToast(`渠道 ${name} 已被彻底移除`);
           loadData();
         } catch(e) {
@@ -2221,14 +2226,14 @@
         return;
       }
       try {
-        await api(`/admin/channels/${encodeURIComponent(cName)}/keys/${index}/state`, {
+        await api(channelByNamePath(`keys/${index}/state`, cName), {
           method: 'PUT',
           body: JSON.stringify({ disabled: false, recover: true })
         });
         const channelsData = await api('/admin/channels');
         const latest = (channelsData.channels || []).find(ch => ch.name === cName) || activeKeyChannel;
         activeKeyChannel = latest;
-        const kData = await api(`/admin/channels/${encodeURIComponent(cName)}/keys`);
+        const kData = await api(channelByNamePath('keys', cName));
         hydrateActiveKeyRows(kData, latest);
         syncKeyRowsToHiddenInput();
         renderKeyRows();
@@ -2253,7 +2258,7 @@
         params.set('model', model);
       }
       const query = params.toString();
-      const path = `/admin/channels/${encodeURIComponent(cName)}/probe${query ? `?${query}` : ''}`;
+      const path = `${channelByNamePath('probe', cName)}${query ? `&${query}` : ''}`;
       
       showToast(indexFilter !== null ? `正在用 ${model || '默认模型'} 测试此 Key...` : `正在用 ${model || '默认模型'} 对该渠道所有 Key 探活...`);
       
@@ -2297,12 +2302,12 @@
       }
 
       try {
-        await api(`/admin/channels/${encodeURIComponent(cName)}/keys`, {
+        await api(channelByNamePath('keys', cName), {
           method: 'PUT',
           body: JSON.stringify({ keys, disabled_keys: disabledKeys, key_models: keyModels })
         });
         showToast('Keys 已更新保存');
-        const data = await api(`/admin/channels/${encodeURIComponent(cName)}/keys`);
+        const data = await api(channelByNamePath('keys', cName));
         const channelsData = await api('/admin/channels');
         const latest = (channelsData.channels || []).find(ch => ch.name === cName) || activeKeyChannel;
         activeKeyChannel = latest;
