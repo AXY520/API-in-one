@@ -17,6 +17,7 @@ type Channel = model.Channel
 func NewChannelFromConfig(cc config.ChannelConfig) *Channel {
 	ch := model.NewChannel(cc.Name, cc.Type, cc.BaseURL, cc.BaseURLClaude, cc.BaseURLGemini, cc.SupportsResponses, cc.Keys, cc.Models, cc.ModelMapping, cc.Priority, cc.Weight, cc.KeyModels)
 	ch.DisableMiMoCompat = cc.DisableMiMoCompat
+	ch.Temporary = cc.Temporary
 	if cc.Enabled != nil {
 		ch.Enabled = *cc.Enabled
 	}
@@ -146,6 +147,23 @@ func (p *Pool) weightedCandidatesLocked(requestedModel string, protocol string) 
 
 	if len(candidates) == 0 {
 		return nil, ErrNoAvailableChannel
+	}
+
+	hasTemporary := false
+	for _, c := range candidates {
+		if c.channel.Temporary {
+			hasTemporary = true
+			break
+		}
+	}
+	if hasTemporary {
+		filtered := candidates[:0]
+		for _, c := range candidates {
+			if c.channel.Temporary {
+				filtered = append(filtered, c)
+			}
+		}
+		candidates = filtered
 	}
 
 	lowestPriority := candidates[0].channel.Priority

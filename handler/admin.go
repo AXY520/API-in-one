@@ -46,6 +46,7 @@ type ChannelStatus struct {
 	BaseURLGemini     string            `json:"base_url_gemini,omitempty"`
 	SupportsResponses bool              `json:"supports_responses"`
 	DisableMiMoCompat bool              `json:"disable_mimo_compat"`
+	Temporary         bool              `json:"temporary"`
 	KeyCount          int               `json:"key_count"`
 	MaskedKeys        []string          `json:"masked_keys"`
 	KeyStats          []KeyStatus       `json:"key_stats"`
@@ -103,6 +104,7 @@ func (h *Admin) ListChannels(c *gin.Context) {
 			BaseURLGemini:     ch.BaseURLGemini,
 			SupportsResponses: ch.SupportsResponses,
 			DisableMiMoCompat: ch.DisableMiMoCompat,
+			Temporary:         ch.Temporary,
 			KeyCount:          len(ch.Keys),
 			MaskedKeys:        maskKeys(ch.Keys),
 			KeyStats:          buildKeyStatus(ch.GetKeyStats()),
@@ -700,6 +702,10 @@ func (h *Admin) UpdateAccessKeys(c *gin.Context) {
 		return
 	}
 	req.AccessKeys = h.normalizeAccessKeyModelPolicies(req.AccessKeys)
+	if err := validateAccessKeyExpirations(req.AccessKeys); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err := config.UpdateAccessKeys(req.AccessKeys); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update access keys: " + err.Error()})
 		return
@@ -797,6 +803,19 @@ func (h *Admin) normalizeAccessKeyModelPolicies(keys []config.AccessKeyConfig) [
 		keys[i].ExcludedModels = filterVisibleModels(keys[i].ExcludedModels, visible)
 	}
 	return keys
+}
+
+func validateAccessKeyExpirations(keys []config.AccessKeyConfig) error {
+	for _, key := range keys {
+		expiresAt := strings.TrimSpace(key.ExpiresAt)
+		if expiresAt == "" {
+			continue
+		}
+		if _, err := time.Parse(time.RFC3339, expiresAt); err != nil {
+			return fmt.Errorf("invalid expires_at for key %s: expected RFC3339", maskKey(key.Key))
+		}
+	}
+	return nil
 }
 
 func filterVisibleModels(models []string, visible map[string]bool) []string {

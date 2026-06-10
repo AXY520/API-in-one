@@ -4,6 +4,7 @@ import (
 	"api-in-one/config"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,7 +27,7 @@ func Auth() gin.HandlerFunc {
 		}
 
 		// Access keys → user access
-		if accessKey, ok := config.FindAccessKey(token); ok && accessKey.Key != "" {
+		if accessKey, ok := config.FindAccessKey(token); ok && accessKey.Key != "" && !config.AccessKeyExpired(accessKey, time.Now()) {
 			c.Set("is_admin", false)
 			c.Set("api_key", token)
 			c.Set("api_key_masked", maskKey(token))
@@ -49,7 +50,7 @@ func APIAuth() gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		if accessKey, ok := config.FindAccessKey(token); ok && accessKey.Key != "" {
+		if accessKey, ok := config.FindAccessKey(token); ok && accessKey.Key != "" && !config.AccessKeyExpired(accessKey, time.Now()) {
 			c.Set("is_admin", false)
 			c.Set("api_key", token)
 			c.Set("api_key_masked", maskKey(token))

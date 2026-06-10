@@ -26,6 +26,7 @@ type AccessKeyConfig struct {
 	Key            string   `json:"key" yaml:"key"`
 	AllowedModels  []string `json:"allowed_models,omitempty" yaml:"allowed_models,omitempty"`
 	ExcludedModels []string `json:"excluded_models,omitempty" yaml:"excluded_models,omitempty"`
+	ExpiresAt      string   `json:"expires_at,omitempty" yaml:"expires_at,omitempty"`
 }
 
 func (a *AccessKeyConfig) UnmarshalYAML(value *yaml.Node) error {
@@ -33,6 +34,7 @@ func (a *AccessKeyConfig) UnmarshalYAML(value *yaml.Node) error {
 		a.Key = value.Value
 		a.AllowedModels = nil
 		a.ExcludedModels = nil
+		a.ExpiresAt = ""
 		return nil
 	}
 	type plain AccessKeyConfig
@@ -52,6 +54,7 @@ type ChannelConfig struct {
 	BaseURLGemini     string              `json:"base_url_gemini" yaml:"base_url_gemini"` // optional: Gemini protocol URL
 	SupportsResponses bool                `json:"supports_responses" yaml:"supports_responses"`
 	DisableMiMoCompat bool                `json:"disable_mimo_compat,omitempty" yaml:"disable_mimo_compat,omitempty"`
+	Temporary         bool                `json:"temporary,omitempty" yaml:"temporary,omitempty"`
 	Keys              []string            `json:"keys"          yaml:"keys"`
 	DisabledKeys      []string            `json:"disabled_keys,omitempty" yaml:"disabled_keys,omitempty"`
 	DisabledModels    []string            `json:"disabled_models,omitempty" yaml:"disabled_models,omitempty"`
@@ -176,6 +179,7 @@ func normalizeAccessKeys(keys *[]AccessKeyConfig) {
 		}
 		key.AllowedModels = cleanStringList(key.AllowedModels)
 		key.ExcludedModels = cleanStringList(key.ExcludedModels)
+		key.ExpiresAt = strings.TrimSpace(key.ExpiresAt)
 		cleaned = append(cleaned, key)
 		seen[key.Key] = true
 	}
@@ -530,6 +534,18 @@ func FindAccessKey(token string) (AccessKeyConfig, bool) {
 	defer configMu.RUnlock()
 	key, ok := fastAccessKeys[token]
 	return key, ok
+}
+
+func AccessKeyExpired(accessKey AccessKeyConfig, now time.Time) bool {
+	expiresAt := strings.TrimSpace(accessKey.ExpiresAt)
+	if expiresAt == "" {
+		return false
+	}
+	expires, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		return true
+	}
+	return !now.Before(expires)
 }
 
 func AccessKeyCanUseModel(accessKey AccessKeyConfig, model string) bool {

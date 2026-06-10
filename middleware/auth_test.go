@@ -19,6 +19,8 @@ server:
   admin_key: admin-secret
   access_keys:
     - key: client-secret
+    - key: expired-secret
+      expires_at: "2000-01-01T00:00:00Z"
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -38,6 +40,7 @@ server:
 	}{
 		{name: "admin key", token: "admin-secret", wantStatus: http.StatusUnauthorized},
 		{name: "access key", token: "client-secret", wantStatus: http.StatusNoContent},
+		{name: "expired access key", token: "expired-secret", wantStatus: http.StatusUnauthorized},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, "/v1/models", nil)

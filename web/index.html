@@ -545,9 +545,318 @@
         max-width: calc(100vw - 4.5rem);
       }
     }
+
+    /* Command bench redesign */
+    :root {
+      --ink: #16201b;
+      --muted: #65716a;
+      --line: #d9ddd7;
+      --line-strong: #b9c2b9;
+      --paper: #f5f4ee;
+      --surface: #fffef9;
+      --surface-2: #ecebe3;
+      --rail: #232820;
+      --accent: #0f8f6b;
+      --amber: #b7791f;
+      --rose: #be3b4a;
+      --indigo: #4f46a3;
+      --shadow: 0 18px 42px rgba(31, 36, 30, 0.10);
+      --fluent-blue: var(--accent);
+      --fluent-line: var(--line);
+      --fluent-line-strong: var(--line-strong);
+      --fluent-shadow: var(--shadow);
+      --fluent-shadow-hover: 0 20px 46px rgba(15, 143, 107, 0.16);
+    }
+
+    .dark {
+      --ink: #eef1e8;
+      --muted: #aeb7aa;
+      --line: #333b34;
+      --line-strong: #526053;
+      --paper: #111510;
+      --surface: #191f18;
+      --surface-2: #20271f;
+      --rail: #080a08;
+      --accent: #35b98f;
+      --amber: #e3a84b;
+      --rose: #e35a6d;
+      --indigo: #8f8be8;
+      --shadow: 0 22px 46px rgba(0, 0, 0, 0.34);
+      --fluent-blue: var(--accent);
+      --fluent-line: var(--line);
+      --fluent-line-strong: var(--line-strong);
+      --fluent-shadow: var(--shadow);
+    }
+
+    html, html.dark {
+      background: var(--paper) !important;
+    }
+
+    body, .dark body {
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(22, 32, 27, 0.045) 1px, transparent 1px),
+        linear-gradient(rgba(22, 32, 27, 0.035) 1px, transparent 1px),
+        var(--paper) !important;
+      background-size: 22px 22px !important;
+    }
+
+    .dark body {
+      background:
+        linear-gradient(90deg, rgba(238, 241, 232, 0.05) 1px, transparent 1px),
+        linear-gradient(rgba(238, 241, 232, 0.04) 1px, transparent 1px),
+        var(--paper) !important;
+    }
+
+    body::before {
+      content: none !important;
+    }
+
+    .glass-card,
+    .dark .glass-card {
+      background: var(--surface) !important;
+      border: 1px solid var(--line) !important;
+      box-shadow: var(--shadow) !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+
+    .glass-card::before {
+      content: none !important;
+    }
+
+    .btn-primary,
+    .btn-primary:hover {
+      background: var(--accent) !important;
+      border-color: var(--accent) !important;
+      box-shadow: none !important;
+    }
+
+    .btn:hover {
+      transform: none;
+    }
+
+    .input, .select, .textarea,
+    .dark .input, .dark .select, .dark .textarea {
+      background: var(--surface) !important;
+      border-color: var(--line) !important;
+      box-shadow: none !important;
+    }
+
+    .fluent-brand-mark {
+      background: var(--rail) !important;
+      box-shadow: none !important;
+      color: #f3f0df;
+    }
+
+    .command-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .command-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 60;
+      display: grid;
+      grid-template-columns: minmax(15rem, 1fr) auto minmax(15rem, 1fr);
+      gap: 1rem;
+      align-items: center;
+      padding: 0.875rem 1.25rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+    }
+
+    .command-nav {
+      display: inline-grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.25rem;
+      padding: 0.25rem;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+
+    .command-nav .nav-item {
+      min-width: 7rem;
+      justify-content: center;
+      border-radius: 0.375rem !important;
+      border: 1px solid transparent;
+      padding: 0.55rem 0.75rem;
+      color: var(--muted) !important;
+      background: transparent !important;
+    }
+
+    .command-nav .nav-item.border-cyan-500 {
+      border-left-width: 1px !important;
+      border-color: var(--line-strong) !important;
+      background: var(--surface) !important;
+      color: var(--ink) !important;
+      box-shadow: none !important;
+    }
+
+    .command-nav .nav-item.border-cyan-500::before {
+      content: none !important;
+    }
+
+    .command-stage {
+      width: min(1480px, 100%);
+      margin: 0 auto;
+      padding: 1.25rem;
+    }
+
+    .bench-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(18rem, 0.6fr);
+      gap: 1rem;
+      align-items: stretch;
+      margin-bottom: 1rem;
+    }
+
+    .bench-title {
+      border-left: 0.35rem solid var(--accent);
+      padding-left: 1rem;
+    }
+
+    .metric-ledger {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .metric-cell {
+      padding: 1rem;
+      border-right: 1px solid var(--line);
+    }
+
+    .metric-cell:last-child {
+      border-right: 0;
+    }
+
+    .workbench-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(18rem, 0.7fr);
+      gap: 1rem;
+    }
+
+    .ops-panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .route-matrix {
+      display: grid !important;
+      grid-template-columns: 1fr !important;
+      gap: 0 !important;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .route-row {
+      display: grid;
+      grid-template-columns: minmax(14rem, 1.15fr) minmax(14rem, 1fr) minmax(13rem, 0.9fr) auto;
+      gap: 1rem;
+      align-items: center;
+      min-height: 6.25rem;
+      padding: 0.95rem 1rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .route-row:last-child {
+      border-bottom: 0;
+    }
+
+    .route-row:hover {
+      background: color-mix(in srgb, var(--accent) 7%, transparent);
+    }
+
+    .route-name {
+      font-size: 1rem;
+      font-weight: 760;
+      color: var(--ink);
+    }
+
+    .route-meta {
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    .channel-model-strip {
+      min-height: 0;
+      max-height: 3.2rem;
+    }
+
+    .channel-model-strip::after {
+      background: linear-gradient(to bottom, transparent, var(--surface)) !important;
+    }
+
+    .channel-model-chip,
+    .channel-model-more {
+      border-radius: 0.3rem;
+      box-shadow: none;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      width: fit-content;
+      border: 1px solid var(--line);
+      padding: 0.2rem 0.45rem;
+      font-size: 0.68rem;
+      font-weight: 740;
+      color: var(--muted);
+      background: var(--surface-2);
+    }
+
+    .status-pill::before {
+      content: "";
+      width: 0.45rem;
+      height: 0.45rem;
+      background: currentColor;
+    }
+
+    .status-ok { color: var(--accent); }
+    .status-off { color: var(--muted); }
+    .status-bad { color: var(--rose); }
+    .status-temp { color: var(--amber); }
+
+    .table :where(th) {
+      background: var(--surface-2) !important;
+    }
+
+    @media (max-width: 960px) {
+      .command-topbar {
+        position: relative;
+        grid-template-columns: 1fr;
+      }
+      .command-nav {
+        width: 100%;
+        overflow-x: auto;
+      }
+      .command-nav .nav-item {
+        min-width: 5.75rem;
+      }
+      .bench-hero,
+      .workbench-grid {
+        grid-template-columns: 1fr;
+      }
+      .metric-ledger {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .metric-cell:nth-child(2) {
+        border-right: 0;
+      }
+      .route-row {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
-<body class="min-h-screen md:h-screen text-slate-700 dark:text-slate-200 antialiased overflow-x-hidden md:overflow-hidden transition-colors duration-300">
+<body class="min-h-screen text-slate-700 dark:text-slate-200 antialiased overflow-x-hidden transition-colors duration-300">
 
   <!-- Login Page -->
   <div id="login-overlay" class="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -572,358 +881,227 @@
   </div>
 
   <!-- Main Application Wrapper -->
-  <div class="fluent-shell hidden min-h-screen md:h-screen flex flex-col md:flex-row overflow-visible md:overflow-hidden" id="app">
-    
-    <!-- Sidebar / Navigation -->
-    <aside class="fluent-sidebar w-full md:w-72 shrink-0 md:h-screen sticky top-0 border-b md:border-b-0 md:border-r border-slate-200/70 dark:border-white/10 flex flex-col p-6 z-50 transition-colors duration-300">
-      
-      <div class="flex items-center justify-between mb-3 md:mb-8">
-        <div class="flex items-center gap-3">
-          <div class="fluent-brand-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-extrabold text-white text-lg">
-            API
-          </div>
-          <div>
-            <h1 class="font-semibold text-lg text-slate-950 dark:text-white leading-tight">API-in-one</h1>
-            <p class="text-xs text-slate-500 dark:text-slate-400">网关控制面板</p>
-          </div>
+  <div class="command-shell hidden" id="app">
+    <header class="command-topbar">
+      <div class="flex min-w-0 items-center gap-3">
+        <div class="fluent-brand-mark flex h-10 w-10 shrink-0 items-center justify-center font-black">A1</div>
+        <div class="min-w-0">
+          <div class="text-sm font-black tracking-wide text-[var(--ink)]">API-in-one</div>
+          <div class="truncate text-xs font-mono text-[var(--muted)]" id="gw-endpoint">Loading...</div>
         </div>
-        <!-- Theme Toggle Button -->
-        <button class="btn btn-ghost btn-sm btn-circle hover:bg-slate-200 dark:hover:bg-white/10 text-slate-500 dark:text-slate-400" onclick="toggleTheme()" id="theme-toggle-btn">
-          <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
-          <i data-lucide="moon" class="w-5 h-5 block dark:hidden"></i>
-        </button>
       </div>
 
-      <!-- Nav Links -->
-      <nav class="flex-1 space-y-1.5">
-        <button class="nav-item flex items-center gap-3 w-full px-4 py-3 rounded-xl font-medium transition-all duration-200 text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5 text-left" data-tab="dashboard" onclick="switchTab('dashboard')">
-          <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
-          仪表盘
+      <nav class="command-nav">
+        <button class="nav-item flex items-center gap-2 text-sm font-semibold" data-tab="dashboard" onclick="switchTab('dashboard')">
+          <i data-lucide="monitor-dot" class="h-4 w-4"></i><span>总览</span>
         </button>
-        <button class="nav-item flex items-center gap-3 w-full px-4 py-3 rounded-xl font-medium transition-all duration-200 text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5 text-left" data-tab="channels" onclick="switchTab('channels')">
-          <i data-lucide="git-merge" class="w-5 h-5"></i>
-          渠道路由
+        <button class="nav-item flex items-center gap-2 text-sm font-semibold" data-tab="channels" onclick="switchTab('channels')">
+          <i data-lucide="route" class="h-4 w-4"></i><span>路由</span>
         </button>
-        <button class="nav-item flex items-center gap-3 w-full px-4 py-3 rounded-xl font-medium transition-all duration-200 text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5 text-left" data-tab="stats" onclick="switchTab('stats')">
-          <i data-lucide="activity" class="w-5 h-5"></i>
-          流量日志
+        <button class="nav-item flex items-center gap-2 text-sm font-semibold" data-tab="stats" onclick="switchTab('stats')">
+          <i data-lucide="list-tree" class="h-4 w-4"></i><span>流水</span>
         </button>
-        <button class="nav-item flex items-center gap-3 w-full px-4 py-3 rounded-xl font-medium transition-all duration-200 text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-white/5 text-left" data-tab="settings" onclick="switchTab('settings')">
-          <i data-lucide="shield-check" class="w-5 h-5"></i>
-          凭据及策略
+        <button class="nav-item flex items-center gap-2 text-sm font-semibold" data-tab="settings" onclick="switchTab('settings')">
+          <i data-lucide="key-round" class="h-4 w-4"></i><span>策略</span>
         </button>
       </nav>
 
-      <!-- Bottom Panel info -->
-      <div class="mt-auto pt-6 border-t border-slate-200 dark:border-white/5">
-        <div class="rounded-2xl bg-white/40 dark:bg-white/5 p-4 border border-slate-200/70 dark:border-white/10 backdrop-blur-xl">
-          <div class="text-[10px] uppercase font-bold tracking-wider text-slate-500">网关状态</div>
-          <div class="flex items-center gap-2 mt-1.5">
-            <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span class="text-sm font-medium text-slate-700 dark:text-slate-300" id="gw-version">Running (v1.0.0)</span>
-          </div>
-          <div class="mt-2 text-xs font-mono text-[#0078d4] dark:text-sky-300 truncate" id="gw-endpoint">Loading...</div>
-        </div>
-        <button class="btn btn-outline btn-sm w-full border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/5 rounded-xl mt-4" onclick="doLogout()">
-          <i data-lucide="log-out" class="w-4 h-4 mr-2"></i> 退出控制台
+      <div class="flex items-center justify-end gap-2">
+        <span class="hidden text-xs font-semibold text-[var(--muted)] sm:inline" id="gw-version">Running (v1.0.0)</span>
+        <button class="btn btn-sm border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)]" onclick="toggleTheme()" id="theme-toggle-btn">
+          <i data-lucide="sun" class="h-4 w-4 hidden dark:block"></i>
+          <i data-lucide="moon" class="h-4 w-4 block dark:hidden"></i>
+        </button>
+        <button class="btn btn-sm border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)]" onclick="doLogout()">
+          <i data-lucide="log-out" class="h-4 w-4"></i>
         </button>
       </div>
-    </aside>
+    </header>
 
-    <!-- Main Content Area -->
-    <main class="flex-1 min-w-0 overflow-visible md:overflow-y-auto p-6 md:p-10">
-
-      <!-- ==================== TAB: DASHBOARD ==================== -->
-      <div id="tab-dashboard" class="tab-panel hidden space-y-8">
-        <div class="flex flex-col gap-2">
-          <div class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-500">System Dashboard</div>
-          <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white md:text-4xl">系统总览</h2>
-        </div>
-
-        <!-- Metric Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5" id="stats-summary-grid">
-          <!-- Total Requests -->
-          <div class="rounded-3xl glass-card p-6 flex flex-col justify-between">
-            <div class="flex items-center justify-between text-slate-500 dark:text-slate-400">
-              <span class="text-sm font-medium">总计请求数</span>
-              <div class="p-2 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
-            </div>
-            <div class="mt-4">
-              <div class="text-3xl font-bold text-slate-900 dark:text-white font-mono" id="stat-total-reqs">0</div>
-              <span class="text-xs text-slate-500 dark:text-slate-400 mt-1 block">历史吞吐总量</span>
+    <main class="command-stage">
+      <div id="tab-dashboard" class="tab-panel hidden space-y-4">
+        <section class="bench-hero">
+          <div class="ops-panel p-5">
+            <div class="bench-title">
+              <div class="text-xs font-bold uppercase text-[var(--muted)]">Gateway command bench</div>
+              <h2 class="mt-1 text-3xl font-black text-[var(--ink)]">运行态总览</h2>
             </div>
           </div>
-          <!-- Success Rate -->
-          <div class="rounded-3xl glass-card p-6 flex flex-col justify-between">
-            <div class="flex items-center justify-between text-slate-500 dark:text-slate-400">
-              <span class="text-sm font-medium">路由成功率</span>
-              <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><i data-lucide="check-circle" class="w-5 h-5"></i></div>
-            </div>
-            <div class="mt-4">
-              <div class="text-3xl font-bold text-slate-900 dark:text-white font-mono" id="stat-success-rate">0%</div>
-              <span class="text-xs text-slate-500 dark:text-slate-400 mt-1 block">有效响应率统计</span>
-            </div>
-          </div>
-          <!-- Avg Latency -->
-          <div class="rounded-3xl glass-card p-6 flex flex-col justify-between">
-            <div class="flex items-center justify-between text-slate-500 dark:text-slate-400">
-              <span class="text-sm font-medium">平均时延</span>
-              <div class="p-2 rounded-lg bg-sky-500/10 text-[#0078d4] dark:text-sky-300"><i data-lucide="timer" class="w-5 h-5"></i></div>
-            </div>
-            <div class="mt-4">
-              <div class="text-3xl font-bold text-slate-900 dark:text-white font-mono" id="stat-avg-latency">0 ms</div>
-              <span class="text-xs text-slate-500 dark:text-slate-400 mt-1 block">上游平均延迟时间</span>
-            </div>
-          </div>
-          <!-- Healthy Channels -->
-          <div class="rounded-3xl glass-card p-6 flex flex-col justify-between">
-            <div class="flex items-center justify-between text-slate-500 dark:text-slate-400">
-              <span class="text-sm font-medium">存活渠道</span>
-              <div class="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400"><i data-lucide="shield" class="w-5 h-5"></i></div>
-            </div>
-            <div class="mt-4">
-              <div class="text-3xl font-bold text-slate-900 dark:text-white font-mono" id="stat-active-ch">0 / 0</div>
-              <span class="text-xs text-slate-500 dark:text-slate-400 mt-1 block">健康运行上游渠道数</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Charts Grid -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div class="lg:col-span-2 rounded-3xl glass-card p-6 flex flex-col">
-            <h3 class="font-bold text-lg text-slate-900 dark:text-white mb-4">延迟与请求趋势</h3>
-            <div class="relative flex-1 min-h-[300px]">
-              <canvas id="trafficTrendChart"></canvas>
-            </div>
-          </div>
-          <div class="rounded-3xl glass-card p-6 flex flex-col">
-            <h3 class="font-bold text-lg text-slate-900 dark:text-white mb-4">协议分布占比</h3>
-            <div class="relative flex-1 min-h-[250px] flex items-center justify-center">
-              <canvas id="protocolPieChart"></canvas>
-            </div>
-          </div>
-        </div>
-
-        <!-- System Hot-operations -->
-        <div class="rounded-3xl glass-card p-6">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h3 class="font-bold text-lg text-slate-900 dark:text-white">网关热重载 & 重置</h3>
-              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">即时同步磁盘配置文件变动，或清空不重要的历史审计日志。</p>
-            </div>
-            <div class="flex flex-wrap gap-3">
-              <button class="btn border-none bg-slate-200 dark:bg-white/5 hover:bg-slate-300 dark:hover:bg-white/10 text-slate-900 dark:text-white rounded-xl" onclick="reloadConfig()">
-                <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i> 重载网关配置
-              </button>
-              <button class="btn btn-error btn-outline rounded-xl" onclick="clearLogsPrompt()">
-                <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i> 清除流量审计
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ==================== TAB: CHANNELS ==================== -->
-      <div id="tab-channels" class="tab-panel hidden space-y-8">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div class="flex flex-col gap-1.5">
-            <div class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-500">Routing Upstream Settings</div>
-            <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">渠道路由管理</h2>
-          </div>
-          <button class="btn btn-primary text-white" onclick="openAddChannel()">
-            <i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i> 添加渠道
-          </button>
-        </div>
-
-        <!-- Channels Container Grid -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4" id="channels-list-container">
-          <!-- Dynamic injection -->
-        </div>
-      </div>
-
-      <!-- ==================== TAB: STATS / LOGS ==================== -->
-      <div id="tab-stats" class="tab-panel hidden space-y-8">
-        <div class="flex flex-col gap-1.5">
-          <div class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-500">Traffic Stream Ledger</div>
-          <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white font-sans">流量流水审计</h2>
-        </div>
-
-        <!-- Filter Panel -->
-        <div class="rounded-3xl glass-card p-6 space-y-4">
-          <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">接入协议</span></label>
-              <select class="select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-protocol" onchange="resetLogPageAndLoad()">
-                <option value="">全部</option>
-                <option value="openai">OpenAI</option>
-                <option value="claude-inbound">Claude</option>
-                <option value="gemini-inbound">Gemini</option>
-                <option value="responses">Responses</option>
-              </select>
-            </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">调用模型</span></label>
-              <select class="select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-model" onchange="resetLogPageAndLoad()">
-                <option value="">全部</option>
-              </select>
-            </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">路由渠道</span></label>
-              <select class="select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-channel" onchange="resetLogPageAndLoad()">
-                <option value="">全部</option>
-              </select>
-            </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">访问令牌</span></label>
-              <select class="select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-access-key" onchange="resetLogPageAndLoad()">
-                <option value="">全部</option>
-              </select>
-            </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">响应状态</span></label>
-              <select class="select select-bordered select-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-status" onchange="resetLogPageAndLoad()">
-                <option value="">全部</option>
-                <option value="success">成功 (2xx)</option>
-                <option value="error">错误 (非2xx)</option>
-                <option value="429">频率限制 (429)</option>
-                <option value="502">坏网关 (502)</option>
-              </select>
-            </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs text-slate-500 dark:text-slate-400">关键词搜索</span></label>
-              <input class="input input-bordered input-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl text-slate-800 dark:text-white" id="log-filter-q" placeholder="模糊搜索..." onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
-            </div>
-          </div>
-          <div class="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-white/5">
-            <span class="text-xs text-slate-500 dark:text-slate-400" id="log-count">共检索到 0 条审计流水</span>
-            <button class="btn btn-sm btn-ghost hover:bg-slate-200 dark:hover:bg-white/5 text-slate-600 dark:text-slate-300 rounded-xl" onclick="resetLogPageAndLoad()">
-              <i data-lucide="rotate-ccw" class="w-4 h-4 mr-1"></i>重置过滤
+          <div class="ops-panel grid grid-cols-2 gap-px bg-[var(--line)] p-px">
+            <button class="bg-[var(--surface)] p-4 text-left text-sm font-bold text-[var(--ink)]" onclick="reloadConfig()">
+              <i data-lucide="refresh-cw" class="mb-2 h-5 w-5 text-[var(--accent)]"></i>重载配置
+            </button>
+            <button class="bg-[var(--surface)] p-4 text-left text-sm font-bold text-[var(--ink)]" onclick="clearLogsPrompt()">
+              <i data-lucide="trash-2" class="mb-2 h-5 w-5 text-[var(--rose)]"></i>清除审计
             </button>
           </div>
-        </div>
+        </section>
 
-        <!-- Logs Table -->
-        <div class="rounded-3xl glass-card overflow-hidden">
-            <div class="overflow-x-auto min-h-[400px]">
-              <table class="table table-sm w-full text-slate-700 dark:text-slate-300">
-                <thead>
-                  <tr class="border-b border-slate-200 dark:border-white/5 text-slate-500 dark:text-slate-400 uppercase text-xs">
-                    <th class="w-[4.5rem] md:w-[5rem]">时间</th>
-                    <th>Key</th>
-                    <th>协议 / 模式</th>
-                    <th>模型</th>
-                    <th>渠道</th>
-                    <th>延时/状态</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody id="logs-table-body">
-                  <!-- Dynamic Injection -->
-                </tbody>
-              </table>
+        <section class="metric-ledger" id="stats-summary-grid">
+          <div class="metric-cell">
+            <div class="text-xs font-bold text-[var(--muted)]">请求总量</div>
+            <div class="mt-2 font-mono text-3xl font-black text-[var(--ink)]" id="stat-total-reqs">0</div>
+          </div>
+          <div class="metric-cell">
+            <div class="text-xs font-bold text-[var(--muted)]">成功率</div>
+            <div class="mt-2 font-mono text-3xl font-black text-[var(--accent)]" id="stat-success-rate">0%</div>
+          </div>
+          <div class="metric-cell">
+            <div class="text-xs font-bold text-[var(--muted)]">平均时延</div>
+            <div class="mt-2 font-mono text-3xl font-black text-[var(--amber)]" id="stat-avg-latency">0 ms</div>
+          </div>
+          <div class="metric-cell">
+            <div class="text-xs font-bold text-[var(--muted)]">渠道健康</div>
+            <div class="mt-2 font-mono text-3xl font-black text-[var(--indigo)]" id="stat-active-ch">0 / 0</div>
+          </div>
+        </section>
+
+        <section class="workbench-grid">
+          <div class="ops-panel p-5">
+            <div class="mb-4 flex items-center justify-between border-b border-[var(--line)] pb-3">
+              <h3 class="font-black text-[var(--ink)]">渠道延迟 / 调用量</h3>
+              <span class="text-xs text-[var(--muted)]">按上游聚合</span>
             </div>
-            <!-- Pagination -->
-            <div class="p-4 border-t border-slate-200 dark:border-white/5 flex items-center justify-between">
-              <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-500 dark:text-slate-400" onclick="changeLogPage(-1)">
-                <i data-lucide="chevron-left" class="w-4 h-4"></i> 上一页
-              </button>
-              <span class="text-sm font-medium text-slate-700 dark:text-slate-300 font-mono" id="log-page-info">1 / 1</span>
-              <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-500 dark:text-slate-400" onclick="changeLogPage(1)">
-                下一页 <i data-lucide="chevron-right" class="w-4 h-4"></i>
-              </button>
+            <div class="relative min-h-[340px]"><canvas id="trafficTrendChart"></canvas></div>
+          </div>
+          <div class="ops-panel p-5">
+            <div class="mb-4 border-b border-[var(--line)] pb-3">
+              <h3 class="font-black text-[var(--ink)]">协议占比</h3>
             </div>
-        </div>
+            <div class="relative min-h-[340px]"><canvas id="protocolPieChart"></canvas></div>
+          </div>
+        </section>
       </div>
 
-      <!-- ==================== TAB: SETTINGS ==================== -->
-      <div id="tab-settings" class="tab-panel hidden space-y-8">
-        <div class="flex flex-col gap-1.5">
-          <div class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-500">Vault & Custom Prompt Policies</div>
-          <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">凭据及策略库</h2>
-        </div>
-
-        <!-- Token policies -->
-        <div class="rounded-3xl glass-card p-6 space-y-5">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 class="font-bold text-lg text-slate-900 dark:text-white">用户访问令牌 Access Key 管理</h3>
-              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">定义带有不同调用模型白名单/黑名单权限的访问密钥。</p>
-            </div>
-            <div class="flex gap-2">
-              <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-white rounded-xl" onclick="addAccessKeyPolicy()">
-                <i data-lucide="plus" class="w-4 h-4 mr-1"></i> 添加令牌
-              </button>
-              <button class="btn btn-sm btn-primary text-white" onclick="saveAccessKeyPolicies()">
-                保存所有密钥
-              </button>
+      <div id="tab-channels" class="tab-panel hidden space-y-4">
+        <section class="bench-hero">
+          <div class="ops-panel p-5">
+            <div class="bench-title">
+              <div class="text-xs font-bold uppercase text-[var(--muted)]">Routing matrix</div>
+              <h2 class="mt-1 text-3xl font-black text-[var(--ink)]">渠道路由矩阵</h2>
             </div>
           </div>
-          <div id="access-keys-display" class="space-y-4 pt-2">
-            <!-- Dynamic Injection -->
-          </div>
-        </div>
-
-        <!-- Model prompt injector -->
-        <div class="rounded-3xl glass-card p-6 space-y-5">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 class="font-bold text-lg text-slate-900 dark:text-white">模型 System Prompt 静态注入</h3>
-              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">在代理转发前，向指定客户端可见模型请求的消息流末尾追加注入固定的开发者提示词。</p>
-            </div>
-            <button class="btn btn-sm btn-primary text-white" onclick="openPromptModal()">
-              <i data-lucide="plus" class="w-4 h-4 mr-1"></i> 添加注入
+          <div class="ops-panel flex items-center justify-end p-5">
+            <button class="btn btn-primary text-white" onclick="openAddChannel()">
+              <i data-lucide="plus" class="h-4 w-4"></i>添加渠道
             </button>
           </div>
-          <div id="model-prompts-display" class="space-y-2">
-            <!-- Dynamic Injection -->
-          </div>
-        </div>
+        </section>
+        <div class="route-matrix" id="channels-list-container"></div>
+      </div>
 
-        <!-- Key failure policy -->
-        <div class="rounded-3xl glass-card p-6 space-y-5">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 class="font-bold text-lg text-slate-900 dark:text-white">Key 熔断恢复策略</h3>
-              <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">控制上游 Key 连续失败后挂起，以及自动恢复前的冷却时间。</p>
-            </div>
-            <button class="btn btn-sm btn-primary text-white" onclick="saveKeyFailurePolicy()">
-              保存熔断策略
-            </button>
+      <div id="tab-stats" class="tab-panel hidden space-y-4">
+        <section class="ops-panel p-5">
+          <div class="bench-title mb-5">
+            <div class="text-xs font-bold uppercase text-[var(--muted)]">Traffic ledger</div>
+            <h2 class="mt-1 text-3xl font-black text-[var(--ink)]">流量流水</h2>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div class="form-control">
-              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">连续失败次数</span></label>
-              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl font-mono text-slate-800 dark:text-white" type="number" id="key-failure-threshold" min="1" step="1">
-            </div>
-            <div class="form-control">
-              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">冷却时间（秒）</span></label>
-              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl font-mono text-slate-800 dark:text-white" type="number" id="key-failure-cooldown" min="1" step="1">
+          <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <select class="select select-bordered select-sm" id="log-filter-protocol" onchange="resetLogPageAndLoad()">
+              <option value="">全部协议</option>
+              <option value="openai">OpenAI</option>
+              <option value="claude-inbound">Claude</option>
+              <option value="gemini-inbound">Gemini</option>
+              <option value="responses">Responses</option>
+            </select>
+            <select class="select select-bordered select-sm" id="log-filter-model" onchange="resetLogPageAndLoad()"><option value="">全部模型</option></select>
+            <select class="select select-bordered select-sm" id="log-filter-channel" onchange="resetLogPageAndLoad()"><option value="">全部渠道</option></select>
+            <select class="select select-bordered select-sm" id="log-filter-access-key" onchange="resetLogPageAndLoad()"><option value="">全部令牌</option></select>
+            <select class="select select-bordered select-sm" id="log-filter-status" onchange="resetLogPageAndLoad()">
+              <option value="">全部状态</option>
+              <option value="success">成功 (2xx)</option>
+              <option value="error">错误</option>
+              <option value="429">429</option>
+              <option value="502">502</option>
+            </select>
+            <input class="input input-bordered input-sm" id="log-filter-q" placeholder="搜索..." onkeydown="if(event.key==='Enter')resetLogPageAndLoad()">
+          </div>
+          <div class="mt-4 flex items-center justify-between border-t border-[var(--line)] pt-3">
+            <span class="text-xs text-[var(--muted)]" id="log-count">共检索到 0 条审计流水</span>
+            <button class="btn btn-sm border border-[var(--line)] bg-[var(--surface)]" onclick="resetLogPageAndLoad()">刷新</button>
+          </div>
+        </section>
+
+        <section class="ops-panel overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="table table-sm w-full">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>Key</th>
+                  <th>协议 / 模式</th>
+                  <th>模型</th>
+                  <th>渠道</th>
+                  <th>延时/状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="logs-table-body"></tbody>
+            </table>
+          </div>
+          <div class="flex items-center justify-between border-t border-[var(--line)] p-4">
+            <button class="btn btn-sm border border-[var(--line)] bg-[var(--surface)]" onclick="changeLogPage(-1)">上一页</button>
+            <span class="font-mono text-sm text-[var(--muted)]" id="log-page-info">1 / 1</span>
+            <button class="btn btn-sm border border-[var(--line)] bg-[var(--surface)]" onclick="changeLogPage(1)">下一页</button>
+          </div>
+        </section>
+      </div>
+
+      <div id="tab-settings" class="tab-panel hidden space-y-4">
+        <section class="bench-hero">
+          <div class="ops-panel p-5">
+            <div class="bench-title">
+              <div class="text-xs font-bold uppercase text-[var(--muted)]">Credential vault</div>
+              <h2 class="mt-1 text-3xl font-black text-[var(--ink)]">凭据与策略</h2>
             </div>
           </div>
-          <div class="rounded-2xl border border-slate-200/70 bg-white/35 p-4 dark:border-white/10 dark:bg-white/5">
-            <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-              <div class="form-control max-w-xs">
-                <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">渠道模型连续失败阈值</span></label>
-                <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl font-mono text-slate-800 dark:text-white" type="number" id="channel-model-failure-threshold" min="1" step="1">
+          <div class="ops-panel flex items-center gap-2 p-5 font-mono text-sm" id="admin-key-display"></div>
+        </section>
+
+        <section class="workbench-grid">
+          <div class="ops-panel p-5">
+            <div class="mb-4 flex items-center justify-between border-b border-[var(--line)] pb-3">
+              <h3 class="font-black text-[var(--ink)]">Access Key</h3>
+              <div class="flex gap-2">
+                <button class="btn btn-sm border border-[var(--line)] bg-[var(--surface)]" onclick="addAccessKeyPolicy()">添加</button>
+                <button class="btn btn-sm btn-primary text-white" onclick="saveAccessKeyPolicies()">保存</button>
               </div>
-              <button class="btn btn-sm btn-primary text-white" onclick="saveChannelModelFailurePolicy()">
-                保存模型阈值
-              </button>
             </div>
-            <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">某个渠道的某个模型连续失败达到阈值后，只临时禁用该渠道上的这个模型，恢复需要手动点击模型标签。</p>
+            <div id="access-keys-display" class="space-y-3"></div>
           </div>
-        </div>
 
-        <!-- Admin Key display -->
-        <div class="rounded-3xl glass-card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h3 class="font-bold text-lg text-slate-900 dark:text-white">管理端 Admin Key 凭据</h3>
-            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">此密钥由配置文件直接管理，仅支持在配置文件中更换。</p>
+          <div class="space-y-4">
+            <div class="ops-panel p-5">
+              <div class="mb-4 flex items-center justify-between border-b border-[var(--line)] pb-3">
+                <h3 class="font-black text-[var(--ink)]">模型注入</h3>
+                <button class="btn btn-sm btn-primary text-white" onclick="openPromptModal()">添加</button>
+              </div>
+              <div id="model-prompts-display" class="space-y-2"></div>
+            </div>
+
+            <div class="ops-panel p-5">
+              <div class="mb-4 flex items-center justify-between border-b border-[var(--line)] pb-3">
+                <h3 class="font-black text-[var(--ink)]">熔断策略</h3>
+                <button class="btn btn-sm btn-primary text-white" onclick="saveKeyFailurePolicy()">保存</button>
+              </div>
+              <div class="space-y-3">
+                <label class="form-control">
+                  <span class="label-text text-xs text-[var(--muted)]">Key 连续失败次数</span>
+                  <input class="input input-bordered" type="number" id="key-failure-threshold" min="1" step="1">
+                </label>
+                <label class="form-control">
+                  <span class="label-text text-xs text-[var(--muted)]">冷却时间（秒）</span>
+                  <input class="input input-bordered" type="number" id="key-failure-cooldown" min="1" step="1">
+                </label>
+                <label class="form-control">
+                  <span class="label-text text-xs text-[var(--muted)]">渠道模型失败阈值</span>
+                  <input class="input input-bordered" type="number" id="channel-model-failure-threshold" min="1" step="1">
+                </label>
+                <button class="btn btn-sm border border-[var(--line)] bg-[var(--surface)]" onclick="saveChannelModelFailurePolicy()">保存模型阈值</button>
+              </div>
+            </div>
           </div>
-          <div class="flex items-center gap-2 p-3 bg-slate-200/50 dark:bg-white/5 rounded-2xl border border-slate-300 dark:border-white/5 font-mono text-sm font-semibold max-w-sm truncate" id="admin-key-display">
-            <!-- masked admin key -->
-          </div>
-        </div>
+        </section>
       </div>
     </main>
   </div>
@@ -983,6 +1161,13 @@
             <div>
               <span class="block text-sm font-semibold text-slate-700 dark:text-slate-300">上游已完成 MiMo 适配</span>
               <span class="block text-xs text-slate-500 mt-0.5">适用于直接接入 mimo2api 的渠道。勾选后，本项目不会再对该渠道执行 MiMo 专用工具/Responses 兼容转换。</span>
+            </div>
+          </label>
+          <label class="flex items-start gap-3 p-3 bg-slate-100 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 cursor-pointer mt-2">
+            <input class="checkbox checkbox-primary mt-0.5 rounded-lg" type="checkbox" id="f-temporary">
+            <div>
+              <span class="block text-sm font-semibold text-slate-700 dark:text-slate-300">临时渠道优先调度</span>
+              <span class="block text-xs text-slate-500 mt-0.5">勾选后，只要此临时渠道可用且支持请求模型，调用会优先使用临时渠道。</span>
             </div>
           </label>
         </div>
@@ -1287,7 +1472,7 @@
         .then(() => {
           localStorage.setItem('api-in-one-admin-key', API_KEY);
           document.getElementById('login-overlay').style.display = 'none';
-          document.getElementById('app').style.display = 'flex';
+          document.getElementById('app').style.display = 'grid';
           switchTab('dashboard');
           loadSettings();
           lucide.createIcons();
@@ -1706,9 +1891,9 @@
       const container = document.getElementById('channels-list-container');
       if (channels.length === 0) {
         container.innerHTML = `
-          <div class="col-span-full py-16 text-center text-slate-500 rounded-3xl border border-dashed border-slate-300 dark:border-white/10 glass-card">
-            <i data-lucide="git-merge" class="w-16 h-16 mx-auto text-slate-400 dark:text-slate-700 mb-3"></i>
-            还没有任何路由渠道，点击右上角「添加渠道」
+          <div class="p-10 text-center text-[var(--muted)]">
+            <i data-lucide="route-off" class="mx-auto mb-3 h-10 w-10"></i>
+            还没有任何路由渠道
           </div>
         `;
         lucide.createIcons();
@@ -1718,64 +1903,61 @@
       container.innerHTML = channels.map(ch => {
         const isEnabled = ch.enabled;
         const isHealthy = ch.healthy;
-        
-        let statusBadge = '';
+        let statusClass = 'status-bad';
+        let statusText = '熔断';
         if (!isEnabled) {
-          statusBadge = `<span class="badge bg-slate-200 dark:bg-slate-800 border-none text-slate-500 dark:text-slate-400">已禁用</span>`;
+          statusClass = 'status-off';
+          statusText = '停用';
         } else if (isHealthy) {
-          statusBadge = `<span class="badge bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-none">运行良好</span>`;
-        } else {
-          statusBadge = `<span class="badge bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border-none">故障熔断</span>`;
+          statusClass = 'status-ok';
+          statusText = '在线';
         }
 
         const aliases = Object.keys(ch.model_mapping || {});
         const enabledModels = ch.models || [];
+        const protocolTags = [
+          ch.supports_responses ? 'Responses' : '',
+          ch.disable_mimo_compat ? 'MiMo' : '',
+          ch.temporary ? '临时优先' : '',
+          aliases.length > 0 ? `映射 ${aliases.length}` : '',
+          `Keys ${ch.key_count || 0}`,
+        ].filter(Boolean);
 
         return `
-          <div class="glass-card glass-card-hover rounded-2xl p-4 channel-card">
-            <div class="channel-card-header">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0 flex-1">
-                  <div class="flex min-w-0 items-center gap-2">
-                    <h3 class="min-w-0 flex-1 truncate text-base font-bold text-slate-900 dark:text-white" title="${escAttr(ch.name)}">${esc(ch.name)}</h3>
-                    <span class="shrink-0">${statusBadge}</span>
-                  </div>
-                  <div class="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-                    <span class="shrink-0 rounded-md bg-cyan-100 px-1.5 py-0.5 font-semibold text-cyan-800 dark:bg-cyan-500/10 dark:text-cyan-300">${esc(ch.type)}</span>
-                    <span class="truncate font-mono" title="${escAttr(ch.base_url)}">${esc(ch.base_url)}</span>
-                  </div>
-                </div>
-                <div class="shrink-0 text-right">
-                  <div class="text-lg font-black leading-none text-slate-900 dark:text-white">${enabledModels.length}</div>
-                  <div class="mt-0.5 text-[10px] font-semibold text-slate-400 dark:text-slate-500">模型</div>
-                </div>
+          <div class="route-row">
+            <div class="min-w-0">
+              <div class="mb-2 flex flex-wrap items-center gap-2">
+                <span class="status-pill ${statusClass}">${statusText}</span>
+                ${ch.temporary ? '<span class="status-pill status-temp">临时</span>' : ''}
+                <span class="status-pill">${esc(ch.type)}</span>
               </div>
-              <div class="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                ${ch.supports_responses ? '<span class="badge bg-sky-100 dark:bg-sky-500/10 border-none text-sky-700 dark:text-sky-300 text-[10px]">Responses</span>' : ''}
-                ${ch.disable_mimo_compat ? '<span class="badge bg-emerald-100 dark:bg-emerald-500/10 border-none text-emerald-700 dark:text-emerald-400 text-[10px]">MiMo直连</span>' : ''}
-                ${isEnabled && aliases.length > 0 ? `<span class="badge bg-indigo-100 dark:bg-indigo-500/10 border-none text-indigo-700 dark:text-indigo-300 text-[10px]">映射 ${aliases.length}</span>` : ''}
-                <span class="badge border-none bg-slate-100 text-[10px] text-slate-500 dark:bg-white/5 dark:text-slate-400">Keys ${ch.key_count || 0}</span>
+              <div class="route-name truncate" title="${escAttr(ch.name)}">${esc(ch.name)}</div>
+              <div class="route-meta mt-1 truncate font-mono" title="${escAttr(ch.base_url)}">${esc(ch.base_url)}</div>
+            </div>
+
+            <div class="min-w-0">
+              <div class="mb-2 flex items-center justify-between gap-3">
+                <span class="text-xs font-bold text-[var(--muted)]">${enabledModels.length} models</span>
+                <span class="text-xs font-mono text-[var(--muted)]">P${ch.priority} / W${ch.weight}</span>
+              </div>
+              <div class="channel-model-strip ${enabledModels.length > 10 ? 'is-overflowing' : ''} flex flex-wrap gap-1.5" title="${escAttr(enabledModels.join(', '))}">
+                ${renderChannelModelChips(ch, enabledModels)}
               </div>
             </div>
 
-            <div class="channel-model-strip ${enabledModels.length > 10 ? 'is-overflowing' : ''} flex flex-wrap gap-1.5" title="${escAttr(enabledModels.join(', '))}">
-              ${renderChannelModelChips(ch, enabledModels)}
+            <div class="min-w-0">
+              <div class="flex flex-wrap gap-1.5">
+                ${protocolTags.map(tag => `<span class="status-pill ${tag === '临时优先' ? 'status-temp' : ''}">${esc(tag)}</span>`).join('')}
+              </div>
             </div>
 
-            <!-- Card Actions -->
-            <div class="flex items-center justify-between gap-2 border-t border-slate-200 pt-3 dark:border-white/5">
-              <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-500 dark:text-slate-400">
+            <div class="flex items-center justify-end gap-2">
+              <label class="flex cursor-pointer items-center gap-2 text-xs text-[var(--muted)]">
                 <input class="toggle toggle-xs toggle-primary" type="checkbox" ${ch.enabled ? 'checked' : ''} onchange="setChannelEnabled('${escAttr(ch.name)}', this.checked)">
-                <span>启用渠道</span>
+                启用
               </label>
-              <div class="flex shrink-0 gap-1.5">
-                <button class="btn btn-xs btn-outline border-slate-300 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-cyan-600 dark:hover:text-cyan-400 rounded-lg" onclick='openEditChannel(${JSON.stringify(ch)})'>
-                  编辑
-                </button>
-                <button class="btn btn-xs btn-outline border-slate-300 dark:border-white/10 text-slate-400 hover:bg-rose-100 dark:hover:bg-rose-950/40 text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg" onclick="deleteChannel('${escAttr(ch.name)}')">
-                  删除
-                </button>
-              </div>
+              <button class="btn btn-xs border border-[var(--line)] bg-[var(--surface)]" onclick='openEditChannel(${JSON.stringify(ch)})'>编辑</button>
+              <button class="btn btn-xs border border-[var(--line)] bg-[var(--surface)] text-[var(--rose)]" onclick="deleteChannel('${escAttr(ch.name)}')">删除</button>
             </div>
           </div>
         `;
@@ -1821,6 +2003,7 @@
       document.getElementById('f-baseurl-gemini').value = '';
       document.getElementById('f-supports-responses').checked = false;
       document.getElementById('f-disable-mimo-compat').checked = false;
+      document.getElementById('f-temporary').checked = false;
       document.getElementById('f-keys').value = '';
       document.getElementById('f-models').value = '';
       document.getElementById('f-priority').value = '10';
@@ -1850,6 +2033,7 @@
       document.getElementById('f-baseurl-gemini').value = ch.base_url_gemini || '';
       document.getElementById('f-supports-responses').checked = !!ch.supports_responses;
       document.getElementById('f-disable-mimo-compat').checked = !!ch.disable_mimo_compat;
+      document.getElementById('f-temporary').checked = !!ch.temporary;
       document.getElementById('f-keys').value = '';
       document.getElementById('f-models').value = (ch.models || []).join(', ');
       document.getElementById('f-priority').value = ch.priority;
@@ -1989,6 +2173,7 @@
       const baseurlGemini = document.getElementById('f-baseurl-gemini').value.trim();
       const supportsResponses = document.getElementById('f-supports-responses').checked;
       const disableMiMoCompat = document.getElementById('f-disable-mimo-compat').checked;
+      const temporary = document.getElementById('f-temporary').checked;
       const rawKeys = document.getElementById('f-keys').value;
       const modelsInput = document.getElementById('f-models').value;
       const priority = parseInt(document.getElementById('f-priority').value) || 10;
@@ -2028,6 +2213,7 @@
         base_url_claude: baseurlClaude, base_url_gemini: baseurlGemini,
         supports_responses: supportsResponses,
         disable_mimo_compat: disableMiMoCompat,
+        temporary,
         keys, disabled_keys: disabledKeys, key_models: keyModels,
         models, model_mapping: modelMapping,
         priority, weight, enabled
@@ -2885,14 +3071,34 @@
     function normalizeAccessKeyPolicies(keys) {
       return keys.map(k => {
         if (typeof k === 'string') {
-          return { key: k, allowed_models: [], excluded_models: [] };
+          return { key: k, allowed_models: [], excluded_models: [], expires_at: '' };
         }
         return {
           key: k.key || '',
           allowed_models: Array.isArray(k.allowed_models) ? k.allowed_models : [],
           excluded_models: Array.isArray(k.excluded_models) ? k.excluded_models : [],
+          expires_at: k.expires_at || '',
         };
       });
+    }
+
+    function expiresAtInputValue(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      const offsetMs = date.getTimezoneOffset() * 60000;
+      return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+    }
+
+    function accessKeyExpiryLabel(value) {
+      if (!value) return '永不过期';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '格式无效';
+      return date <= new Date() ? `已过期 ${date.toLocaleString()}` : `有效至 ${date.toLocaleString()}`;
+    }
+
+    function updateAccessKeyExpiry(index, value) {
+      accessKeyPolicies[index].expires_at = value ? new Date(value).toISOString() : '';
     }
 
     function renderAccessKeyPolicies() {
@@ -2910,6 +3116,8 @@
         const masked = maskKeyLocal(item.key);
         const allowedText = item.allowed_models.length === 0 ? '【全部模型均可访问】' : `${item.allowed_models.length} 个受限模型`;
         const excludedText = item.excluded_models.length === 0 ? '【没有模型被排除】' : `${item.excluded_models.length} 个模型已排除`;
+        const expiresValue = expiresAtInputValue(item.expires_at);
+        const expiresLabel = accessKeyExpiryLabel(item.expires_at);
 
         return `
           <div class="p-5 rounded-2xl bg-slate-100/50 dark:bg-white/5 border border-slate-200 dark:border-white/5 space-y-4">
@@ -2927,6 +3135,17 @@
                 <button class="btn btn-sm bg-slate-200 dark:bg-white/5 hover:bg-slate-300 dark:hover:bg-white/10 border-slate-300 dark:border-white/10 text-slate-800 dark:text-white rounded-xl" onclick="generateToken(${index})">
                   自动生成
                 </button>
+              </div>
+            </div>
+
+            <div class="form-control">
+              <label class="label"><span class="label-text text-slate-500 dark:text-slate-400 text-xs">有效期</span></label>
+              <div class="flex flex-col md:flex-row gap-2 md:items-center">
+                <input class="input input-bordered input-sm bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 rounded-xl font-mono text-sm text-slate-800 dark:text-white" type="datetime-local" value="${escAttr(expiresValue)}" oninput="updateAccessKeyExpiry(${index}, this.value)">
+                <button class="btn btn-sm bg-slate-200 dark:bg-white/5 hover:bg-slate-300 dark:hover:bg-white/10 border-slate-300 dark:border-white/10 text-slate-800 dark:text-white rounded-xl" onclick="accessKeyPolicies[${index}].expires_at=''; renderAccessKeyPolicies()">
+                  永不过期
+                </button>
+                <span class="text-xs text-slate-500 dark:text-slate-400">${esc(expiresLabel)}</span>
               </div>
             </div>
 
@@ -2970,7 +3189,7 @@
       const bytes = new Uint8Array(24);
       crypto.getRandomValues(bytes);
       const key = 'sk-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-      accessKeyPolicies.push({ key, allowed_models: [], excluded_models: [] });
+      accessKeyPolicies.push({ key, allowed_models: [], excluded_models: [], expires_at: '' });
       renderAccessKeyPolicies();
     }
 
@@ -2991,7 +3210,8 @@
       const list = accessKeyPolicies.map(k => ({
         key: k.key.trim(),
         allowed_models: k.allowed_models,
-        excluded_models: k.excluded_models
+        excluded_models: k.excluded_models,
+        expires_at: k.expires_at || ''
       })).filter(k => k.key);
 
       try {

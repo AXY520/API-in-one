@@ -15,6 +15,7 @@ type Channel struct {
 	BaseURLGemini     string // optional: Gemini protocol URL
 	SupportsResponses bool   // whether upstream accepts /v1/responses natively
 	DisableMiMoCompat bool
+	Temporary         bool
 	Keys              []string
 	DisabledKeys      map[string]bool
 	DisabledModels    map[string]bool

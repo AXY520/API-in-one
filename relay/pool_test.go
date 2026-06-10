@@ -23,6 +23,23 @@ func TestSelectChannelUsesLowestPriority(t *testing.T) {
 	}
 }
 
+func TestSelectChannelPrefersTemporaryChannel(t *testing.T) {
+	regular := model.NewChannel("regular", "openai", "https://regular.example", "", "", false, []string{"k"}, []string{"m"}, nil, 1, 100)
+	temporary := model.NewChannel("temporary", "openai", "https://temporary.example", "", "", false, []string{"k"}, []string{"m"}, nil, 50, 100)
+	temporary.Temporary = true
+	pool := NewPool([]*model.Channel{regular, temporary})
+
+	for i := 0; i < 5; i++ {
+		ch, _, err := pool.SelectChannel("m")
+		if err != nil {
+			t.Fatalf("select channel: %v", err)
+		}
+		if ch.Name != "temporary" {
+			t.Fatalf("expected temporary channel, got %s", ch.Name)
+		}
+	}
+}
+
 func TestSelectChannelSkipsDisabledChannels(t *testing.T) {
 	disabled := model.NewChannel("disabled", "openai", "https://disabled.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
 	disabled.Enabled = false
