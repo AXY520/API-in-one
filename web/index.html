@@ -957,6 +957,9 @@
         <button class="nav-item flex items-center gap-2 text-sm font-semibold" data-tab="channels" onclick="switchTab('channels')">
           <i data-lucide="route" class="h-4 w-4"></i><span>路由</span>
         </button>
+        <button class="nav-item flex items-center gap-2 text-sm font-semibold" data-tab="temporary" onclick="switchTab('temporary')">
+          <i data-lucide="timer-reset" class="h-4 w-4"></i><span>临时</span>
+        </button>
         <button class="nav-item flex items-center gap-2 text-sm font-semibold" data-tab="stats" onclick="switchTab('stats')">
           <i data-lucide="list-tree" class="h-4 w-4"></i><span>流水</span>
         </button>
@@ -1037,16 +1040,33 @@
           <div class="ops-panel p-5">
             <div class="bench-title">
               <div class="text-xs font-bold uppercase text-[var(--muted)]">Routing matrix</div>
-              <h2 class="mt-1 text-3xl font-black text-[var(--ink)]">渠道路由矩阵</h2>
+              <h2 class="mt-1 text-3xl font-black text-[var(--ink)]">长期渠道</h2>
             </div>
           </div>
           <div class="ops-panel flex items-center justify-end p-5">
             <button class="btn btn-primary text-white" onclick="openAddChannel()">
-              <i data-lucide="plus" class="h-4 w-4"></i>添加渠道
+              <i data-lucide="plus" class="h-4 w-4"></i>添加长期渠道
             </button>
           </div>
         </section>
         <div class="route-matrix" id="channels-list-container"></div>
+      </div>
+
+      <div id="tab-temporary" class="tab-panel hidden space-y-4">
+        <section class="bench-hero">
+          <div class="ops-panel p-5">
+            <div class="bench-title">
+              <div class="text-xs font-bold uppercase text-[var(--muted)]">Short-lived routing</div>
+              <h2 class="mt-1 text-3xl font-black text-[var(--ink)]">临时渠道</h2>
+            </div>
+          </div>
+          <div class="ops-panel flex items-center justify-end p-5">
+            <button class="btn btn-primary text-white" onclick="openAddTemporaryChannel()">
+              <i data-lucide="timer-reset" class="h-4 w-4"></i>添加临时渠道
+            </button>
+          </div>
+        </section>
+        <div class="route-matrix" id="temporary-channels-list-container"></div>
       </div>
 
       <div id="tab-stats" class="tab-panel hidden space-y-4">
@@ -1232,7 +1252,7 @@
                 <input class="input input-bordered bg-[var(--surface)] font-mono text-sm text-[var(--ink)]" type="text" id="f-baseurl-gemini" placeholder="可选，覆盖 Gemini 转发地址">
               </label>
             </div>
-            <div class="mt-3 grid gap-2 md:grid-cols-3">
+            <div class="mt-3 grid gap-2 md:grid-cols-2">
               <label class="switch-row cursor-pointer">
                 <span>
                   <span class="block text-sm font-black text-[var(--ink)]">Responses 原生透传</span>
@@ -1247,13 +1267,7 @@
                 </span>
                 <input class="toggle toggle-primary" type="checkbox" id="f-disable-mimo-compat" onchange="updateChannelBuilderSummary()">
               </label>
-              <label class="switch-row cursor-pointer">
-                <span>
-                  <span class="block text-sm font-black text-[var(--ink)]">临时渠道</span>
-                  <span class="block text-xs text-[var(--muted)]">可用时优先使用，适合短期额度</span>
-                </span>
-                <input class="toggle toggle-warning" type="checkbox" id="f-temporary" onchange="updateChannelBuilderSummary()">
-              </label>
+              <input class="hidden" type="checkbox" id="f-temporary" onchange="updateChannelBuilderSummary()">
             </div>
           </section>
 
@@ -1632,7 +1646,7 @@
       if (tab === 'dashboard') {
         stopLogAutoRefresh();
         loadDashboardStats();
-      } else if (tab === 'channels') {
+      } else if (tab === 'channels' || tab === 'temporary') {
         stopLogAutoRefresh();
         loadData();
       } else if (tab === 'stats') {
@@ -1981,7 +1995,8 @@
     async function loadData() {
       const data = await api('/admin/channels');
       const list = data.channels || [];
-      renderChannelsGrid(list);
+      renderChannelsGrid(list.filter(ch => !ch.temporary), 'channels-list-container', '还没有长期渠道');
+      renderChannelsGrid(list.filter(ch => ch.temporary), 'temporary-channels-list-container', '还没有临时渠道');
     }
 
     function modelHealthStyle(stat) {
@@ -2038,13 +2053,14 @@
       `;
     }
 
-    function renderChannelsGrid(channels) {
-      const container = document.getElementById('channels-list-container');
+    function renderChannelsGrid(channels, containerId = 'channels-list-container', emptyText = '还没有任何路由渠道') {
+      const container = document.getElementById(containerId);
+      if (!container) return;
       if (channels.length === 0) {
         container.innerHTML = `
           <div class="p-10 text-center text-[var(--muted)]">
             <i data-lucide="route-off" class="mx-auto mb-3 h-10 w-10"></i>
-            还没有任何路由渠道
+            ${esc(emptyText)}
           </div>
         `;
         lucide.createIcons();
@@ -2143,8 +2159,8 @@
       }
     }
 
-    function openAddChannel() {
-      document.getElementById('modal-title').textContent = '添加路由渠道';
+    function resetChannelForm({ temporary = false, title = '添加长期渠道' } = {}) {
+      document.getElementById('modal-title').textContent = title;
       document.getElementById('edit-name').value = '';
       document.getElementById('f-name').value = '';
       document.getElementById('f-name').disabled = false;
@@ -2154,7 +2170,7 @@
       document.getElementById('f-baseurl-gemini').value = '';
       document.getElementById('f-supports-responses').checked = false;
       document.getElementById('f-disable-mimo-compat').checked = false;
-      document.getElementById('f-temporary').checked = false;
+      document.getElementById('f-temporary').checked = temporary;
       document.getElementById('f-keys').value = '';
       document.getElementById('f-models').value = '';
       document.getElementById('f-priority').value = '10';
@@ -2174,8 +2190,16 @@
       lucide.createIcons();
     }
 
+    function openAddChannel() {
+      resetChannelForm({ temporary: false, title: '添加长期渠道' });
+    }
+
+    function openAddTemporaryChannel() {
+      resetChannelForm({ temporary: true, title: '添加临时渠道' });
+    }
+
     function openEditChannel(ch) {
-      document.getElementById('modal-title').textContent = '修改渠道 — ' + ch.name;
+      document.getElementById('modal-title').textContent = `${ch.temporary ? '修改临时渠道' : '修改长期渠道'} — ${ch.name}`;
       document.getElementById('edit-name').value = ch.name;
       document.getElementById('f-name').value = ch.name;
       document.getElementById('f-name').disabled = true;
