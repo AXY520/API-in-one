@@ -824,6 +824,89 @@
     .status-bad { color: var(--rose); }
     .status-temp { color: var(--amber); }
 
+    .channel-builder {
+      display: grid;
+      grid-template-columns: minmax(12rem, 0.42fr) minmax(0, 1fr);
+      min-height: 34rem;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .builder-rail {
+      border-right: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+
+    .builder-step {
+      display: flex;
+      gap: 0.75rem;
+      padding: 1rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .builder-step i {
+      color: var(--muted);
+    }
+
+    .builder-section {
+      border-bottom: 1px solid var(--line);
+      padding: 1.15rem;
+    }
+
+    .builder-section:last-child {
+      border-bottom: 0;
+    }
+
+    .protocol-choice {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 0.85rem;
+      text-align: left;
+      color: var(--ink);
+    }
+
+    .protocol-choice.active {
+      border-color: color-mix(in srgb, var(--accent) 70%, var(--line));
+      background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+    }
+
+    .switch-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 0.85rem;
+    }
+
+    .builder-summary {
+      position: sticky;
+      top: 0;
+      display: grid;
+      gap: 0.75rem;
+      border-left: 1px solid var(--line);
+      background: color-mix(in srgb, var(--surface-2) 65%, var(--surface));
+      padding: 1rem;
+    }
+
+    @media (max-width: 960px) {
+      .channel-builder {
+        grid-template-columns: 1fr;
+      }
+      .builder-rail,
+      .builder-summary {
+        border-right: 0;
+        border-left: 0;
+      }
+      .builder-summary {
+        position: static;
+      }
+    }
+
     .table :where(th) {
       background: var(--surface-2) !important;
     }
@@ -1110,131 +1193,235 @@
 
   <!-- Modal: Channel Add/Edit -->
   <div class="modal-overlay" id="channel-modal">
-    <div class="modal-content w-full max-w-3xl glass-card border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
-      <div class="flex items-center justify-between border-b border-slate-200 dark:border-white/5 pb-4">
-        <h3 class="text-xl font-bold text-slate-900 dark:text-white" id="modal-title">添加路由渠道</h3>
+    <div class="modal-content w-full max-w-6xl glass-card border border-[var(--line)] p-0 shadow-2xl max-h-[92vh] overflow-y-auto">
+      <div class="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--line)] bg-[var(--surface)] px-5 py-4">
+        <div>
+          <div class="text-[10px] font-black uppercase text-[var(--muted)]">Channel builder</div>
+          <h3 class="text-xl font-black text-[var(--ink)]" id="modal-title">添加路由渠道</h3>
+        </div>
         <button class="btn btn-sm btn-circle btn-ghost" onclick="closeModal('channel-modal')"><i data-lucide="x" class="w-5 h-5"></i></button>
       </div>
       <input type="hidden" id="edit-name" value="">
 
-      <div class="space-y-6">
-        <!-- Part 1: Basics -->
-        <div class="space-y-3">
-          <div class="text-xs font-bold text-cyan-700 dark:text-sky-300 uppercase tracking-wider">基础参数</div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div class="form-control">
-              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">渠道标识名称 *</span></label>
-              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl text-slate-800 dark:text-white" type="text" id="f-name" placeholder="例如: azure-openai-west">
+      <div class="channel-builder">
+        <aside class="builder-rail">
+          <div class="builder-step">
+            <i data-lucide="route" class="mt-0.5 h-4 w-4"></i>
+            <div>
+              <div class="text-sm font-black text-[var(--ink)]">1. 选择协议</div>
+              <div class="text-xs text-[var(--muted)]">决定如何和上游接口对话</div>
             </div>
-            <div class="form-control">
-              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">模型适配协议 *</span></label>
-              <select class="select select-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl text-slate-800 dark:text-white" id="f-type" onchange="adaptDefaultURL()">
+          </div>
+          <div class="builder-step">
+            <i data-lucide="plug-zap" class="mt-0.5 h-4 w-4"></i>
+            <div>
+              <div class="text-sm font-black text-[var(--ink)]">2. 填连接信息</div>
+              <div class="text-xs text-[var(--muted)]">名称、Base URL 和兼容开关</div>
+            </div>
+          </div>
+          <div class="builder-step">
+            <i data-lucide="key-round" class="mt-0.5 h-4 w-4"></i>
+            <div>
+              <div class="text-sm font-black text-[var(--ink)]">3. 管理上游 Key</div>
+              <div class="text-xs text-[var(--muted)]">支持禁用、探测和模型范围</div>
+            </div>
+          </div>
+          <div class="builder-step">
+            <i data-lucide="boxes" class="mt-0.5 h-4 w-4"></i>
+            <div>
+              <div class="text-sm font-black text-[var(--ink)]">4. 选择模型</div>
+              <div class="text-xs text-[var(--muted)]">可拉取、手填、设置别名</div>
+            </div>
+          </div>
+          <div class="builder-summary" id="channel-builder-summary">
+            <div class="text-xs font-black uppercase text-[var(--muted)]">调度预览</div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
+                <div class="text-[10px] text-[var(--muted)]">协议</div>
+                <div class="font-mono font-black text-[var(--ink)]" id="summary-type">openai</div>
+              </div>
+              <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
+                <div class="text-[10px] text-[var(--muted)]">状态</div>
+                <div class="font-mono font-black text-[var(--ink)]" id="summary-enabled">启用</div>
+              </div>
+              <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
+                <div class="text-[10px] text-[var(--muted)]">模型</div>
+                <div class="font-mono font-black text-[var(--ink)]" id="summary-models">0</div>
+              </div>
+              <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
+                <div class="text-[10px] text-[var(--muted)]">Keys</div>
+                <div class="font-mono font-black text-[var(--ink)]" id="summary-keys">0</div>
+              </div>
+            </div>
+            <div class="border border-[var(--line)] bg-[var(--surface)] p-2 text-xs">
+              <div class="text-[10px] text-[var(--muted)]">调度策略</div>
+              <div class="mt-1 font-mono text-[var(--ink)]" id="summary-routing">priority 10 / weight 100</div>
+            </div>
+            <div class="text-xs leading-relaxed text-[var(--muted)]" id="summary-hint">保存后会按协议、模型和优先级参与调度。</div>
+          </div>
+        </aside>
+
+        <div class="min-w-0">
+          <section class="builder-section">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-xs font-black uppercase text-[var(--muted)]">Protocol</div>
+                <h4 class="text-lg font-black text-[var(--ink)]">上游协议</h4>
+              </div>
+              <select class="select select-bordered hidden" id="f-type" onchange="selectChannelProtocol(this.value)">
                 <option value="openai">OpenAI 兼容协议</option>
                 <option value="claude">Claude (Anthropic) 协议</option>
                 <option value="gemini">Gemini (Google) 协议</option>
               </select>
             </div>
-          </div>
-          <div class="form-control">
-            <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">标准 Base URL *</span></label>
-            <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-sm text-slate-800 dark:text-white" type="text" id="f-baseurl" placeholder="https://api.openai.com/v1">
-          </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div class="form-control">
-              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">Claude 专有 URL（可选）</span></label>
-              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-sm text-slate-800 dark:text-white" type="text" id="f-baseurl-claude" placeholder="https://api.anthropic.com">
-            </div>
-            <div class="form-control">
-              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">Gemini 专有 URL（可选）</span></label>
-              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-sm text-slate-800 dark:text-white" type="text" id="f-baseurl-gemini" placeholder="https://generativelanguage.googleapis.com">
-            </div>
-          </div>
-          <label class="flex items-start gap-3 p-3 bg-slate-100 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 cursor-pointer mt-2">
-            <input class="checkbox checkbox-primary mt-0.5 rounded-lg" type="checkbox" id="f-supports-responses">
-            <div>
-              <span class="block text-sm font-semibold text-slate-700 dark:text-slate-300">原生支持 OpenAI Responses 协议</span>
-              <span class="block text-xs text-slate-500 mt-0.5">如果勾选，/v1/responses 接口会直接透传发给上游；若未勾选，中转器会自动降级翻译为 OpenAI Chat Completions 协议。</span>
-            </div>
-          </label>
-          <label class="flex items-start gap-3 p-3 bg-slate-100 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 cursor-pointer mt-2">
-            <input class="checkbox checkbox-primary mt-0.5 rounded-lg" type="checkbox" id="f-disable-mimo-compat">
-            <div>
-              <span class="block text-sm font-semibold text-slate-700 dark:text-slate-300">上游已完成 MiMo 适配</span>
-              <span class="block text-xs text-slate-500 mt-0.5">适用于直接接入 mimo2api 的渠道。勾选后，本项目不会再对该渠道执行 MiMo 专用工具/Responses 兼容转换。</span>
-            </div>
-          </label>
-          <label class="flex items-start gap-3 p-3 bg-slate-100 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 cursor-pointer mt-2">
-            <input class="checkbox checkbox-primary mt-0.5 rounded-lg" type="checkbox" id="f-temporary">
-            <div>
-              <span class="block text-sm font-semibold text-slate-700 dark:text-slate-300">临时渠道优先调度</span>
-              <span class="block text-xs text-slate-500 mt-0.5">勾选后，只要此临时渠道可用且支持请求模型，调用会优先使用临时渠道。</span>
-            </div>
-          </label>
-        </div>
-
-        <!-- Part 2: Upstream keys -->
-        <div class="space-y-3">
-          <div class="flex items-center justify-between gap-3">
-            <div>
-              <div class="text-xs font-bold text-cyan-700 dark:text-sky-300 uppercase tracking-wider">上游 API Keys</div>
-              <div class="text-xs text-slate-500 mt-1" id="channel-key-summary">尚未配置 Key</div>
-            </div>
-            <button class="btn btn-sm border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-white rounded-xl" onclick="openChannelKeysModal()">
-              <i data-lucide="key-round" class="w-4 h-4 mr-1"></i> 管理 Keys
-            </button>
-          </div>
-          <textarea class="hidden" id="f-keys"></textarea>
-        </div>
-
-        <!-- Part 3: Model and mapping -->
-        <div class="space-y-3">
-          <div class="text-xs font-bold text-cyan-700 dark:text-sky-300 uppercase tracking-wider">模型支持及映射</div>
-          <div class="form-control">
-            <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">支持的模型列表 (英文逗号分隔)</span></label>
-            <div class="flex gap-2">
-              <input class="input input-bordered flex-1 bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-sm text-slate-800 dark:text-white" type="text" id="f-models" placeholder="gpt-4o, gpt-4o-mini" oninput="refreshMappingModelOptions()">
-              <button class="btn bg-slate-200 dark:bg-white/5 hover:bg-slate-300 dark:hover:bg-white/10 text-slate-800 dark:text-white border-slate-300 dark:border-white/10 rounded-xl" id="btn-fetch" onclick="fetchModels()">
-                拉取可用模型
+            <div class="grid gap-2 md:grid-cols-3">
+              <button type="button" class="protocol-choice" data-protocol="openai" onclick="selectChannelProtocol('openai')">
+                <i data-lucide="message-square-code" class="mt-0.5 h-4 w-4"></i>
+                <span>
+                  <span class="block text-sm font-black">OpenAI compatible</span>
+                  <span class="block text-xs text-[var(--muted)]">/v1/chat/completions、Responses</span>
+                </span>
+              </button>
+              <button type="button" class="protocol-choice" data-protocol="claude" onclick="selectChannelProtocol('claude')">
+                <i data-lucide="sparkles" class="mt-0.5 h-4 w-4"></i>
+                <span>
+                  <span class="block text-sm font-black">Claude</span>
+                  <span class="block text-xs text-[var(--muted)]">Anthropic Messages 接口</span>
+                </span>
+              </button>
+              <button type="button" class="protocol-choice" data-protocol="gemini" onclick="selectChannelProtocol('gemini')">
+                <i data-lucide="gem" class="mt-0.5 h-4 w-4"></i>
+                <span>
+                  <span class="block text-sm font-black">Gemini</span>
+                  <span class="block text-xs text-[var(--muted)]">Google generateContent 接口</span>
+                </span>
               </button>
             </div>
-          </div>
+          </section>
 
-          <!-- Model Mapping wrapper -->
-          <div class="space-y-2" id="mapping-editor-wrap" style="display:none">
-            <div class="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-              <span>模型别名映射（Alias Mapping）</span>
-              <button class="text-xs text-cyan-600 dark:text-cyan-500 hover:underline" onclick="addMappingRow('', '')">+ 别名对</button>
+          <section class="builder-section">
+            <div class="mb-3">
+              <div class="text-xs font-black uppercase text-[var(--muted)]">Connection</div>
+              <h4 class="text-lg font-black text-[var(--ink)]">连接信息</h4>
             </div>
-            <div class="space-y-2" id="mapping-editor">
-              <!-- rows -->
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label class="form-control">
+                <span class="label-text mb-1 text-xs font-bold text-[var(--muted)]">渠道名称 *</span>
+                <input class="input input-bordered bg-[var(--surface)] font-mono text-sm text-[var(--ink)]" type="text" id="f-name" placeholder="例如: azure-openai-west" oninput="updateChannelBuilderSummary()">
+              </label>
+              <label class="form-control">
+                <span class="label-text mb-1 text-xs font-bold text-[var(--muted)]">标准 Base URL *</span>
+                <input class="input input-bordered bg-[var(--surface)] font-mono text-sm text-[var(--ink)]" type="text" id="f-baseurl" placeholder="https://api.openai.com/v1" oninput="updateChannelBuilderSummary()">
+              </label>
+              <label class="form-control">
+                <span class="label-text mb-1 text-xs font-bold text-[var(--muted)]">Claude 专有 URL</span>
+                <input class="input input-bordered bg-[var(--surface)] font-mono text-sm text-[var(--ink)]" type="text" id="f-baseurl-claude" placeholder="可选，覆盖 Claude 转发地址">
+              </label>
+              <label class="form-control">
+                <span class="label-text mb-1 text-xs font-bold text-[var(--muted)]">Gemini 专有 URL</span>
+                <input class="input input-bordered bg-[var(--surface)] font-mono text-sm text-[var(--ink)]" type="text" id="f-baseurl-gemini" placeholder="可选，覆盖 Gemini 转发地址">
+              </label>
             </div>
-          </div>
-        </div>
+            <div class="mt-3 grid gap-2 md:grid-cols-3">
+              <label class="switch-row cursor-pointer">
+                <span>
+                  <span class="block text-sm font-black text-[var(--ink)]">Responses 原生透传</span>
+                  <span class="block text-xs text-[var(--muted)]">上游真正支持 /v1/responses 时开启</span>
+                </span>
+                <input class="toggle toggle-primary" type="checkbox" id="f-supports-responses" onchange="updateChannelBuilderSummary()">
+              </label>
+              <label class="switch-row cursor-pointer">
+                <span>
+                  <span class="block text-sm font-black text-[var(--ink)]">MiMo 已适配</span>
+                  <span class="block text-xs text-[var(--muted)]">避免重复执行 MiMo 兼容转换</span>
+                </span>
+                <input class="toggle toggle-primary" type="checkbox" id="f-disable-mimo-compat" onchange="updateChannelBuilderSummary()">
+              </label>
+              <label class="switch-row cursor-pointer">
+                <span>
+                  <span class="block text-sm font-black text-[var(--ink)]">临时渠道</span>
+                  <span class="block text-xs text-[var(--muted)]">可用时优先使用，适合短期额度</span>
+                </span>
+                <input class="toggle toggle-warning" type="checkbox" id="f-temporary" onchange="updateChannelBuilderSummary()">
+              </label>
+            </div>
+          </section>
 
-        <!-- Part 4: Advanced settings -->
-        <div class="space-y-3">
-          <div class="text-xs font-bold text-cyan-700 dark:text-sky-300 uppercase tracking-wider">权重与调度优先级</div>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-            <div class="form-control">
-              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">优先级 Priority</span></label>
-              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-slate-800 dark:text-white" type="number" id="f-priority" value="10" min="1">
+          <section class="builder-section">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div class="text-xs font-black uppercase text-[var(--muted)]">Keys</div>
+                <h4 class="text-lg font-black text-[var(--ink)]">上游 API Keys</h4>
+                <div class="mt-1 text-xs text-[var(--muted)]" id="channel-key-summary">尚未配置 Key</div>
+              </div>
+              <button class="btn border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)]" onclick="openChannelKeysModal()">
+                <i data-lucide="key-round" class="w-4 h-4"></i> 管理 Keys
+              </button>
             </div>
-            <div class="form-control">
-              <label class="label"><span class="label-text text-slate-600 dark:text-slate-300">轮询权重 Weight</span></label>
-              <input class="input input-bordered bg-white dark:bg-slate-900/50 border-slate-300 dark:border-white/10 focus:border-cyan-500 rounded-xl font-mono text-slate-800 dark:text-white" type="number" id="f-weight" value="100" min="1">
+            <textarea class="hidden" id="f-keys"></textarea>
+          </section>
+
+          <section class="builder-section">
+            <div class="mb-3 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <div class="text-xs font-black uppercase text-[var(--muted)]">Models</div>
+                <h4 class="text-lg font-black text-[var(--ink)]">模型与别名</h4>
+              </div>
+              <button class="btn border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)]" id="btn-fetch" onclick="fetchModels()">
+                <i data-lucide="download-cloud" class="h-4 w-4"></i> 拉取可用模型
+              </button>
             </div>
-            <label class="flex items-center gap-3 p-3 bg-slate-100 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 cursor-pointer h-12 mb-0.5">
-              <input class="toggle toggle-primary" type="checkbox" id="f-enabled" checked>
-              <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">激活该渠道</span>
+            <label class="form-control">
+              <span class="label-text mb-1 text-xs font-bold text-[var(--muted)]">启用模型，英文逗号分隔</span>
+              <input class="input input-bordered bg-[var(--surface)] font-mono text-sm text-[var(--ink)]" type="text" id="f-models" placeholder="gpt-4o, gpt-4o-mini" oninput="refreshMappingModelOptions(); updateChannelBuilderSummary();">
             </label>
-          </div>
+
+            <div class="mt-4 space-y-2" id="mapping-editor-wrap" style="display:none">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="text-sm font-black text-[var(--ink)]">模型别名映射</div>
+                  <div class="text-xs text-[var(--muted)]">让客户端用短名称，实际转发到指定上游模型。</div>
+                </div>
+                <button class="btn btn-sm border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)]" onclick="addMappingRow('', '')">
+                  <i data-lucide="plus" class="h-4 w-4"></i> 别名
+                </button>
+              </div>
+              <div class="space-y-2" id="mapping-editor"></div>
+            </div>
+          </section>
+
+          <section class="builder-section">
+            <div class="mb-3">
+              <div class="text-xs font-black uppercase text-[var(--muted)]">Routing</div>
+              <h4 class="text-lg font-black text-[var(--ink)]">调度与状态</h4>
+            </div>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <label class="form-control">
+                <span class="label-text mb-1 text-xs font-bold text-[var(--muted)]">优先级 Priority</span>
+                <input class="input input-bordered bg-[var(--surface)] font-mono text-[var(--ink)]" type="number" id="f-priority" value="10" min="1" oninput="updateChannelBuilderSummary()">
+              </label>
+              <label class="form-control">
+                <span class="label-text mb-1 text-xs font-bold text-[var(--muted)]">轮询权重 Weight</span>
+                <input class="input input-bordered bg-[var(--surface)] font-mono text-[var(--ink)]" type="number" id="f-weight" value="100" min="1" oninput="updateChannelBuilderSummary()">
+              </label>
+              <label class="switch-row cursor-pointer">
+                <span>
+                  <span class="block text-sm font-black text-[var(--ink)]">激活该渠道</span>
+                  <span class="block text-xs text-[var(--muted)]">关闭后不参与请求调度</span>
+                </span>
+                <input class="toggle toggle-primary" type="checkbox" id="f-enabled" checked onchange="updateChannelBuilderSummary()">
+              </label>
+            </div>
+          </section>
         </div>
       </div>
 
-      <!-- Action Buttons -->
-      <div class="flex justify-end gap-3 border-t border-slate-200 dark:border-white/5 pt-4 mt-6">
-        <button class="btn btn-ghost hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-400" onclick="closeModal('channel-modal')">取消</button>
-        <button class="btn btn-primary text-white" onclick="saveChannel()">保存渠道</button>
+      <div class="sticky bottom-0 z-10 flex flex-col gap-3 border-t border-[var(--line)] bg-[var(--surface-2)] px-5 py-4 md:flex-row md:items-center md:justify-between">
+        <div class="text-xs text-[var(--muted)]" id="channel-save-hint">名称、Base URL 和至少一个模型是最小可用配置。</div>
+        <div class="flex justify-end gap-2">
+          <button class="btn border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)]" onclick="closeModal('channel-modal')">取消</button>
+          <button class="btn btn-primary text-white" onclick="saveChannel()"><i data-lucide="save" class="h-4 w-4"></i> 保存渠道</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2070,7 +2257,8 @@
       document.getElementById('mapping-editor-wrap').style.display = 'block';
       document.getElementById('mapping-editor').innerHTML = '';
       
-      adaptDefaultURL();
+      selectChannelProtocol('openai');
+      updateChannelBuilderSummary();
       openModal('channel-modal');
       lucide.createIcons();
     }
@@ -2105,12 +2293,15 @@
         addMappingRow(upstream, alias);
       }
 
+      selectChannelProtocol(ch.type || 'openai', { adaptURL: false });
+      updateChannelBuilderSummary();
       openModal('channel-modal');
       api(channelByNamePath('keys', ch.name))
         .then(data => {
           hydrateActiveKeyRows(data, ch);
           syncKeyRowsToHiddenInput();
           updateChannelKeySummary();
+          updateChannelBuilderSummary();
         })
         .catch(e => {
           updateChannelKeySummary('读取已有 Key 失败');
@@ -2132,6 +2323,7 @@
       container.appendChild(div);
       refreshMappingModelOptions();
       lucide.createIcons();
+      updateChannelBuilderSummary();
     }
 
     function refreshMappingModelOptions() {
@@ -2145,6 +2337,41 @@
         if (previous) select.value = previous;
         select.dataset.value = select.value;
       });
+      updateChannelBuilderSummary();
+    }
+
+    function selectChannelProtocol(type, options = {}) {
+      const shouldAdaptURL = options.adaptURL !== false;
+      const select = document.getElementById('f-type');
+      if (select) select.value = type;
+      document.querySelectorAll('.protocol-choice').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.protocol === type);
+      });
+      if (shouldAdaptURL) adaptDefaultURL();
+      updateChannelBuilderSummary();
+    }
+
+    function updateChannelBuilderSummary() {
+      const type = document.getElementById('f-type')?.value || 'openai';
+      const models = parseModelList(document.getElementById('f-models')?.value || '');
+      const keys = activeKeyRows.length || parseModelList(document.getElementById('f-keys')?.value || '').length;
+      const priority = document.getElementById('f-priority')?.value || '10';
+      const weight = document.getElementById('f-weight')?.value || '100';
+      const enabled = document.getElementById('f-enabled')?.checked !== false;
+      const temporary = document.getElementById('f-temporary')?.checked || false;
+      const name = document.getElementById('f-name')?.value.trim() || '未命名';
+      const baseURL = document.getElementById('f-baseurl')?.value.trim() || '未填写 Base URL';
+
+      const setText = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+      };
+      setText('summary-type', type);
+      setText('summary-enabled', enabled ? '启用' : '停用');
+      setText('summary-models', String(models.length));
+      setText('summary-keys', String(keys));
+      setText('summary-routing', `${temporary ? 'temporary first / ' : ''}priority ${priority} / weight ${weight}`);
+      setText('summary-hint', `${name} -> ${baseURL}${models.length ? `，支持 ${models.slice(0, 3).join(', ')}${models.length > 3 ? '...' : ''}` : '，尚未配置模型'}`);
     }
 
     function adaptDefaultURL() {
@@ -2195,6 +2422,7 @@
         const list = data.models || [];
         if (list.length > 0) {
           openFetchedModelPicker(list);
+          updateChannelBuilderSummary();
           showToast(`拉取成功，请选择要启用的模型`);
         } else {
           showToast('上游返回的模型列表为空', true);
@@ -2240,6 +2468,10 @@
 
       const keys = parseModelList(rawKeys);
       const models = parseModelList(modelsInput);
+      if (models.length === 0) {
+        showToast('至少配置一个可调度模型', true);
+        return;
+      }
       const disabledKeys = activeKeyRows
         .filter(row => row.disabled && row.key.trim())
         .map(row => row.key.trim());
@@ -2580,6 +2812,7 @@
       activeKeyRows = rows;
       syncKeyRowsToHiddenInput();
       updateChannelKeySummary();
+      updateChannelBuilderSummary();
 
       if (!activeKeyPersisted) {
         showToast('Keys 已写入渠道表单，保存渠道后生效');
@@ -2600,6 +2833,7 @@
         hydrateActiveKeyRows(data, latest);
         syncKeyRowsToHiddenInput();
         updateChannelKeySummary();
+        updateChannelBuilderSummary();
         closeModal('key-modal');
         loadData();
       } catch(e) {
@@ -3385,6 +3619,7 @@
         document.getElementById('f-models').value = selected.join(', ');
         closeModal('picker-modal');
         refreshMappingModelOptions();
+        updateChannelBuilderSummary();
         showToast(`已选择 ${selected.length} 个模型`);
         return;
       }
