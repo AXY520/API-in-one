@@ -825,27 +825,9 @@
     .status-temp { color: var(--amber); }
 
     .channel-builder {
-      display: grid;
-      grid-template-columns: minmax(12rem, 0.42fr) minmax(0, 1fr);
       min-height: 34rem;
       border: 1px solid var(--line);
       background: var(--surface);
-    }
-
-    .builder-rail {
-      border-right: 1px solid var(--line);
-      background: var(--surface-2);
-    }
-
-    .builder-step {
-      display: flex;
-      gap: 0.75rem;
-      padding: 1rem;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .builder-step i {
-      color: var(--muted);
     }
 
     .builder-section {
@@ -855,22 +837,6 @@
 
     .builder-section:last-child {
       border-bottom: 0;
-    }
-
-    .protocol-choice {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-      border: 1px solid var(--line);
-      background: var(--surface);
-      padding: 0.85rem;
-      text-align: left;
-      color: var(--ink);
-    }
-
-    .protocol-choice.active {
-      border-color: color-mix(in srgb, var(--accent) 70%, var(--line));
-      background: color-mix(in srgb, var(--accent) 10%, var(--surface));
     }
 
     .switch-row {
@@ -884,27 +850,37 @@
     }
 
     .builder-summary {
-      position: sticky;
-      top: 0;
       display: grid;
       gap: 0.75rem;
-      border-left: 1px solid var(--line);
       background: color-mix(in srgb, var(--surface-2) 65%, var(--surface));
       padding: 1rem;
     }
 
-    @media (max-width: 960px) {
-      .channel-builder {
-        grid-template-columns: 1fr;
-      }
-      .builder-rail,
-      .builder-summary {
-        border-right: 0;
-        border-left: 0;
-      }
-      .builder-summary {
-        position: static;
-      }
+    .model-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      max-width: 100%;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      padding: 0.35rem 0.45rem 0.35rem 0.6rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.76rem;
+      color: var(--ink);
+    }
+
+    .model-chip button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.15rem;
+      height: 1.15rem;
+      color: var(--muted);
+    }
+
+    .model-chip button:hover {
+      color: var(--rose);
+      background: color-mix(in srgb, var(--rose) 12%, transparent);
     }
 
     .table :where(th) {
@@ -1204,98 +1180,32 @@
       <input type="hidden" id="edit-name" value="">
 
       <div class="channel-builder">
-        <aside class="builder-rail">
-          <div class="builder-step">
-            <i data-lucide="route" class="mt-0.5 h-4 w-4"></i>
-            <div>
-              <div class="text-sm font-black text-[var(--ink)]">1. 选择协议</div>
-              <div class="text-xs text-[var(--muted)]">决定如何和上游接口对话</div>
-            </div>
-          </div>
-          <div class="builder-step">
-            <i data-lucide="plug-zap" class="mt-0.5 h-4 w-4"></i>
-            <div>
-              <div class="text-sm font-black text-[var(--ink)]">2. 填连接信息</div>
-              <div class="text-xs text-[var(--muted)]">名称、Base URL 和兼容开关</div>
-            </div>
-          </div>
-          <div class="builder-step">
-            <i data-lucide="key-round" class="mt-0.5 h-4 w-4"></i>
-            <div>
-              <div class="text-sm font-black text-[var(--ink)]">3. 管理上游 Key</div>
-              <div class="text-xs text-[var(--muted)]">支持禁用、探测和模型范围</div>
-            </div>
-          </div>
-          <div class="builder-step">
-            <i data-lucide="boxes" class="mt-0.5 h-4 w-4"></i>
-            <div>
-              <div class="text-sm font-black text-[var(--ink)]">4. 选择模型</div>
-              <div class="text-xs text-[var(--muted)]">可拉取、手填、设置别名</div>
-            </div>
-          </div>
-          <div class="builder-summary" id="channel-builder-summary">
-            <div class="text-xs font-black uppercase text-[var(--muted)]">调度预览</div>
-            <div class="grid grid-cols-2 gap-2 text-xs">
-              <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
-                <div class="text-[10px] text-[var(--muted)]">协议</div>
-                <div class="font-mono font-black text-[var(--ink)]" id="summary-type">openai</div>
-              </div>
-              <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
-                <div class="text-[10px] text-[var(--muted)]">状态</div>
-                <div class="font-mono font-black text-[var(--ink)]" id="summary-enabled">启用</div>
-              </div>
-              <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
-                <div class="text-[10px] text-[var(--muted)]">模型</div>
-                <div class="font-mono font-black text-[var(--ink)]" id="summary-models">0</div>
-              </div>
-              <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
-                <div class="text-[10px] text-[var(--muted)]">Keys</div>
-                <div class="font-mono font-black text-[var(--ink)]" id="summary-keys">0</div>
-              </div>
-            </div>
-            <div class="border border-[var(--line)] bg-[var(--surface)] p-2 text-xs">
-              <div class="text-[10px] text-[var(--muted)]">调度策略</div>
-              <div class="mt-1 font-mono text-[var(--ink)]" id="summary-routing">priority 10 / weight 100</div>
-            </div>
-            <div class="text-xs leading-relaxed text-[var(--muted)]" id="summary-hint">保存后会按协议、模型和优先级参与调度。</div>
-          </div>
-        </aside>
-
+        <input type="hidden" id="f-type" value="openai">
         <div class="min-w-0">
-          <section class="builder-section">
-            <div class="mb-3 flex items-center justify-between gap-3">
+          <section class="builder-summary" id="channel-builder-summary">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <div class="text-xs font-black uppercase text-[var(--muted)]">Protocol</div>
-                <h4 class="text-lg font-black text-[var(--ink)]">上游协议</h4>
+                <div class="text-xs font-black uppercase text-[var(--muted)]">配置摘要</div>
+                <div class="mt-1 text-sm text-[var(--muted)]" id="summary-hint">填入渠道信息后保存即可参与调度。</div>
               </div>
-              <select class="select select-bordered hidden" id="f-type" onchange="selectChannelProtocol(this.value)">
-                <option value="openai">OpenAI 兼容协议</option>
-                <option value="claude">Claude (Anthropic) 协议</option>
-                <option value="gemini">Gemini (Google) 协议</option>
-              </select>
-            </div>
-            <div class="grid gap-2 md:grid-cols-3">
-              <button type="button" class="protocol-choice" data-protocol="openai" onclick="selectChannelProtocol('openai')">
-                <i data-lucide="message-square-code" class="mt-0.5 h-4 w-4"></i>
-                <span>
-                  <span class="block text-sm font-black">OpenAI compatible</span>
-                  <span class="block text-xs text-[var(--muted)]">/v1/chat/completions、Responses</span>
-                </span>
-              </button>
-              <button type="button" class="protocol-choice" data-protocol="claude" onclick="selectChannelProtocol('claude')">
-                <i data-lucide="sparkles" class="mt-0.5 h-4 w-4"></i>
-                <span>
-                  <span class="block text-sm font-black">Claude</span>
-                  <span class="block text-xs text-[var(--muted)]">Anthropic Messages 接口</span>
-                </span>
-              </button>
-              <button type="button" class="protocol-choice" data-protocol="gemini" onclick="selectChannelProtocol('gemini')">
-                <i data-lucide="gem" class="mt-0.5 h-4 w-4"></i>
-                <span>
-                  <span class="block text-sm font-black">Gemini</span>
-                  <span class="block text-xs text-[var(--muted)]">Google generateContent 接口</span>
-                </span>
-              </button>
+              <div class="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+                <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
+                  <div class="text-[10px] text-[var(--muted)]">状态</div>
+                  <div class="font-mono font-black text-[var(--ink)]" id="summary-enabled">启用</div>
+                </div>
+                <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
+                  <div class="text-[10px] text-[var(--muted)]">模型</div>
+                  <div class="font-mono font-black text-[var(--ink)]" id="summary-models">0</div>
+                </div>
+                <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
+                  <div class="text-[10px] text-[var(--muted)]">Keys</div>
+                  <div class="font-mono font-black text-[var(--ink)]" id="summary-keys">0</div>
+                </div>
+                <div class="border border-[var(--line)] bg-[var(--surface)] p-2">
+                  <div class="text-[10px] text-[var(--muted)]">调度</div>
+                  <div class="font-mono text-[var(--ink)]" id="summary-routing">10 / 100</div>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -1373,8 +1283,9 @@
             </div>
             <label class="form-control">
               <span class="label-text mb-1 text-xs font-bold text-[var(--muted)]">启用模型，英文逗号分隔</span>
-              <input class="input input-bordered bg-[var(--surface)] font-mono text-sm text-[var(--ink)]" type="text" id="f-models" placeholder="gpt-4o, gpt-4o-mini" oninput="refreshMappingModelOptions(); updateChannelBuilderSummary();">
+              <input class="input input-bordered bg-[var(--surface)] font-mono text-sm text-[var(--ink)]" type="text" id="f-models" placeholder="gpt-4o, gpt-4o-mini" oninput="handleChannelModelsInput()">
             </label>
+            <div class="mt-3 flex min-h-10 flex-wrap gap-2" id="channel-model-chips"></div>
 
             <div class="mt-4 space-y-2" id="mapping-editor-wrap" style="display:none">
               <div class="flex items-center justify-between gap-3">
@@ -2257,7 +2168,7 @@
       document.getElementById('mapping-editor-wrap').style.display = 'block';
       document.getElementById('mapping-editor').innerHTML = '';
       
-      selectChannelProtocol('openai');
+      renderChannelFormModelChips();
       updateChannelBuilderSummary();
       openModal('channel-modal');
       lucide.createIcons();
@@ -2293,7 +2204,7 @@
         addMappingRow(upstream, alias);
       }
 
-      selectChannelProtocol(ch.type || 'openai', { adaptURL: false });
+      renderChannelFormModelChips();
       updateChannelBuilderSummary();
       openModal('channel-modal');
       api(channelByNamePath('keys', ch.name))
@@ -2340,19 +2251,45 @@
       updateChannelBuilderSummary();
     }
 
-    function selectChannelProtocol(type, options = {}) {
-      const shouldAdaptURL = options.adaptURL !== false;
-      const select = document.getElementById('f-type');
-      if (select) select.value = type;
-      document.querySelectorAll('.protocol-choice').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.protocol === type);
-      });
-      if (shouldAdaptURL) adaptDefaultURL();
+    function handleChannelModelsInput() {
+      refreshMappingModelOptions();
+      renderChannelFormModelChips();
       updateChannelBuilderSummary();
     }
 
+    function setChannelModels(models) {
+      const unique = Array.from(new Set((models || []).map(m => String(m).trim()).filter(Boolean)));
+      document.getElementById('f-models').value = unique.join(', ');
+      refreshMappingModelOptions();
+      renderChannelFormModelChips();
+      updateChannelBuilderSummary();
+    }
+
+    function removeChannelModel(model) {
+      const models = parseModelList(document.getElementById('f-models').value).filter(m => m !== model);
+      setChannelModels(models);
+    }
+
+    function renderChannelFormModelChips() {
+      const container = document.getElementById('channel-model-chips');
+      if (!container) return;
+      const models = parseModelList(document.getElementById('f-models')?.value || '');
+      if (models.length === 0) {
+        container.innerHTML = `<div class="border border-dashed border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--muted)]">暂无模型。手动输入或拉取后选择。</div>`;
+        return;
+      }
+      container.innerHTML = models.map(model => `
+        <span class="model-chip" title="${escAttr(model)}">
+          <span class="min-w-0 truncate">${esc(model)}</span>
+          <button type="button" onclick="${escAttr(`removeChannelModel(${JSON.stringify(model)})`)}" title="删除 ${escAttr(model)}">
+            <i data-lucide="x" class="h-3.5 w-3.5"></i>
+          </button>
+        </span>
+      `).join('');
+      lucide.createIcons();
+    }
+
     function updateChannelBuilderSummary() {
-      const type = document.getElementById('f-type')?.value || 'openai';
       const models = parseModelList(document.getElementById('f-models')?.value || '');
       const keys = activeKeyRows.length || parseModelList(document.getElementById('f-keys')?.value || '').length;
       const priority = document.getElementById('f-priority')?.value || '10';
@@ -2366,22 +2303,11 @@
         const el = document.getElementById(id);
         if (el) el.textContent = value;
       };
-      setText('summary-type', type);
       setText('summary-enabled', enabled ? '启用' : '停用');
       setText('summary-models', String(models.length));
       setText('summary-keys', String(keys));
-      setText('summary-routing', `${temporary ? 'temporary first / ' : ''}priority ${priority} / weight ${weight}`);
+      setText('summary-routing', `${temporary ? '临时优先 / ' : ''}${priority} / ${weight}`);
       setText('summary-hint', `${name} -> ${baseURL}${models.length ? `，支持 ${models.slice(0, 3).join(', ')}${models.length > 3 ? '...' : ''}` : '，尚未配置模型'}`);
-    }
-
-    function adaptDefaultURL() {
-      const typ = document.getElementById('f-type').value;
-      const baseurl = document.getElementById('f-baseurl');
-      if (baseurl.value.trim() === '' || baseurl.value.includes('openai.com') || baseurl.value.includes('anthropic.com') || baseurl.value.includes('googleapis.com')) {
-        if (typ === 'openai') baseurl.value = 'https://api.openai.com/v1';
-        else if (typ === 'claude') baseurl.value = 'https://api.anthropic.com';
-        else if (typ === 'gemini') baseurl.value = 'https://generativelanguage.googleapis.com';
-      }
     }
 
     async function fetchModels() {
@@ -3616,10 +3542,8 @@
           showToast('请至少选择一个模型', true);
           return;
         }
-        document.getElementById('f-models').value = selected.join(', ');
+        setChannelModels(selected);
         closeModal('picker-modal');
-        refreshMappingModelOptions();
-        updateChannelBuilderSummary();
         showToast(`已选择 ${selected.length} 个模型`);
         return;
       }
