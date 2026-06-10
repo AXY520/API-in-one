@@ -1275,14 +1275,16 @@
         <button class="btn btn-sm btn-circle btn-ghost" onclick="closeModal('log-modal')"><i data-lucide="x" class="w-5 h-5"></i></button>
       </div>
       <div id="log-detail-content" class="space-y-4">
+        <div id="ld-call-summary" class="space-y-3"></div>
         <div class="space-y-1.5">
-          <div class="text-xs font-semibold text-slate-500 dark:text-slate-400">重试探测链路 Attempts</div>
+          <div class="text-xs font-semibold text-[var(--muted)]">调用链路 Attempts</div>
           <div class="space-y-1" id="ld-attempts"></div>
         </div>
         <div class="space-y-4">
+          <div class="border-t border-[var(--line)] pt-4 text-xs font-bold text-[var(--muted)]">请求内容 Payload</div>
           <div class="space-y-1.5">
             <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
-              <span>客户端请求 payload (Request)</span>
+              <span>客户端请求</span>
               <div class="flex items-center gap-2">
                 <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" id="ld-req-toggle" onclick="togglePayloadView('ld-req-box')">展开</button>
                 <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-req-box')">复制</button>
@@ -1292,7 +1294,7 @@
           </div>
           <div class="space-y-1.5" id="ld-upreq-container">
             <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
-              <span>最终发出上游 payload (Converted Upstream)</span>
+              <span>最终发往上游</span>
               <div class="flex items-center gap-2">
                 <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" id="ld-upreq-toggle" onclick="togglePayloadView('ld-upreq-box')">展开</button>
                 <button class="text-cyan-600 dark:text-cyan-500 hover:underline text-[10px]" onclick="copyJSON('ld-upreq-box')">复制</button>
@@ -1397,6 +1399,7 @@
     let logDetailPayloadCache = {};
     let logDetailLastRenderKey = '';
     let logListLastRenderKey = '';
+    const LOG_PAYLOAD_PREVIEW_LIMIT = 3200;
 
     // Charts references
     let trafficTrendChart = null;
@@ -1648,6 +1651,56 @@
         text: names.length > 2 ? `${names[0]} / ${names[1]} +${names.length - 2}` : names.join(' / '),
         title: names.join(' / '),
       };
+    }
+
+    function logStatusTone(status) {
+      if (status === 102 || status === 0) return 'text-[var(--amber)]';
+      if (status >= 200 && status < 400) return 'text-[var(--accent)]';
+      return 'text-[var(--rose)]';
+    }
+
+    function logStatusText(log) {
+      if (log.status === 102 || log.status === 0) return '处理中';
+      return String(log.status || 'ERROR');
+    }
+
+    function detailField(label, value, extraClass = '') {
+      return `
+        <div class="border border-[var(--line)] bg-[var(--surface)] p-3">
+          <div class="text-[10px] font-bold uppercase text-[var(--muted)]">${esc(label)}</div>
+          <div class="mt-1 min-w-0 break-words font-mono text-sm font-bold text-[var(--ink)] ${extraClass}">${esc(value || 'N/A')}</div>
+        </div>
+      `;
+    }
+
+    function renderLogCallSummary(log, attempts) {
+      const displayChannel = displayLogChannel(log);
+      const finalAttempt = attempts.length ? attempts[attempts.length - 1] : null;
+      const upstreamModel = log.resolved_model && log.resolved_model !== log.model ? log.resolved_model : '';
+      const attemptFailures = attempts.filter(att => !(att.status >= 200 && att.status < 400)).length;
+      const finalChannel = log.channel || finalAttempt?.channel || displayChannel.text;
+      const finalKey = finalAttempt?.masked_key || log.access_key || '';
+      const finalAdaptor = finalAttempt?.adaptor || finalAttempt?.AdaptorName || finalAttempt?.adaptor_name || '';
+      const finalProtocol = finalAttempt?.protocol || log.protocol || '';
+      const error = log.error || finalAttempt?.error || '';
+
+      return `
+        <div class="grid grid-cols-2 gap-2 md:grid-cols-4">
+          ${detailField('状态', logStatusText(log), logStatusTone(log.status))}
+          ${detailField('总耗时', `${log.duration || 0} ms`)}
+          ${detailField('尝试次数', `${attempts.length || 0}${attemptFailures ? ` / 失败 ${attemptFailures}` : ''}`)}
+          ${detailField('时间', log.timestamp || '')}
+          ${detailField('入口协议', log.protocol || '')}
+          ${detailField('转发模式', `${log.mode || 'N/A'}${log.stream ? ' / stream' : ''}`)}
+          ${detailField('请求模型', log.model || '')}
+          ${detailField('上游模型', upstreamModel || log.model || '')}
+          ${detailField('最终渠道', finalChannel)}
+          ${detailField('访问 Key', log.access_key || '')}
+          ${detailField('上游 Key', finalKey)}
+          ${detailField('适配器', finalAdaptor || finalProtocol)}
+        </div>
+        ${error ? `<div class="border border-rose-500/30 bg-rose-500/10 p-3 text-xs font-mono leading-relaxed text-[var(--rose)]">${esc(error)}</div>` : ''}
+      `;
     }
 
     // ==================== DASHBOARD LOGIC ====================
@@ -2738,8 +2791,14 @@
           log.id,
           log.status,
           log.duration,
+          log.protocol || '',
+          log.mode || '',
+          log.model || '',
+          log.resolved_model || '',
+          log.access_key || '',
+          log.error || '',
           log.channel || '',
-          attempts.map(att => `${att.attempt}:${att.status}:${att.duration_ms}:${att.error ? att.error.length : 0}`).join(','),
+          attempts.map(att => `${att.attempt}:${att.channel}:${att.model}:${att.key_index}:${att.masked_key}:${att.status}:${att.duration_ms}:${att.retryable}:${att.error ? att.error.length : 0}`).join(','),
           log.request ? 'request' : '',
           log.upstream_request ? 'upstream' : '',
         ].join('|');
@@ -2747,20 +2806,33 @@
         
         document.getElementById('log-detail-id').textContent = `Log ID: ${log.id}`;
         if (shouldRenderDetail) {
+          document.getElementById('ld-call-summary').innerHTML = renderLogCallSummary(log, attempts);
+
           const attemptsContainer = document.getElementById('ld-attempts');
           if (attempts.length === 0) {
             attemptsContainer.innerHTML = `<div class="text-xs text-slate-400 italic">没有尝试探测数据</div>`;
           } else {
             attemptsContainer.innerHTML = attempts.map(att => {
               const attOK = att.status >= 200 && att.status < 400;
-              const clr = attOK ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
+              const clr = attOK ? 'text-[var(--accent)]' : 'text-[var(--rose)]';
               return `
-                <div class="p-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 text-[11px] font-mono leading-relaxed">
-                  <div class="flex items-center justify-between">
-                    <span class="font-bold text-slate-800 dark:text-slate-300">#${att.attempt} ${esc(att.channel)}</span>
-                    <span class="${clr} font-bold">${att.status || 'ERROR'} (${att.duration_ms}ms)</span>
+                <div class="border border-[var(--line)] bg-[var(--surface)] p-3 text-[11px] font-mono leading-relaxed">
+                  <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div class="min-w-0">
+                      <span class="font-black text-[var(--ink)]">#${att.attempt}</span>
+                      <span class="ml-2 text-[var(--ink)]">${esc(att.channel || 'N/A')}</span>
+                      <span class="ml-2 text-[var(--muted)]">${esc(att.model || '')}</span>
+                    </div>
+                    <span class="${clr} font-black">${att.status || 'ERROR'} / ${att.duration_ms || 0}ms</span>
                   </div>
-                  ${att.error ? `<div class="text-[10px] text-rose-600 dark:text-rose-500 mt-1 max-h-12 overflow-y-auto">${esc(att.error)}</div>` : ''}
+                  <div class="mt-2 grid grid-cols-2 gap-2 text-[10px] text-[var(--muted)] md:grid-cols-5">
+                    <span>Key #${att.key_index ?? 'N/A'}</span>
+                    <span>${esc(att.masked_key || 'N/A')}</span>
+                    <span>${esc(att.protocol || 'N/A')}</span>
+                    <span>${esc(att.adaptor || 'N/A')}</span>
+                    <span>${att.retryable ? '可重试' : '不重试'}</span>
+                  </div>
+                  ${att.error ? `<div class="mt-2 max-h-24 overflow-y-auto border border-rose-500/20 bg-rose-500/10 p-2 text-[10px] text-[var(--rose)]">${esc(att.error)}</div>` : ''}
                 </div>
               `;
             }).join('');
@@ -2806,7 +2878,7 @@
     }
 
     function payloadPreview(text) {
-      const limit = 12000;
+      const limit = LOG_PAYLOAD_PREVIEW_LIMIT;
       if (text.length <= limit) return text;
       const omitted = text.length - limit;
       return `${text.slice(0, limit)}\n\n... 已截断 ${omitted.toLocaleString()} 个字符，点击“展开”查看完整内容。`;
@@ -2822,6 +2894,7 @@
       };
       box.textContent = payloadPreview(full);
       box.dataset.expanded = 'false';
+      box.style.maxHeight = '12rem';
       updatePayloadToggle(id);
     }
 
@@ -2831,6 +2904,7 @@
       if (box) {
         box.textContent = '';
         box.dataset.expanded = 'false';
+        box.style.maxHeight = '12rem';
       }
       updatePayloadToggle(id);
     }
@@ -2839,7 +2913,7 @@
       const btn = document.getElementById(id === 'ld-req-box' ? 'ld-req-toggle' : 'ld-upreq-toggle');
       const cached = logDetailPayloadCache[id];
       if (!btn) return;
-      if (!cached || cached.full.length <= 12000) {
+      if (!cached || cached.full.length <= LOG_PAYLOAD_PREVIEW_LIMIT) {
         btn.classList.add('hidden');
         return;
       }
@@ -2854,6 +2928,7 @@
       cached.expanded = !cached.expanded;
       box.textContent = cached.expanded ? cached.full : payloadPreview(cached.full);
       box.dataset.expanded = cached.expanded ? 'true' : 'false';
+      box.style.maxHeight = cached.expanded ? '65vh' : '12rem';
       updatePayloadToggle(id);
     }
 
