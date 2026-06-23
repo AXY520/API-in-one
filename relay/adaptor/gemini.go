@@ -500,6 +500,14 @@ func (p *geminiSSEProcessor) Next() ([]byte, error) {
 	return nil, io.EOF
 }
 
+func (p *geminiSSEProcessor) Close() error {
+	if p.body != nil {
+		return p.body.Close()
+	}
+	return nil
+}
+
+
 func mapGeminiStopReason(reason string) string {
 	switch strings.ToUpper(reason) {
 	case "STOP":

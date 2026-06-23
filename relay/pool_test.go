@@ -133,6 +133,87 @@ func TestSelectChannelAlternatesEqualWeightChannels(t *testing.T) {
 	}
 }
 
+func TestSelectChannelRotatesThreeEqualWeightChannelsInOrder(t *testing.T) {
+	a := model.NewChannel("a", "openai", "https://a.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	b := model.NewChannel("b", "openai", "https://b.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	c := model.NewChannel("c", "openai", "https://c.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	pool := NewPool([]*model.Channel{a, b, c})
+
+	var got []string
+	for i := 0; i < 7; i++ {
+		ch, _, err := pool.SelectChannel("m")
+		if err != nil {
+			t.Fatalf("select channel: %v", err)
+		}
+		got = append(got, ch.Name)
+	}
+
+	want := []string{"a", "b", "c", "a", "b", "c", "a"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected equal-weight rotation %v, got %v", want, got)
+		}
+	}
+}
+
+func TestSelectChannelExcludingContinuesToNextConfiguredChannel(t *testing.T) {
+	a := model.NewChannel("a", "openai", "https://a.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	b := model.NewChannel("b", "openai", "https://b.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	c := model.NewChannel("c", "openai", "https://c.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	pool := NewPool([]*model.Channel{a, b, c})
+
+	ch, _, err := pool.SelectChannel("m")
+	if err != nil {
+		t.Fatalf("select channel: %v", err)
+	}
+	if ch.Name != "a" {
+		t.Fatalf("expected first channel a, got %s", ch.Name)
+	}
+
+	ch, _, err = pool.SelectChannel("m")
+	if err != nil {
+		t.Fatalf("select channel: %v", err)
+	}
+	if ch.Name != "b" {
+		t.Fatalf("expected second channel b, got %s", ch.Name)
+	}
+
+	ch, _, err = pool.SelectChannelExcluding("m", map[string]bool{"b": true})
+	if err != nil {
+		t.Fatalf("select channel: %v", err)
+	}
+	if ch.Name != "c" {
+		t.Fatalf("expected retry after b to continue to c, got %s", ch.Name)
+	}
+}
+
+func TestSelectChannelExcludingSkipsFailedChannelForAttempt(t *testing.T) {
+	a := model.NewChannel("a", "openai", "https://a.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	b := model.NewChannel("b", "openai", "https://b.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	pool := NewPool([]*model.Channel{a, b})
+
+	ch, _, err := pool.SelectChannelExcluding("m", map[string]bool{"a": true})
+	if err != nil {
+		t.Fatalf("select channel: %v", err)
+	}
+	if ch.Name != "b" {
+		t.Fatalf("expected excluded channel to be skipped, got %s", ch.Name)
+	}
+}
+
+func TestSelectChannelExcludingFallsBackWhenAllExcluded(t *testing.T) {
+	a := model.NewChannel("a", "openai", "https://a.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	pool := NewPool([]*model.Channel{a})
+
+	ch, _, err := pool.SelectChannelExcluding("m", map[string]bool{"a": true})
+	if err != nil {
+		t.Fatalf("select channel: %v", err)
+	}
+	if ch.Name != "a" {
+		t.Fatalf("expected fallback to original candidates, got %s", ch.Name)
+	}
+}
+
 func TestGetAvailableModelsHidesMappedUpstreamIDs(t *testing.T) {
 	ch := model.NewChannel(
 		"mapped",
@@ -258,6 +339,24 @@ func TestSelectChannelForProtocolUsesDedicatedProtocolURL(t *testing.T) {
 	}
 }
 
+func TestOpenAIInboundDoesNotSelectClaudeOnlyChannelAsRawOpenAI(t *testing.T) {
+	claudeOnly := model.NewChannel("claude-only", "openai", "", "https://claude.example/v1", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	pool := NewPool([]*model.Channel{claudeOnly})
+
+	_, _, err := pool.SelectChannelForInboundProtocol("m", "openai")
+	if err != ErrNoAvailableChannel {
+		t.Fatalf("expected no raw OpenAI route for Claude-only channel, got %v", err)
+	}
+
+	ch, _, err := pool.SelectChannelForProtocol("m", "claude")
+	if err != nil {
+		t.Fatalf("expected Claude conversion route: %v", err)
+	}
+	if ch.Name != "claude-only" {
+		t.Fatalf("expected claude-only channel, got %s", ch.Name)
+	}
+}
+
 func TestPeekChannelResolvesMappingWithoutAdvancingRoundRobin(t *testing.T) {
 	xiaomi := model.NewChannel("小米", "openai", "https://xiaomi.example", "", "", false, []string{"k"}, []string{"mimo-v2.5-pro"}, map[string]string{"codex-alias": "mimo-v2.5-pro"}, 10, 100)
 	other := model.NewChannel("other", "openai", "https://other.example", "", "", false, []string{"k"}, []string{"codex-alias"}, nil, 10, 100)
@@ -293,3 +392,111 @@ func TestSelectResponsesChannelRequiresSupportFlag(t *testing.T) {
 		t.Fatalf("expected native responses channel, got %s", ch.Name)
 	}
 }
+
+func TestResponsesOnlyChannelSelectedForOpenAIInbound(t *testing.T) {
+	responsesOnly := model.NewChannel("responses-only", "openai", "https://responses.example", "", "", true, []string{"k"}, []string{"m"}, nil, 10, 100)
+	responsesOnly.ResponsesOnly = true
+	chat := model.NewChannel("chat", "openai", "https://chat.example", "", "", false, []string{"k"}, []string{"m"}, nil, 20, 100)
+	pool := NewPool([]*model.Channel{responsesOnly, chat})
+
+	ch, _, err := pool.SelectChannel("m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Name != "chat" {
+		t.Fatalf("expected chat channel, got %s", ch.Name)
+	}
+
+	ch, _, err = pool.SelectChannelForInboundProtocol("m", "openai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Name != "responses-only" {
+		t.Fatalf("expected responses-only channel for openai inbound, got %s", ch.Name)
+	}
+
+	ch, _, err = pool.SelectResponsesChannel("m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Name != "responses-only" {
+		t.Fatalf("expected responses-only channel for responses, got %s", ch.Name)
+	}
+}
+
+func TestPoolChannelsByModelIndex(t *testing.T) {
+	ch1 := model.NewChannel("ch1", "openai", "https://ch1.example", "", "", false, []string{"k"}, []string{"gpt-4", "gpt-3.5"}, nil, 10, 100)
+	ch2 := model.NewChannel("ch2", "openai", "https://ch2.example", "", "", false, []string{"k"}, []string{"gpt-4"}, map[string]string{"claude-3": "gpt-4"}, 10, 100)
+	pool := NewPool([]*model.Channel{ch1, ch2})
+
+	// Check index for gpt-4 (both support)
+	gpt4Chs := pool.channelsByModel["gpt-4"]
+	if len(gpt4Chs) != 2 {
+		t.Fatalf("expected 2 channels for gpt-4, got %d", len(gpt4Chs))
+	}
+
+	// Check index for gpt-3.5 (only ch1 supports)
+	gpt3Chs := pool.channelsByModel["gpt-3.5"]
+	if len(gpt3Chs) != 1 || gpt3Chs[0].Name != "ch1" {
+		t.Fatalf("expected ch1 to support gpt-3.5, got: %v", gpt3Chs)
+	}
+
+	// Check index for mapped model claude-3 (only ch2 supports)
+	claudeChs := pool.channelsByModel["claude-3"]
+	if len(claudeChs) != 1 || claudeChs[0].Name != "ch2" {
+		t.Fatalf("expected ch2 to support claude-3, got: %v", claudeChs)
+	}
+
+	// Update channels and check index rebuild
+	ch3 := model.NewChannel("ch3", "openai", "https://ch3.example", "", "", false, []string{"k"}, []string{"gpt-3.5"}, nil, 10, 100)
+	pool.UpdateChannels([]*model.Channel{ch3})
+
+	gpt3ChsUpdated := pool.channelsByModel["gpt-3.5"]
+	if len(gpt3ChsUpdated) != 1 || gpt3ChsUpdated[0].Name != "ch3" {
+		t.Fatalf("expected ch3 to support gpt-3.5 after update, got: %v", gpt3ChsUpdated)
+	}
+	if len(pool.channelsByModel["gpt-4"]) != 0 {
+		t.Fatalf("expected gpt-4 list to be empty after update, got: %v", pool.channelsByModel["gpt-4"])
+	}
+}
+
+func TestPoolProtocolPriorityRouting(t *testing.T) {
+	// ch1 is OpenAI native, ch2 is Claude native. Both support model "m". Both have priority 10.
+	ch1 := model.NewChannel("ch-openai", "openai", "https://openai.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	ch2 := model.NewChannel("ch-claude", "claude", "", "https://claude.example", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	pool := NewPool([]*model.Channel{ch1, ch2})
+
+	// 1. Inbound protocol is "openai". Should select ch-openai (OpenAI native) to avoid conversion.
+	ch, _, err := pool.SelectAnyChannelForInboundExcluding("m", "openai", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Name != "ch-openai" {
+		t.Fatalf("expected ch-openai, got %s", ch.Name)
+	}
+
+	// 2. Inbound protocol is "claude". Should select ch-claude (Claude native) to avoid conversion.
+	ch, _, err = pool.SelectAnyChannelForInboundExcluding("m", "claude", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Name != "ch-claude" {
+		t.Fatalf("expected ch-claude, got %s", ch.Name)
+	}
+
+	// 3. If ch-claude has higher priority value (lower priority, e.g. 20) and ch-openai has 10:
+	ch1_p10 := model.NewChannel("ch-openai-10", "openai", "https://openai.example", "", "", false, []string{"k"}, []string{"m"}, nil, 10, 100)
+	ch2_p20 := model.NewChannel("ch-claude-20", "claude", "", "https://claude.example", "", false, []string{"k"}, []string{"m"}, nil, 20, 100)
+	pool2 := NewPool([]*model.Channel{ch1_p10, ch2_p20})
+
+	// Even if inbound is claude, it should respect channel priority and pick ch-openai-10.
+	ch, _, err = pool2.SelectAnyChannelForInboundExcluding("m", "claude", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Name != "ch-openai-10" {
+		t.Fatalf("expected ch-openai-10 due to priority, got %s", ch.Name)
+	}
+}
+
+

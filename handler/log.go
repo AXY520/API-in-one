@@ -33,6 +33,9 @@ type RequestLog struct {
 	Attempts        []relay.AttemptLog `json:"attempts,omitempty"`
 	Request         interface{}        `json:"request,omitempty"`
 	UpstreamRequest interface{}        `json:"upstream_request,omitempty"`
+	PromptTokens    int                `json:"prompt_tokens,omitempty"`
+	CompletionTokens int               `json:"completion_tokens,omitempty"`
+	TotalTokens     int                `json:"total_tokens,omitempty"`
 	Timestamp       string             `json:"timestamp"`
 }
 
@@ -195,7 +198,10 @@ CREATE TABLE IF NOT EXISTS request_logs (
   attempts_json TEXT,
   request_json TEXT,
   upstream_request_json TEXT,
-  timestamp TEXT NOT NULL
+  timestamp TEXT NOT NULL,
+  prompt_tokens INTEGER DEFAULT 0,
+  completion_tokens INTEGER DEFAULT 0,
+  total_tokens INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_request_logs_timestamp ON request_logs(id DESC);
 CREATE INDEX IF NOT EXISTS idx_request_logs_protocol ON request_logs(protocol);
@@ -208,6 +214,41 @@ CREATE INDEX IF NOT EXISTS idx_request_logs_mode ON request_logs(mode);
 `); err != nil {
 		_ = db.Close()
 		return err
+	}
+
+	// Dynamic column migration for existing databases
+	rows, err := db.Query("PRAGMA table_info(request_logs)")
+	if err == nil {
+		hasPrompt := false
+		hasCompletion := false
+		hasTotal := false
+		for rows.Next() {
+			var cid int
+			var name, typeStr string
+			var notnull, pk int
+			var dfltValue interface{}
+			if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltValue, &pk); err == nil {
+				switch name {
+				case "prompt_tokens":
+					hasPrompt = true
+				case "completion_tokens":
+					hasCompletion = true
+				case "total_tokens":
+					hasTotal = true
+				}
+			}
+		}
+		rows.Close()
+
+		if !hasPrompt {
+			_, _ = db.Exec("ALTER TABLE request_logs ADD COLUMN prompt_tokens INTEGER DEFAULT 0")
+		}
+		if !hasCompletion {
+			_, _ = db.Exec("ALTER TABLE request_logs ADD COLUMN completion_tokens INTEGER DEFAULT 0")
+		}
+		if !hasTotal {
+			_, _ = db.Exec("ALTER TABLE request_logs ADD COLUMN total_tokens INTEGER DEFAULT 0")
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -252,10 +293,10 @@ func (s *LogStore) insert(entry RequestLog) int64 {
 	s.writeMu.Lock()
 	res, err := db.Exec(`
 	INSERT INTO request_logs
-	(protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	(protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp, prompt_tokens, completion_tokens, total_tokens)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		entry.Protocol, entry.Mode, entry.Model, entry.ResolvedModel, entry.Channel, entry.AccessKey, entry.Status, entry.Duration,
-		stream, entry.Error, attemptsJSON, requestJSON, upstreamJSON, entry.Timestamp,
+		stream, entry.Error, attemptsJSON, requestJSON, upstreamJSON, entry.Timestamp, entry.PromptTokens, entry.CompletionTokens, entry.TotalTokens,
 	)
 	s.writeMu.Unlock()
 	if err != nil {
@@ -284,10 +325,10 @@ func (s *LogStore) save(entry RequestLog) {
 	s.writeMu.Lock()
 	if _, err := db.Exec(`
 	INSERT INTO request_logs
-	(protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	(protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp, prompt_tokens, completion_tokens, total_tokens)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		entry.Protocol, entry.Mode, entry.Model, entry.ResolvedModel, entry.Channel, entry.AccessKey, entry.Status, entry.Duration,
-		stream, entry.Error, attemptsJSON, requestJSON, upstreamJSON, entry.Timestamp,
+		stream, entry.Error, attemptsJSON, requestJSON, upstreamJSON, entry.Timestamp, entry.PromptTokens, entry.CompletionTokens, entry.TotalTokens,
 	); err != nil {
 		s.writeMu.Unlock()
 		slog.Warn("failed to insert request log", "error", err)
@@ -325,10 +366,10 @@ func (s *LogStore) update(id int64, entry RequestLog) {
 	defer s.writeMu.Unlock()
 	if _, err := db.Exec(`
 	UPDATE request_logs
-	SET protocol = ?, mode = ?, model = ?, resolved_model = ?, channel = ?, access_key = ?, status = ?, duration = ?, stream = ?, error = ?, attempts_json = ?, request_json = ?, upstream_request_json = ?
+	SET protocol = ?, mode = ?, model = ?, resolved_model = ?, channel = ?, access_key = ?, status = ?, duration = ?, stream = ?, error = ?, attempts_json = ?, request_json = ?, upstream_request_json = ?, prompt_tokens = ?, completion_tokens = ?, total_tokens = ?
 WHERE id = ?`,
 		entry.Protocol, entry.Mode, entry.Model, entry.ResolvedModel, entry.Channel, entry.AccessKey, entry.Status, entry.Duration,
-		stream, entry.Error, attemptsJSON, requestJSON, upstreamJSON, id,
+		stream, entry.Error, attemptsJSON, requestJSON, upstreamJSON, entry.PromptTokens, entry.CompletionTokens, entry.TotalTokens, id,
 	); err != nil {
 		slog.Warn("failed to update request log", "id", id, "error", err)
 	}
@@ -380,7 +421,7 @@ func (s *LogStore) search(filter LogFilter) []RequestLog {
 	where, args := buildLogWhere(filter)
 	args = append(args, filter.Limit, filter.Offset)
 	rows, err := db.Query(`
-SELECT id, protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, timestamp
+SELECT id, protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, timestamp, prompt_tokens, completion_tokens, total_tokens
 FROM request_logs `+where+`
 ORDER BY id DESC
 LIMIT ? OFFSET ?`, args...)
@@ -395,7 +436,7 @@ LIMIT ? OFFSET ?`, args...)
 		var log RequestLog
 		var stream int
 		var attemptsJSON string
-		if err := rows.Scan(&log.ID, &log.Protocol, &log.Mode, &log.Model, &log.ResolvedModel, &log.Channel, &log.AccessKey, &log.Status, &log.Duration, &stream, &log.Error, &attemptsJSON, &log.Timestamp); err != nil {
+		if err := rows.Scan(&log.ID, &log.Protocol, &log.Mode, &log.Model, &log.ResolvedModel, &log.Channel, &log.AccessKey, &log.Status, &log.Duration, &stream, &log.Error, &attemptsJSON, &log.Timestamp, &log.PromptTokens, &log.CompletionTokens, &log.TotalTokens); err != nil {
 			slog.Warn("failed to scan request log", "error", err)
 			continue
 		}
@@ -415,7 +456,7 @@ func (s *LogStore) export(filter LogFilter) []RequestLog {
 	where, args := buildLogWhere(filter)
 	args = append(args, filter.Limit, filter.Offset)
 	rows, err := db.Query(`
-SELECT id, protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp
+SELECT id, protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp, prompt_tokens, completion_tokens, total_tokens
 FROM request_logs `+where+`
 ORDER BY id DESC
 LIMIT ? OFFSET ?`, args...)
@@ -472,9 +513,9 @@ func (s *LogStore) get(id int64) (RequestLog, bool) {
 	var stream int
 	var attemptsJSON, requestJSON, upstreamJSON string
 	err := db.QueryRow(`
-SELECT id, protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp
+SELECT id, protocol, mode, model, resolved_model, channel, access_key, status, duration, stream, error, attempts_json, request_json, upstream_request_json, timestamp, prompt_tokens, completion_tokens, total_tokens
 FROM request_logs WHERE id = ?`, id).
-		Scan(&log.ID, &log.Protocol, &log.Mode, &log.Model, &log.ResolvedModel, &log.Channel, &log.AccessKey, &log.Status, &log.Duration, &stream, &log.Error, &attemptsJSON, &requestJSON, &upstreamJSON, &log.Timestamp)
+		Scan(&log.ID, &log.Protocol, &log.Mode, &log.Model, &log.ResolvedModel, &log.Channel, &log.AccessKey, &log.Status, &log.Duration, &stream, &log.Error, &attemptsJSON, &requestJSON, &upstreamJSON, &log.Timestamp, &log.PromptTokens, &log.CompletionTokens, &log.TotalTokens)
 	if errors.Is(err, sql.ErrNoRows) {
 		return RequestLog{}, false
 	}
@@ -497,7 +538,7 @@ func scanFullRequestLog(scanner fullLogScanner) (RequestLog, error) {
 	var log RequestLog
 	var stream int
 	var attemptsJSON, requestJSON, upstreamJSON string
-	if err := scanner.Scan(&log.ID, &log.Protocol, &log.Mode, &log.Model, &log.ResolvedModel, &log.Channel, &log.AccessKey, &log.Status, &log.Duration, &stream, &log.Error, &attemptsJSON, &requestJSON, &upstreamJSON, &log.Timestamp); err != nil {
+	if err := scanner.Scan(&log.ID, &log.Protocol, &log.Mode, &log.Model, &log.ResolvedModel, &log.Channel, &log.AccessKey, &log.Status, &log.Duration, &stream, &log.Error, &attemptsJSON, &requestJSON, &upstreamJSON, &log.Timestamp, &log.PromptTokens, &log.CompletionTokens, &log.TotalTokens); err != nil {
 		return RequestLog{}, err
 	}
 	log.Stream = stream == 1

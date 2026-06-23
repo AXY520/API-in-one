@@ -4,8 +4,12 @@ import (
 	"api-in-one/model"
 	"api-in-one/relay"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestChatCompletionToResponsesConvertsFakeCodexToolCall(t *testing.T) {
@@ -291,5 +295,152 @@ func TestOpenAIToGeminiConvertsToolCalls(t *testing.T) {
 	parts := content["parts"].([]map[string]interface{})
 	if _, ok := parts[0]["functionCall"]; !ok {
 		t.Fatalf("expected Gemini functionCall part, got %#v", parts)
+	}
+}
+
+func TestResponsesConvertsToClaudeOnlyUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var gotPath string
+	var gotModel string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		var req map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode claude request: %v", err)
+		}
+		gotModel, _ = req["model"].(string)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":            "msg_test",
+			"type":          "message",
+			"role":          "assistant",
+			"model":         "deepseek-v4-flash",
+			"content":       []map[string]interface{}{{"type": "text", "text": "pong"}},
+			"stop_reason":   "end_turn",
+			"stop_sequence": nil,
+			"usage":         map[string]interface{}{"input_tokens": 1, "output_tokens": 1},
+		})
+	}))
+	defer upstream.Close()
+
+	ch := model.NewChannel("ClaudeOnly", "openai", "", upstream.URL+"/v1", "", false, []string{"cl-key"}, []string{"deepseek-v4-flash"}, nil, 10, 100)
+	engine := relay.NewEngine(relay.NewPool([]*model.Channel{ch}))
+	h := NewProtocol(engine)
+	r := gin.New()
+	r.POST("/v1/responses", h.Responses)
+
+	body := `{"model":"deepseek-v4-flash","input":"只回复 pong"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected responses request to succeed, got %d: %s", w.Code, w.Body.String())
+	}
+	if gotPath != "/v1/messages" {
+		t.Fatalf("expected Claude upstream /v1/messages, got %q", gotPath)
+	}
+	if gotModel != "deepseek-v4-flash" {
+		t.Fatalf("expected upstream model deepseek-v4-flash, got %q", gotModel)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["object"] != "response" {
+		t.Fatalf("expected Responses API object, got %#v", resp)
+	}
+	output, ok := resp["output"].([]interface{})
+	if !ok || len(output) != 1 {
+		t.Fatalf("expected one output item, got %#v", resp["output"])
+	}
+	msg, _ := output[0].(map[string]interface{})
+	content, _ := msg["content"].([]interface{})
+	if len(content) != 1 {
+		t.Fatalf("expected one content item, got %#v", msg["content"])
+	}
+	part, _ := content[0].(map[string]interface{})
+	if part["text"] != "pong" {
+		t.Fatalf("expected response text pong, got %#v", part)
+	}
+}
+
+func TestClaudeInboundConvertsToClaudeOnlyUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var gotPath string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":            "msg_test",
+			"type":          "message",
+			"role":          "assistant",
+			"model":         "deepseek-v4-flash",
+			"content":       []map[string]interface{}{{"type": "text", "text": "pong"}},
+			"stop_reason":   "end_turn",
+			"stop_sequence": nil,
+			"usage":         map[string]interface{}{"input_tokens": 1, "output_tokens": 1},
+		})
+	}))
+	defer upstream.Close()
+
+	ch := model.NewChannel("ClaudeOnly", "openai", "", upstream.URL+"/v1", "", false, []string{"cl-key"}, []string{"deepseek-v4-flash"}, nil, 10, 100)
+	engine := relay.NewEngine(relay.NewPool([]*model.Channel{ch}))
+	h := NewProtocol(engine)
+	r := gin.New()
+	r.POST("/v1/messages", h.ClaudeMessages)
+
+	body := `{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"只回复 pong"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected Claude inbound request to succeed, got %d: %s", w.Code, w.Body.String())
+	}
+	if gotPath != "/v1/messages" {
+		t.Fatalf("expected Claude upstream /v1/messages, got %q", gotPath)
+	}
+}
+
+func TestGeminiInboundConvertsToClaudeOnlyUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var gotPath string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":            "msg_test",
+			"type":          "message",
+			"role":          "assistant",
+			"model":         "deepseek-v4-flash",
+			"content":       []map[string]interface{}{{"type": "text", "text": "pong"}},
+			"stop_reason":   "end_turn",
+			"stop_sequence": nil,
+			"usage":         map[string]interface{}{"input_tokens": 1, "output_tokens": 1},
+		})
+	}))
+	defer upstream.Close()
+
+	ch := model.NewChannel("ClaudeOnly", "openai", "", upstream.URL+"/v1", "", false, []string{"cl-key"}, []string{"deepseek-v4-flash"}, nil, 10, 100)
+	engine := relay.NewEngine(relay.NewPool([]*model.Channel{ch}))
+	h := NewProtocol(engine)
+	r := gin.New()
+	r.POST("/v1beta/models/:model", h.GeminiGenerate)
+
+	body := `{"contents":[{"role":"user","parts":[{"text":"只回复 pong"}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1beta/models/deepseek-v4-flash:generateContent", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected Gemini inbound request to succeed, got %d: %s", w.Code, w.Body.String())
+	}
+	if gotPath != "/v1/messages" {
+		t.Fatalf("expected Claude upstream /v1/messages, got %q", gotPath)
 	}
 }

@@ -39,4 +39,7 @@ type SSEProcessor interface {
 	// Next returns the next OpenAI-format SSE data line, or io.EOF.
 	// The returned bytes should be a complete "data: {...}\n\n" SSE event.
 	Next() ([]byte, error)
+
+	// Close releases any underlying resources (such as HTTP response body).
+	Close() error
 }

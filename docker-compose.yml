@@ -1,0 +1,14 @@
+services:
+  api-in-one:
+    build: .
+    container_name: api-in-one
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./data:/app/data
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+      - REQUEST_LOG_PATH=/app/data/requests.db
+      - TZ=Asia/Shanghai

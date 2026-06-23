@@ -53,6 +53,7 @@ type ChannelConfig struct {
 	BaseURLClaude     string              `json:"base_url_claude" yaml:"base_url_claude"` // optional: Claude protocol URL
 	BaseURLGemini     string              `json:"base_url_gemini" yaml:"base_url_gemini"` // optional: Gemini protocol URL
 	SupportsResponses bool                `json:"supports_responses" yaml:"supports_responses"`
+	ResponsesOnly     bool                `json:"responses_only,omitempty" yaml:"responses_only,omitempty"`
 	DisableMiMoCompat bool                `json:"disable_mimo_compat,omitempty" yaml:"disable_mimo_compat,omitempty"`
 	Temporary         bool                `json:"temporary,omitempty" yaml:"temporary,omitempty"`
 	Keys              []string            `json:"keys"          yaml:"keys"`
@@ -218,8 +219,12 @@ func writeConfig(cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	tmpPath := configPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return fmt.Errorf("write config: %w", err)
+	}
+	if err := os.Rename(tmpPath, configPath); err != nil {
+		return fmt.Errorf("rename config: %w", err)
 	}
 	slog.Info("config saved", "path", configPath, "channels", len(cfg.Channels), "bytes", len(data))
 	return nil
@@ -407,6 +412,28 @@ func UpdateChannelEnabled(name string, enabled bool) error {
 	for i, existing := range globalConfig.Channels {
 		if existing.Name == name {
 			existing.Enabled = &enabled
+			applyChannelDefaults(&existing)
+			globalConfig.Channels[i] = existing
+			return saveToDiskLocked()
+		}
+	}
+	return fmt.Errorf("channel %q not found", name)
+}
+
+func UpdateChannelRouting(name string, priority, weight int, enabled *bool) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	for i, existing := range globalConfig.Channels {
+		if existing.Name == name {
+			if priority > 0 {
+				existing.Priority = priority
+			}
+			if weight > 0 {
+				existing.Weight = weight
+			}
+			if enabled != nil {
+				existing.Enabled = enabled
+			}
 			applyChannelDefaults(&existing)
 			globalConfig.Channels[i] = existing
 			return saveToDiskLocked()

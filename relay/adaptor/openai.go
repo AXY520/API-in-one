@@ -21,7 +21,7 @@ func (a *OpenAIAdaptor) BuildHTTPRequest(baseURL, key string, req *model.ChatCom
 	if err != nil {
 		return nil, err
 	}
-	url := buildOpenAIChatCompletionsURL(baseURL)
+	url := BuildOpenAIChatCompletionsURL(baseURL)
 	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -32,7 +32,7 @@ func (a *OpenAIAdaptor) BuildHTTPRequest(baseURL, key string, req *model.ChatCom
 	return httpReq, nil
 }
 
-func buildOpenAIChatCompletionsURL(baseURL string) string {
+func BuildOpenAIChatCompletionsURL(baseURL string) string {
 	baseURL = strings.TrimRight(baseURL, "/")
 	if strings.HasSuffix(baseURL, "/chat/completions") {
 		return baseURL
@@ -41,6 +41,15 @@ func buildOpenAIChatCompletionsURL(baseURL string) string {
 		return baseURL + "/chat/completions"
 	}
 	return baseURL + "/v1/chat/completions"
+}
+
+// BuildResponsesURL constructs the OpenAI Responses API endpoint URL.
+func BuildResponsesURL(baseURL string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(baseURL, "/v1/responses") || strings.HasSuffix(baseURL, "/responses") {
+		return baseURL
+	}
+	return baseURL + "/responses"
 }
 
 func (a *OpenAIAdaptor) ParseResponse(resp *http.Response) (*model.ChatCompletionResponse, error) {
@@ -97,3 +106,11 @@ func (p *openAISSEProcessor) Next() ([]byte, error) {
 	}
 	return nil, io.EOF
 }
+
+func (p *openAISSEProcessor) Close() error {
+	if p.body != nil {
+		return p.body.Close()
+	}
+	return nil
+}
+

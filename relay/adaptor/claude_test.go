@@ -2,6 +2,9 @@ package adaptor
 
 import (
 	"api-in-one/model"
+	"bufio"
+	"io"
+	"strings"
 	"testing"
 )
 
@@ -129,8 +132,68 @@ func TestBuildClaudeURLAvoidsDuplicateV1(t *testing.T) {
 		"https://example.com/messages":    "https://example.com/messages",
 	}
 	for input, want := range cases {
-		if got := buildClaudeURL(input); got != want {
-			t.Fatalf("buildClaudeURL(%q) = %q, want %q", input, got, want)
+		if got := BuildClaudeURL(input); got != want {
+			t.Fatalf("BuildClaudeURL(%q) = %q, want %q", input, got, want)
 		}
 	}
 }
+
+func TestClaudeSSEProcessorCarriesMessageIDAndModelAcrossChunks(t *testing.T) {
+	stream := strings.Join([]string{
+		`event: message_start`,
+		`data: {"type":"message_start","message":{"id":"msg_123","model":"claude-test"}}`,
+		``,
+		`event: content_block_delta`,
+		`data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"pong"}}`,
+		``,
+		`event: message_delta`,
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		``,
+	}, "\n")
+
+	body := &fakeHTTPResponseBody{Reader: strings.NewReader(stream)}
+	p := &claudeSSEProcessor{
+		scanner: bufio.NewScanner(body),
+		body:    body,
+	}
+
+	first, err := p.Next()
+	if err != nil {
+		t.Fatalf("first chunk: %v", err)
+	}
+	if !strings.Contains(string(first), `"id":"msg_123"`) || !strings.Contains(string(first), `"model":"claude-test"`) {
+		t.Fatalf("first chunk missing id/model: %s", string(first))
+	}
+
+	second, err := p.Next()
+	if err != nil {
+		t.Fatalf("second chunk: %v", err)
+	}
+	if !strings.Contains(string(second), `"id":"msg_123"`) || !strings.Contains(string(second), `"model":"claude-test"`) {
+		t.Fatalf("second chunk missing carried id/model: %s", string(second))
+	}
+	if !strings.Contains(string(second), `"reasoning_content":"pong"`) {
+		t.Fatalf("second chunk missing reasoning delta: %s", string(second))
+	}
+
+	third, err := p.Next()
+	if err != nil {
+		t.Fatalf("third chunk: %v", err)
+	}
+	if !strings.Contains(string(third), `"id":"msg_123"`) || !strings.Contains(string(third), `"model":"claude-test"`) {
+		t.Fatalf("third chunk missing carried id/model: %s", string(third))
+	}
+	if !strings.Contains(string(third), `"finish_reason":"stop"`) {
+		t.Fatalf("third chunk missing finish reason: %s", string(third))
+	}
+
+	if _, err := p.Next(); err != io.EOF {
+		t.Fatalf("expected EOF, got %v", err)
+	}
+}
+
+type fakeHTTPResponseBody struct {
+	*strings.Reader
+}
+
+func (b *fakeHTTPResponseBody) Close() error { return nil }

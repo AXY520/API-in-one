@@ -45,6 +45,7 @@ type ChannelStatus struct {
 	BaseURLClaude     string            `json:"base_url_claude,omitempty"`
 	BaseURLGemini     string            `json:"base_url_gemini,omitempty"`
 	SupportsResponses bool              `json:"supports_responses"`
+	ResponsesOnly     bool              `json:"responses_only"`
 	DisableMiMoCompat bool              `json:"disable_mimo_compat"`
 	Temporary         bool              `json:"temporary"`
 	KeyCount          int               `json:"key_count"`
@@ -103,6 +104,7 @@ func (h *Admin) ListChannels(c *gin.Context) {
 			BaseURLClaude:     ch.BaseURLClaude,
 			BaseURLGemini:     ch.BaseURLGemini,
 			SupportsResponses: ch.SupportsResponses,
+			ResponsesOnly:     ch.ResponsesOnly,
 			DisableMiMoCompat: ch.DisableMiMoCompat,
 			Temporary:         ch.Temporary,
 			KeyCount:          len(ch.Keys),
@@ -187,8 +189,8 @@ func (h *Admin) CreateChannel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "type is required"})
 		return
 	}
-	if ch.BaseURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "base_url is required"})
+	if !hasAnyChannelBaseURL(ch) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one base URL is required"})
 		return
 	}
 	if len(ch.Keys) == 0 {
@@ -221,6 +223,12 @@ func channelNameFromRequest(c *gin.Context) string {
 	return c.Param("name")
 }
 
+func hasAnyChannelBaseURL(ch config.ChannelConfig) bool {
+	return strings.TrimSpace(ch.BaseURL) != "" ||
+		strings.TrimSpace(ch.BaseURLClaude) != "" ||
+		strings.TrimSpace(ch.BaseURLGemini) != ""
+}
+
 func maskKeys(keys []string) []string {
 	masked := make([]string, 0, len(keys))
 	for _, key := range keys {
@@ -244,8 +252,8 @@ func (h *Admin) UpdateChannel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
 		return
 	}
-	if ch.BaseURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "base_url is required"})
+	if !hasAnyChannelBaseURL(ch) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one base URL is required"})
 		return
 	}
 	if len(ch.Keys) == 0 {
@@ -497,6 +505,40 @@ func (h *Admin) UpdateChannelState(c *gin.Context) {
 	})
 }
 
+// UpdateChannelRouting updates only scheduler-facing fields.
+func (h *Admin) UpdateChannelRouting(c *gin.Context) {
+	name := channelNameFromRequest(c)
+	var req struct {
+		Priority int   `json:"priority"`
+		Weight   int   `json:"weight"`
+		Enabled  *bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		return
+	}
+	if req.Priority < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "priority must be greater than 0"})
+		return
+	}
+	if req.Weight < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "weight must be greater than 0"})
+		return
+	}
+	if err := config.UpdateChannelRouting(name, req.Priority, req.Weight, req.Enabled); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	h.rebuildPool()
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "channel routing updated",
+		"name":     name,
+		"priority": req.Priority,
+		"weight":   req.Weight,
+		"enabled":  req.Enabled,
+	})
+}
+
 // ProbeChannelKeys sends a tiny non-stream request with every key in a channel.
 func (h *Admin) ProbeChannelKeys(c *gin.Context) {
 	name := channelNameFromRequest(c)
@@ -511,7 +553,7 @@ func (h *Admin) ProbeChannelKeys(c *gin.Context) {
 	}
 	protocol := strings.TrimSpace(c.Query("protocol"))
 	if protocol == "" {
-		protocol = ch.Type
+		protocol = probeProtocolForChannel(*ch)
 	}
 	modelName := strings.TrimSpace(c.Query("model"))
 	if modelName == "" {
@@ -599,6 +641,22 @@ func probeOneKey(ch config.ChannelConfig, ad adaptor.Adaptor, protocol, modelNam
 		result.Error = strings.TrimSpace(string(body))
 	}
 	return result
+}
+
+func probeProtocolForChannel(ch config.ChannelConfig) string {
+	if ch.Type == "claude" || (strings.TrimSpace(ch.BaseURL) == "" && strings.TrimSpace(ch.BaseURLClaude) != "") {
+		return "claude"
+	}
+	if ch.Type == "gemini" || (strings.TrimSpace(ch.BaseURL) == "" && strings.TrimSpace(ch.BaseURLGemini) != "") {
+		return "gemini"
+	}
+	if ch.ResponsesOnly {
+		return "responses"
+	}
+	if strings.TrimSpace(ch.Type) != "" {
+		return ch.Type
+	}
+	return "openai"
 }
 
 func intPtr(v int) *int {

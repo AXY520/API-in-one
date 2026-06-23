@@ -5,14 +5,22 @@ import (
 	"api-in-one/handler"
 	"api-in-one/relay"
 	"api-in-one/router"
-	_ "embed"
+	"context"
+	"embed"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
-//go:embed web/index.html
+//go:embed web/dist/index.html
 var indexHTML []byte
+
+//go:embed web/dist/assets/*
+var webAssets embed.FS
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -40,12 +48,29 @@ func main() {
 
 	pool := relay.NewPool(channels)
 	engine := relay.NewEngine(pool)
-	r := router.Setup(engine, pool, indexHTML)
+	r := router.Setup(engine, pool, indexHTML, webAssets)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	slog.Info("starting api-in-one", "addr", addr, "channels", len(channels))
-	if err := r.Run(addr); err != nil {
-		slog.Error("server failed", "error", err)
-		os.Exit(1)
+
+	srv := &http.Server{Addr: addr, Handler: r}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-quit
+	slog.Info("shutting down", "signal", sig)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Error("shutdown error", "error", err)
 	}
+	slog.Info("server stopped")
 }

@@ -14,6 +14,7 @@ type Channel struct {
 	BaseURLClaude     string // optional: Claude protocol URL
 	BaseURLGemini     string // optional: Gemini protocol URL
 	SupportsResponses bool   // whether upstream accepts /v1/responses natively
+	ResponsesOnly     bool   // whether this upstream must be called via /v1/responses
 	DisableMiMoCompat bool
 	Temporary         bool
 	Keys              []string
@@ -179,15 +180,20 @@ func (c *Channel) DisabledKeyList() []string {
 }
 
 func (c *Channel) SupportsProtocol(protocol string) bool {
-	if protocol == "" || protocol == c.Type {
+	if protocol == "" {
 		return true
 	}
 	switch protocol {
+	case "openai":
+		return c.Type == "openai" && c.BaseURL != ""
 	case "claude":
-		return c.BaseURLClaude != ""
+		return c.Type == "claude" || c.BaseURLClaude != ""
 	case "gemini":
-		return c.BaseURLGemini != ""
+		return c.Type == "gemini" || c.BaseURLGemini != ""
 	default:
+		if protocol == c.Type {
+			return c.BaseURL != ""
+		}
 		return false
 	}
 }

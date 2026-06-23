@@ -73,7 +73,7 @@ func (a *ClaudeAdaptor) BuildHTTPRequest(baseURL, key string, req *model.ChatCom
 	if err != nil {
 		return nil, err
 	}
-	url := buildClaudeURL(baseURL)
+	url := BuildClaudeURL(baseURL)
 	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -298,6 +298,8 @@ type claudeSSEProcessor struct {
 	scanner  *bufio.Scanner
 	body     io.ReadCloser
 	finished bool
+	id       string
+	model    string
 }
 
 func (p *claudeSSEProcessor) Next() ([]byte, error) {
@@ -323,16 +325,12 @@ func (p *claudeSSEProcessor) Next() ([]byte, error) {
 			msg, _ := event["message"].(map[string]interface{})
 			modelName, _ := msg["model"].(string)
 			msgID, _ := msg["id"].(string)
-			chunk := model.ChatCompletionChunk{
-				ID:      msgID,
-				Object:  "chat.completion.chunk",
-				Created: time.Now().Unix(),
-				Model:   modelName,
-				Choices: []model.ChunkChoice{{
-					Index: 0,
-					Delta: &model.Message{Role: "assistant", Content: ""},
-				}},
-			}
+			p.id = msgID
+			p.model = modelName
+			chunk := p.chunk([]model.ChunkChoice{{
+				Index: 0,
+				Delta: &model.Message{Role: "assistant", Content: ""},
+			}})
 			return marshalSSE(chunk)
 
 		case "content_block_start":
@@ -343,21 +341,17 @@ func (p *claudeSSEProcessor) Next() ([]byte, error) {
 				callID, _ := cb["id"].(string)
 				name, _ := cb["name"].(string)
 				idx, _ := event["index"].(float64)
-				chunk := model.ChatCompletionChunk{
-					Object:  "chat.completion.chunk",
-					Created: time.Now().Unix(),
-					Choices: []model.ChunkChoice{{
-						Index: 0,
-						Delta: &model.Message{
-							ToolCalls: []model.ToolCall{{
-								Index:    int(idx),
-								ID:       callID,
-								Type:     "function",
-								Function: model.FunctionCall{Name: name},
-							}},
-						},
-					}},
-				}
+				chunk := p.chunk([]model.ChunkChoice{{
+					Index: 0,
+					Delta: &model.Message{
+						ToolCalls: []model.ToolCall{{
+							Index:    int(idx),
+							ID:       callID,
+							Type:     "function",
+							Function: model.FunctionCall{Name: name},
+						}},
+					},
+				}})
 				return marshalSSE(chunk)
 			}
 
@@ -368,46 +362,34 @@ func (p *claudeSSEProcessor) Next() ([]byte, error) {
 			case "thinking_delta":
 				thinking, _ := delta["thinking"].(string)
 				if thinking != "" {
-					chunk := model.ChatCompletionChunk{
-						Object:  "chat.completion.chunk",
-						Created: time.Now().Unix(),
-						Choices: []model.ChunkChoice{{
-							Index: 0,
-							Delta: &model.Message{ReasoningContent: thinking},
-						}},
-					}
+					chunk := p.chunk([]model.ChunkChoice{{
+						Index: 0,
+						Delta: &model.Message{ReasoningContent: thinking},
+					}})
 					return marshalSSE(chunk)
 				}
 			case "input_json_delta":
 				partialJSON, _ := delta["partial_json"].(string)
 				idx, _ := event["index"].(float64)
 				if partialJSON != "" {
-					chunk := model.ChatCompletionChunk{
-						Object:  "chat.completion.chunk",
-						Created: time.Now().Unix(),
-						Choices: []model.ChunkChoice{{
-							Index: 0,
-							Delta: &model.Message{
-								ToolCalls: []model.ToolCall{{
-									Index:    int(idx),
-									Function: model.FunctionCall{Arguments: partialJSON},
-								}},
-							},
-						}},
-					}
+					chunk := p.chunk([]model.ChunkChoice{{
+						Index: 0,
+						Delta: &model.Message{
+							ToolCalls: []model.ToolCall{{
+								Index:    int(idx),
+								Function: model.FunctionCall{Arguments: partialJSON},
+							}},
+						},
+					}})
 					return marshalSSE(chunk)
 				}
 			default:
 				text, _ := delta["text"].(string)
 				if text != "" {
-					chunk := model.ChatCompletionChunk{
-						Object:  "chat.completion.chunk",
-						Created: time.Now().Unix(),
-						Choices: []model.ChunkChoice{{
-							Index: 0,
-							Delta: &model.Message{Content: text},
-						}},
-					}
+					chunk := p.chunk([]model.ChunkChoice{{
+						Index: 0,
+						Delta: &model.Message{Content: text},
+					}})
 					return marshalSSE(chunk)
 				}
 			}
@@ -417,15 +399,11 @@ func (p *claudeSSEProcessor) Next() ([]byte, error) {
 			stopReason, _ := delta["stop_reason"].(string)
 			if stopReason != "" {
 				fr := mapStopReason(stopReason)
-				chunk := model.ChatCompletionChunk{
-					Object:  "chat.completion.chunk",
-					Created: time.Now().Unix(),
-					Choices: []model.ChunkChoice{{
-						Index:        0,
-						Delta:        &model.Message{},
-						FinishReason: &fr,
-					}},
-				}
+				chunk := p.chunk([]model.ChunkChoice{{
+					Index:        0,
+					Delta:        &model.Message{},
+					FinishReason: &fr,
+				}})
 				p.finished = true
 				return marshalSSE(chunk)
 			}
@@ -439,6 +417,23 @@ func (p *claudeSSEProcessor) Next() ([]byte, error) {
 		return nil, err
 	}
 	return nil, io.EOF
+}
+
+func (p *claudeSSEProcessor) Close() error {
+	if p.body != nil {
+		return p.body.Close()
+	}
+	return nil
+}
+
+func (p *claudeSSEProcessor) chunk(choices []model.ChunkChoice) model.ChatCompletionChunk {
+	return model.ChatCompletionChunk{
+		ID:      p.id,
+		Object:  "chat.completion.chunk",
+		Created: time.Now().Unix(),
+		Model:   p.model,
+		Choices: choices,
+	}
 }
 
 // ---- Helpers ----
@@ -541,10 +536,10 @@ func marshalSSE(chunk model.ChatCompletionChunk) ([]byte, error) {
 	return []byte("data: " + string(b) + "\n\n"), nil
 }
 
-// buildClaudeURL constructs the Claude API endpoint URL.
+// BuildClaudeURL constructs the Claude API endpoint URL.
 // If the base URL already ends with a path that looks like an endpoint,
 // use it directly. Otherwise append /v1/messages.
-func buildClaudeURL(baseURL string) string {
+func BuildClaudeURL(baseURL string) string {
 	baseURL = strings.TrimRight(baseURL, "/")
 	// If it already ends with /messages or /v1/messages, use as-is
 	if strings.HasSuffix(baseURL, "/messages") {

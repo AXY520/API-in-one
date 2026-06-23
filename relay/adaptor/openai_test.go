@@ -10,8 +10,8 @@ func TestBuildOpenAIChatCompletionsURLAvoidsDuplicateV1(t *testing.T) {
 		"https://example.com/v1/chat/completions": "https://example.com/v1/chat/completions",
 	}
 	for input, want := range cases {
-		if got := buildOpenAIChatCompletionsURL(input); got != want {
-			t.Fatalf("buildOpenAIChatCompletionsURL(%q) = %q, want %q", input, got, want)
+		if got := BuildOpenAIChatCompletionsURL(input); got != want {
+			t.Fatalf("BuildOpenAIChatCompletionsURL(%q) = %q, want %q", input, got, want)
 		}
 	}
 }
